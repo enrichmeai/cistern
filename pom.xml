@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.enrichmeai.cistern</groupId>
+  <artifactId>cistern-parent</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <name>Cistern</name>
+  <description>Open, self-hostable Solid pod server for the AI era — JVM-native, MCP-fronted, conformance-first.</description>
+  <url>https://enrichmeai.com</url>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+    </license>
+  </licenses>
+
+  <organization>
+    <name>Good Shepherd Software Consultancy Ltd, trading as EnrichMeAI</name>
+    <url>https://enrichmeai.com</url>
+  </organization>
+
+  <modules>
+    <module>cistern-core</module>
+    <module>cistern-auth</module>
+    <module>cistern-wac</module>
+    <module>cistern-storage-file</module>
+    <module>cistern-webflux</module>
+    <module>cistern-mcp</module>
+    <module>cistern-spring-boot-starter</module>
+    <module>cistern-app</module>
+  </modules>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+    <!-- T0.2: verify each of these is the latest stable before first real ticket -->
+    <spring-boot.version>3.5.3</spring-boot.version>
+    <jena.version>5.4.0</jena.version>
+    <nimbus-jose-jwt.version>10.3</nimbus-jose-jwt.version>
+    <titanium-json-ld.version>1.6.0</titanium-json-ld.version>
+    <!-- io.modelcontextprotocol.sdk — resolve latest in T5.1 -->
+    <mcp-sdk.version>0.10.0</mcp-sdk.version>
+
+    <junit.version>5.11.4</junit.version>
+    <reactor.version>2023.0.5</reactor.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.jena</groupId>
+        <artifactId>jena-arq</artifactId>
+        <version>${jena.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.nimbusds</groupId>
+        <artifactId>nimbus-jose-jwt</artifactId>
+        <version>${nimbus-jose-jwt.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.apicatalog</groupId>
+        <artifactId>titanium-json-ld</artifactId>
+        <version>${titanium-json-ld.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>${mcp-sdk.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.projectreactor</groupId>
+      <artifactId>reactor-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <version>${spring-boot.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>3.5.2</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>

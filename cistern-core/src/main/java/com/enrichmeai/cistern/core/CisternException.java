@@ -1,0 +1,33 @@
+package com.enrichmeai.cistern.core;
+
+/**
+ * Root of Cistern's domain error hierarchy. The HTTP layer maps subtypes to status
+ * codes in exactly one place (T2.6, GlobalErrorHandler) — services and stores signal
+ * these through the reactive chain and never speak HTTP.
+ */
+public abstract class CisternException extends RuntimeException {
+
+    protected CisternException(String message) {
+        super(message);
+    }
+
+    /** Container/document kind mismatch, non-empty container delete, etc. → 409. */
+    public static final class Conflict extends CisternException {
+        public Conflict(String message) { super(message); }
+    }
+
+    /** Malformed RDF body, invalid slug, bad N3 Patch document → 400. */
+    public static final class BadInput extends CisternException {
+        public BadInput(String message) { super(message); }
+    }
+
+    /** Precondition (If-Match / If-None-Match) failed → 412. */
+    public static final class PreconditionFailed extends CisternException {
+        public PreconditionFailed(String message) { super(message); }
+    }
+
+    /** Authenticated agent lacks the required access mode → 403 (or 401 if unauthenticated). */
+    public static final class AccessDenied extends CisternException {
+        public AccessDenied(String message) { super(message); }
+    }
+}

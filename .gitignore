@@ -1,0 +1,9 @@
+target/
+data/
+cth/reports/
+*.iml
+.idea/
+.vscode/
+.DS_Store
+*.log
+.env

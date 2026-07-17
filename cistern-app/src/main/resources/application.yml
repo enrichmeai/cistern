@@ -1,0 +1,7 @@
+server:
+  port: 3000   # CTH subject configs conventionally target :3000
+
+cistern:
+  storage:
+    root: ${CISTERN_STORAGE_ROOT:./data}
+  base-url: ${CISTERN_BASE_URL:http://localhost:3000}

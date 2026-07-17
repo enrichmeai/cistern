@@ -1,0 +1,13 @@
+# Test-subject description for the Solid conformance test harness.
+# T0.4: flesh this out from the examples in
+# https://github.com/solid-contrib/specification-tests (test-subjects.ttl) —
+# fields below are the known-required skeleton, values to be verified there.
+
+@prefix solid-test: <https://github.com/solid/conformance-test-harness/vocab#> .
+@prefix doap: <http://usefulinc.com/ns/doap#> .
+
+<https://github.com/enrichmeai/cistern>
+    a doap:Project ;
+    doap:name "Cistern" ;
+    solid-test:skip "" ;    # keep empty — we do not skip suites to look good
+    solid-test:origin <http://localhost:3000> .
