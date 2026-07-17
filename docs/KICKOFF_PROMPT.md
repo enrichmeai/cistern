@@ -23,8 +23,8 @@ Standing rules:
 - Fully reactive, single error mapper, storage SPI is the seam, no Spring in core —
   all in CLAUDE.md.
 - Commit sign-off (git commit -s) on every commit.
-- Do NOT create a GitHub repo or push anywhere until Joseph confirms name clearance is
-  done. Local main only until then.
+- Remote is live: github.com/enrichmeai/cistern (public, CI green since the scaffold
+  commit). Branch-per-ticket, PR into main, architect merges.
 
 Start with Phase 0 in order: T0.1 (build green from clean checkout), T0.2 (dependency
 version audit — verify Spring Boot 3.5.x latest, Jena, Nimbus, Titanium, MCP SDK
@@ -35,9 +35,8 @@ baseline). Then report Phase 0 status and wait before dispatching Phase 1.
 
 ## Notes for Joseph
 
-- Before first dispatch: confirm name clearance (UKIPO/India/USPTO classes 9 & 42) and
-  create `github.com/enrichmeai/cistern` (public) — then let the session add the remote
-  and push.
+- Repo created and scaffold pushed 2026-07-17; CI green. Trademark filing (UKIPO/India/
+  USPTO classes 9 & 42) is still on you — the repo existing doesn't protect the name.
 - Model split as per Culvert: dev-agents on Sonnet, architect on Opus.
 - Milestone gates you personally sign off: M1 (end phase 2), M2 (end phase 3 —
   unauthenticated conformance), M3 (end phase 6 — WAC + MCP demo) → announcement
