@@ -61,6 +61,9 @@ Java 21 (SDKMAN), Maven 3.9. No Gradle. No Lombok — use records.
   `feature/t2.3-post-slug`. PR into `main`; the architect merges — dev agents never self-merge.
 - Every commit is DCO signed-off (`git commit -s`). Conventional commit messages
   (`feat(webflux): ...`, `fix(wac): ...`).
+- AI-assisted commits keep the `Co-Authored-By: Claude ...` trailer — decided 2026-07-17.
+  Transparency about the agent-first build is part of the project's story; consistency
+  matters (never a mix of tagged and untagged AI work).
 - Post a DoD-checklist comment on the ticket/PR when returning work.
 - Update `docs/BACKLOG.md` ticket status (`[ ]` → `[x]`) in the same PR that completes it.
 - CTH conformance numbers only move forward. If your PR regresses a previously passing
