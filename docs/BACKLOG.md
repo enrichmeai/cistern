@@ -1,5 +1,10 @@
 # Cistern backlog
 
+> **Live status lives in [GitHub issues](https://github.com/enrichmeai/cistern/issues)** —
+> every ticket below is mirrored as an issue (T0.1 = #1 … T7.4 = #44, epics #5/#11/#21/
+> #25/#30/#36/#40/#45, milestones M1/M2/M3/Launch). This file remains the canonical DoD
+> text; close the issue when the DoD is met, and keep the two in sync if scope changes.
+
 Tickets are `T<phase>.<n>`. One ticket = one branch = one PR. Do them in order within a
 phase; phases 1–2 may interleave once T1.2 is merged. Every ticket's DoD implicitly
 includes: unit tests, no `.block()`, DCO sign-off, BACKLOG status updated, and no CTH
