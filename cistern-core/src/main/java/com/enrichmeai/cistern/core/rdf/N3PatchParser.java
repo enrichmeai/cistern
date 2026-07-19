@@ -113,8 +113,14 @@ final class N3PatchParser {
      * @param document the full text of the {@code text/n3} document
      * @param base     absolute base URI for relative IRI resolution (the patched resource)
      * @return the validated patch
-     * @throws CisternException.BadInput on any syntax error, constraint violation or
-     *                                   unsupported construct
+     * @throws CisternException.BadInput            on malformed N3 — unbalanced braces,
+     *                                              truncation, bad IRIs, malformed literals,
+     *                                              stray tokens, unknown {@code @directives} —
+     *                                              and on out-of-subset N3 constructs at
+     *                                              document level (400)
+     * @throws CisternException.UnprocessableEntity on well-formed N3 that breaches a listed
+     *                                              patch constraint, including out-of-subset
+     *                                              content inside a formula (422)
      */
     static N3Patch parse(String document, URI base) {
         return new N3PatchParser(document, base).parseDocument();

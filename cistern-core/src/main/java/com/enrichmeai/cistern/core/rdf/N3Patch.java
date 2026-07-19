@@ -94,10 +94,19 @@ public record N3Patch(List<Triple> where, List<Triple> deletes, List<Triple> ins
      *                       relative IRI resolution
      * @return the parsed, validated patch
      * @throws CisternException.BadInput            on null arguments, a wrong content type,
-     *                                              non-UTF-8 bytes, malformed N3, or an N3
-     *                                              construct outside the patch subset (400)
-     * @throws CisternException.UnprocessableEntity on well-formed N3 that violates the spec's
-     *                                              patch constraints (422)
+     *                                              non-UTF-8 bytes, malformed N3, or an
+     *                                              out-of-subset N3 construct at <em>document</em>
+     *                                              level (400)
+     * @throws CisternException.UnprocessableEntity on well-formed N3 that breaches the spec's
+     *                                              patch constraints, including out-of-subset
+     *                                              content <em>inside a formula</em> — which
+     *                                              must consist only of triples and/or triple
+     *                                              patterns (422). One documented gap: a
+     *                                              formula whose closing {@code '}'} is missing
+     *                                              or corrupted reports 422 rather than 400,
+     *                                              being indistinguishable from a nested
+     *                                              formula at the point of detection; see
+     *                                              {@code N3PatchParser}'s javadoc
      */
     public static N3Patch parse(Representation representation, ResourceIdentifier resource) {
         if (representation == null) {
