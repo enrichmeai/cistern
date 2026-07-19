@@ -23,7 +23,7 @@ regression.
 - [ ] **T0.2 Dependency audit.** Verify/bump every version in the parent POM to latest
   stable (Spring Boot 3.5.x line, Jena 5.x, Nimbus, Titanium, MCP SDK). Record chosen
   versions + date in the PR description. DoD: `mvn -q verify` green on the bumped set.
-- [ ] **T0.3 CI.** `.github/workflows/ci.yml` runs build + tests on PR and main pushes.
+- [x] **T0.3 CI.** `.github/workflows/ci.yml` runs build + tests on PR and main pushes.
   DoD: a deliberately failing test on a branch fails the check.
 - [ ] **T0.4 CTH baseline.** Get `./cth/run-cth.sh` to execute the dockerized harness
   against a locally running cistern-app. Failing assertions are EXPECTED — the deliverable
