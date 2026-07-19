@@ -30,8 +30,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * time (Solid Protocol §4.2 — containment mirrors the URI path hierarchy; architecture
  * rule: never stored), and the write guard enforces §5.3's server-managed containment
  * triples. The guard's asymmetry is deliberate and encoded here: target-subject
- * {@code ldp:contains} → BadInput; echoed {@code rdf:type ldp:*} tolerated;
- * other-subject {@code ldp:contains} ignored (not server-managed for this target).
+ * {@code ldp:contains} → Conflict (409 per §5.3 — architect ruling on PR #52: the spec
+ * text wins over the original ticket's BadInput); echoed {@code rdf:type ldp:*}
+ * tolerated; other-subject {@code ldp:contains} ignored (not server-managed for this
+ * target).
  */
 class LdpServiceTest {
 
@@ -207,6 +209,27 @@ class LdpServiceTest {
         }
 
         @Test
+        void corruptStoredRepresentationSignalsIllegalStateNotBadInput() {
+            // Stored container bodies only exist through validated writes, so garbage
+            // in storage is SERVER-side corruption: it must surface as an
+            // IllegalStateException (-> 500), never blame the reading client with
+            // BadInput (-> 400). Injected via the raw store, below the write path.
+            put(notes, new Representation(Representation.TURTLE,
+                    "@@ this is not turtle <".getBytes(StandardCharsets.UTF_8)));
+
+            StepVerifier.create(service.getContainer(notes))
+                    .expectErrorSatisfies(error -> {
+                        assertTrue(error instanceof IllegalStateException,
+                                "corrupt stored state is a server fault (never a"
+                                        + " client-mappable CisternException), got "
+                                        + error.getClass().getName());
+                        assertTrue(error.getMessage().contains(notes.uri().toString()),
+                                "message names the corrupt resource");
+                    })
+                    .verify();
+        }
+
+        @Test
         void missingContainerCompletesEmpty() {
             StepVerifier.create(service.getContainer(id("/absent/")))
                     .verifyComplete();
@@ -249,11 +272,14 @@ class LdpServiceTest {
 
             StepVerifier.create(guard(body, target))
                     .expectErrorSatisfies(error -> {
-                        assertTrue(error instanceof CisternException.BadInput,
-                                "containment for the target is a hard BadInput, got "
+                        assertTrue(error instanceof CisternException.Conflict,
+                                "containment for the target is a hard Conflict"
+                                        + " (409 per Solid Protocol §5.3), got "
                                         + error.getClass().getName());
                         assertTrue(error.getMessage().contains("ldp:contains"),
                                 "message names the offending predicate");
+                        assertTrue(error.getMessage().contains("§5.3"),
+                                "message cites the spec section");
                     })
                     .verify();
         }
@@ -269,7 +295,7 @@ class LdpServiceTest {
                     """, document);
 
             StepVerifier.create(guard(body, document))
-                    .verifyError(CisternException.BadInput.class);
+                    .verifyError(CisternException.Conflict.class);
         }
 
         @Test

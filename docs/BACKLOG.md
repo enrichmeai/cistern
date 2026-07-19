@@ -49,8 +49,9 @@ regression.
 - [x] **T1.4 Containment layer.** `LdpService.getContainer`: merge stored container triples
   with derived `ldp:contains` from `children()`; add `rdf:type ldp:BasicContainer|Resource`.
   Reject client attempts to PUT/PATCH containment triples directly (Solid Protocol server-
-  managed triples) with BadInput. DoD: StepVerifier tests; a container GET shows exactly the
-  live children.
+  managed triples) with Conflict (409 per Solid Protocol §5.3 — architect ruling on PR #52,
+  spec text wins over the original BadInput wording). DoD: StepVerifier tests; a container
+  GET shows exactly the live children.
 - [ ] **T1.5 N3 Patch engine.** Parse `text/n3` patch documents (solid:InsertionPatch /
   solid:DeletionPatch / solid:where); apply to a graph; deletion of absent triples → 409
   semantics (Conflict). DoD: the patch examples from the Solid Protocol spec text pass;

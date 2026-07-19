@@ -33,15 +33,18 @@ import java.util.Objects;
  *
  * <h2>Server-managed triples</h2>
  * Solid Protocol §5.3 (Writing Resources): "Servers MUST NOT allow HTTP PUT or PATCH on
- * a container to update its containment triples". {@link #rejectServerManagedTriples}
- * is the write-path guard for that rule; {@link #getContainer} additionally strips any
- * stored {@code ldp:contains}/{@code rdf:type ldp:*} statements about the container as
- * defense in depth, so nothing that slipped into storage can ever surface.
+ * a container to update its containment triples; if the server receives such a request,
+ * it MUST respond with a 409 status code". {@link #rejectServerManagedTriples} is the
+ * write-path guard for that rule and signals {@link CisternException.Conflict} (→ 409
+ * via T2.6, per the spec text — architect ruling on PR #52: the spec wins over the
+ * original ticket wording); {@link #getContainer} additionally strips any stored
+ * {@code ldp:contains}/{@code rdf:type ldp:*} statements about the container as defense
+ * in depth, so nothing that slipped into storage can ever surface.
  *
- * <p>Asymmetry (architect ruling, 2026-07-19): only containment is a hard error.
- * Client-supplied {@code rdf:type ldp:*} triples are tolerated on write — clients
- * commonly echo the type triples a GET handed them — and are dropped and re-derived on
- * read instead.
+ * <p>Asymmetry (architect ruling, 2026-07-19): only containment is a hard error
+ * (Conflict, 409). Client-supplied {@code rdf:type ldp:*} triples are tolerated on
+ * write — clients commonly echo the type triples a GET handed them — and are dropped
+ * and re-derived on read instead.
  */
 public final class LdpService {
 
@@ -68,8 +71,11 @@ public final class LdpService {
      * @return the merged graph; an empty Mono if the container does not exist. Signals
      *         {@link IllegalArgumentException} for a non-container identifier
      *         (consistent with {@link ResourceStore#children(ResourceIdentifier)}) and
-     *         {@link CisternException.BadInput} if the stored representation is not
-     *         parseable RDF. Never throws synchronously.
+     *         {@link IllegalStateException} if the stored representation is not
+     *         parseable RDF — stored container bodies only exist through validated
+     *         writes, so unparseable stored state is server-side corruption (a 500),
+     *         never the reading client's fault (never a 400). Never throws
+     *         synchronously.
      */
     public Mono<Model> getContainer(ResourceIdentifier container) {
         return Mono.defer(() -> {
@@ -87,9 +93,12 @@ public final class LdpService {
 
     /**
      * Write-path guard for Solid Protocol §5.3: rejects a client body that tries to
-     * update the target's containment triples. A body containing any
+     * update the target's containment triples ("Servers MUST NOT allow HTTP PUT or
+     * PATCH on a container to update its containment triples; if the server receives
+     * such a request, it MUST respond with a 409 status code"). A body containing any
      * {@code ldp:contains} triple whose SUBJECT is the target resource is rejected with
-     * {@link CisternException.BadInput}; anything else passes.
+     * {@link CisternException.Conflict} — mapped to 409 by the global error handler
+     * (T2.6), exactly as the spec text mandates; anything else passes.
      *
      * <p>Deliberately NOT rejected (architect ruling — encode the asymmetry):
      * <ul>
@@ -109,14 +118,15 @@ public final class LdpService {
      *
      * @param body   the client-supplied graph, already parsed
      * @param target the resource the PUT/PATCH addresses
-     * @throws CisternException.BadInput if the body asserts containment for the target
+     * @throws CisternException.Conflict if the body asserts containment for the target
+     *                                   (409 per Solid Protocol §5.3)
      */
     public void rejectServerManagedTriples(Model body, ResourceIdentifier target) {
         Objects.requireNonNull(body, "body");
         Objects.requireNonNull(target, "target");
         Resource subject = body.createResource(target.uri().toString());
         if (body.listStatements(subject, Ldp.CONTAINS, (RDFNode) null).hasNext()) {
-            throw new CisternException.BadInput(
+            throw new CisternException.Conflict(
                     "Containment triples are server-managed (Solid Protocol §5.3): the request body"
                             + " must not assert ldp:contains for <" + target.uri() + ">");
         }
@@ -139,13 +149,24 @@ public final class LdpService {
         return model;
     }
 
-    /** Empty stored body → empty graph; otherwise parse with the container URI as base. */
+    /**
+     * Empty stored body → empty graph; otherwise parse with the container URI as base.
+     * A parse failure here is NOT the client's {@code BadInput}: stored container
+     * bodies only exist through validated writes, so unparseable stored state is a
+     * server fault, rethrown as {@link IllegalStateException} (→ 500, not 400).
+     */
     private static Model parseStored(StoredResource stored, ResourceIdentifier container) {
         Representation representation = stored.representation();
         if (representation.data().length == 0) {
             return ModelFactory.createDefaultModel();
         }
-        return RdfIo.parse(representation, container);
+        try {
+            return RdfIo.parse(representation, container);
+        } catch (CisternException.BadInput e) {
+            throw new IllegalStateException(
+                    "Stored representation for <" + container.uri() + "> is corrupt: "
+                            + e.getMessage(), e);
+        }
     }
 
     /**
