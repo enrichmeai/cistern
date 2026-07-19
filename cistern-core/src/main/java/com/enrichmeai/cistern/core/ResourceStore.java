@@ -16,12 +16,18 @@ import reactor.core.publisher.Mono;
  *       {@link CisternException} subtypes.</li>
  *   <li>{@code get} on a missing resource → empty Mono (the HTTP layer maps to 404).</li>
  *   <li>{@code put} creates or replaces, and MUST create missing intermediate containers
- *       (Solid Protocol §5.3). The returned {@link StoredResource} carries a populated
- *       etag and a second-precision {@code lastModified} instant.</li>
+ *       (Solid Protocol §5.3). Creating an intermediate container whose name collides
+ *       with an existing DOCUMENT → {@link CisternException.Conflict} (§3.1's one-name
+ *       rule is not overridden by §5.3). The returned {@link StoredResource} carries a
+ *       populated etag and a second-precision {@code lastModified} instant.</li>
  *   <li>Kind-flip rejection, both directions: {@code /foo} and {@code /foo/} are distinct
  *       identifiers, but one name cannot be both (Solid Protocol §3.1) — {@code put} of
  *       document {@code /foo} while container {@code /foo/} exists →
  *       {@link CisternException.Conflict}, and vice versa.</li>
+ *   <li>A {@code put} that signals an error mutates nothing observable: the colliding
+ *       resource is unchanged, no intermediate containers were created, the target was
+ *       not created, and containment listings are unchanged. Backends must validate the
+ *       whole ancestor chain (and the target) before creating anything.</li>
  *   <li>ETags are strong validators (RFC 9110 §8.8.3): the etag MUST change whenever the
  *       representation (bytes or content type) changes across writes. A rewrite with an
  *       identical representation is NOT required to change it — content-hashing backends

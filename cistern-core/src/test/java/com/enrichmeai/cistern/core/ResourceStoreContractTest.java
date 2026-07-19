@@ -33,7 +33,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       second-precision {@code lastModified}; {@code get} then returns it.</li>
  *   <li>{@code put} creates missing intermediate containers (Solid Protocol §5.3):
  *       ancestors of a deep path exist as containers and containment listings reflect
- *       them.</li>
+ *       them. Creating an intermediate container whose name collides with an existing
+ *       DOCUMENT → {@link CisternException.Conflict} (§3.1's one-name rule is not
+ *       overridden by §5.3).</li>
  *   <li>{@code put} replace keeps the identity; the etag changes when the representation
  *       (bytes OR content type) changes (strong validators, RFC 9110 §8.8.3). An
  *       identical rewrite is deliberately NOT asserted either way — content-hashing
@@ -41,6 +43,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>Kind-flip rejection, both directions (Solid Protocol §3.1): document put while
  *       the same-name container exists → {@link CisternException.Conflict}, and vice
  *       versa.</li>
+ *   <li>A {@code put} that signals an error mutates NOTHING observable: the colliding
+ *       resource is unchanged, no would-be intermediate containers were created, the
+ *       target was not created, and containment listings are unchanged.</li>
  *   <li>{@code lastModified} is non-decreasing across successive writes (equal allowed —
  *       second precision).</li>
  *   <li>{@code delete} of a document updates the parent's containment listing.</li>
@@ -201,15 +206,69 @@ public abstract class ResourceStoreContractTest {
         StepVerifier.create(call(() -> store.put(id("/foo"), turtle("<#d> a <#Doc> ."))))
                 .expectError(CisternException.Conflict.class)
                 .verify();
+
+        // Failed put mutates nothing.
+        StepVerifier.create(call(() -> store.exists(id("/foo")))).expectNext(false).verifyComplete();
+        assertChildren(id("/foo/"), Set.of(id("/foo/child.ttl")));
     }
 
     @Test
     void putContainerRejectedWhenDocumentOfSameNameExists() {
-        putAndReturn(id("/bar"), turtle("<#d> a <#Doc> ."));
+        StoredResource before = putAndReturn(id("/bar"), turtle("<#d> a <#Doc> ."));
 
         StepVerifier.create(call(() -> store.put(id("/bar/"), turtle(""))))
                 .expectError(CisternException.Conflict.class)
                 .verify();
+
+        // Failed put mutates nothing.
+        StepVerifier.create(call(() -> store.exists(id("/bar/")))).expectNext(false).verifyComplete();
+        StepVerifier.create(call(() -> store.get(id("/bar"))))
+                .assertNext(after -> assertEquals(before.etag(), after.etag(),
+                        "failed put must not touch the existing document"))
+                .verifyComplete();
+    }
+
+    @Test
+    void putRejectedWhenIntermediateContainerCollidesWithDocument() {
+        // Creating intermediate container /x/ would give the name "x" both kinds —
+        // Solid Protocol §3.1's one-name rule is not overridden by §5.3's
+        // intermediate-container mandate.
+        putAndReturn(id("/x"), turtle("<#d> a <#Doc> ."));
+
+        StepVerifier.create(call(() -> store.put(id("/x/y.ttl"), turtle("<#y> a <#Y> ."))))
+                .expectError(CisternException.Conflict.class)
+                .verify();
+    }
+
+    @Test
+    void failedPutMutatesNothing() {
+        Representation original = turtle("<#d> a <#Doc> .");
+        StoredResource before = putAndReturn(id("/x"), original);
+
+        // Deep put whose intermediate chain collides with document /x: must fail...
+        StepVerifier.create(call(() -> store.put(id("/x/a/b/c.ttl"), turtle("<#c> a <#C> ."))))
+                .expectError(CisternException.Conflict.class)
+                .verify();
+
+        // ...leaving the colliding document untouched...
+        StepVerifier.create(call(() -> store.get(id("/x"))))
+                .assertNext(after -> {
+                    assertEquals(before.etag(), after.etag(),
+                            "failed put must not touch the colliding document");
+                    assertArrayEquals(original.data(), after.representation().data());
+                })
+                .verifyComplete();
+
+        // ...no would-be intermediate container nor the target created (no partial chain)...
+        for (String path : new String[] {"/x/", "/x/a/", "/x/a/b/", "/x/a/b/c.ttl"}) {
+            StepVerifier.create(call(() -> store.exists(id(path))))
+                    .expectNext(false)
+                    .as("must not exist after failed put: " + path)
+                    .verifyComplete();
+        }
+
+        // ...and containment unchanged.
+        assertChildren(id("/"), Set.of(id("/x")));
     }
 
     @Test

@@ -81,9 +81,13 @@ public final class InMemoryResourceStore implements ResourceStore {
 
     private StoredResource doPut(ResourceIdentifier identifier, Representation representation) {
         synchronized (lock) {
+            // Validate the ENTIRE chain before creating anything: a failed put must
+            // mutate nothing observable (contract rule; no partial intermediate chains).
+            List<ResourceIdentifier> missing = missingAncestors(identifier);
             rejectKindFlip(identifier);
-            for (ResourceIdentifier ancestor : missingAncestors(identifier)) {
-                rejectKindFlip(ancestor);
+            missing.forEach(this::rejectKindFlip);
+
+            for (ResourceIdentifier ancestor : missing) {
                 resources.put(ancestor, newEntry(
                         new Representation(Representation.TURTLE, new byte[0]), null));
             }
