@@ -52,10 +52,30 @@ regression.
   managed triples) with Conflict (409 per Solid Protocol §5.3 — architect ruling on PR #52,
   spec text wins over the original BadInput wording). DoD: StepVerifier tests; a container
   GET shows exactly the live children.
-- [ ] **T1.5 N3 Patch engine.** Parse `text/n3` patch documents (solid:InsertionPatch /
-  solid:DeletionPatch / solid:where); apply to a graph; deletion of absent triples → 409
-  semantics (Conflict). DoD: the patch examples from the Solid Protocol spec text pass;
-  fuzz malformed patches → BadInput.
+- [x] **T1.5 N3 Patch engine.** Parse `text/n3` patch documents (the single
+  `solid:InsertDeletePatch` resource with `solid:where` / `solid:inserts` / `solid:deletes`
+  formulae — the spec vocabulary; the earlier `solid:InsertionPatch` / `solid:DeletionPatch`
+  sketch was from memory and is not in the Solid Protocol); apply to a graph; no where
+  mapping / multiple where mappings / deletion of absent triples → 409 semantics (Conflict).
+  DoD: the patch example from the Solid Protocol spec text passes; fuzz malformed patches →
+  BadInput. Done in `cistern-core` (`N3Patch`, `N3PatchParser`). Three status codes are kept
+  distinct at the core boundary, because the HTTP layer cannot reconstruct them afterwards
+  (architect ruling, PR #56):
+  (a) **422** (`CisternException.UnprocessableEntity`, new) — well-formed N3 that violates the
+  spec's patch constraints: not exactly one patch resource, missing/duplicate
+  `solid:InsertDeletePatch` type, more than one of each formula, a non-formula formula object,
+  blank nodes in `inserts`/`deletes`, `inserts`/`deletes` variables not occurring in `where`,
+  **and** recognized N3 content inside a formula that is not a plain triple/triple pattern
+  (nested formulae, collections, implications, declarations/quantifiers, blank-node property
+  lists, terms in RDF-invalid positions) — the formulae must consist "only of triples and/or
+  triple patterns".
+  (b) **400** (`BadInput`) — unparseable entity: wrong/missing content type, non-UTF-8 bytes,
+  null args, and malformed N3. Out-of-subset constructs at *document* level stay 400: the
+  formula-content constraint does not reach them.
+  (c) **409** (`Conflict`) — three conditions, all from the spec's processing rules: no `where`
+  mapping, multiple `where` mappings, and `deletes` of triples absent from the graph.
+  Deliberate limitation: blank nodes in `solid:where` are refused as **422** (spec-well-formed,
+  but the mapping algorithm is defined over variables only) — revisit with CTH evidence, #57.
 
 ## Phase 2 — HTTP layer (cistern-webflux)
 

@@ -31,6 +31,16 @@ public abstract class CisternException extends RuntimeException {
         public BadInput(String message) { super(message); }
     }
 
+    /**
+     * Well-formed request entity that violates a spec constraint → 422 (RFC 4918); e.g. an
+     * N3 Patch document breaching the §n3-patch constraints. Distinct from {@link BadInput}
+     * (400), which signals an entity the server could not parse at all: the split is
+     * load-bearing because the HTTP layer cannot reconstruct it after the fact.
+     */
+    public static final class UnprocessableEntity extends CisternException {
+        public UnprocessableEntity(String message) { super(message); }
+    }
+
     /** Precondition (If-Match / If-None-Match) failed → 412. */
     public static final class PreconditionFailed extends CisternException {
         public PreconditionFailed(String message) { super(message); }
