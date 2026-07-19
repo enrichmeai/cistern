@@ -16,6 +16,16 @@ public abstract class CisternException extends RuntimeException {
         public Conflict(String message) { super(message); }
     }
 
+    /**
+     * Operation targets a resource that does not exist where existence is required —
+     * e.g. {@code ResourceStore.delete} of a missing resource → 404 (mapped in T2.6,
+     * GlobalErrorHandler). Absence on read stays an empty Mono; this subtype exists
+     * because {@code Mono<Void>} cannot distinguish absence from success by emptiness.
+     */
+    public static final class NotFound extends CisternException {
+        public NotFound(String message) { super(message); }
+    }
+
     /** Malformed RDF body, invalid slug, bad N3 Patch document → 400. */
     public static final class BadInput extends CisternException {
         public BadInput(String message) { super(message); }

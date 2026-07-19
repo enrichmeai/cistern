@@ -36,7 +36,7 @@ regression.
   relative URIs against the resource URI as base; reject malformed input with
   `CisternException.BadInput`. DoD: round-trip property tests Turtle⇄JSON-LD; malformed
   docs produce BadInput, not Jena exceptions leaking through.
-- [ ] **T1.2 Storage contract kit.** `ResourceStoreContractTest` (abstract, JUnit 5) in
+- [x] **T1.2 Storage contract kit.** `ResourceStoreContractTest` (abstract, JUnit 5) in
   cistern-core test-jar, encoding every rule in the `ResourceStore` javadoc: empty-Mono
   on missing, intermediate-container creation on put, kind-flip rejection, non-empty
   container delete → Conflict, children of non-container → error, etag change-on-write,

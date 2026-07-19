@@ -21,4 +21,24 @@
       <artifactId>jena-arq</artifactId>
     </dependency>
   </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <!-- Publish src/test as a test-jar: the ResourceStoreContractTest kit (T1.2)
+             that every ResourceStore backend must extend. Consume with
+             <type>test-jar</type> + <scope>test</scope>. -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+        <executions>
+          <execution>
+            <id>contract-test-kit</id>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>
