@@ -58,9 +58,14 @@ regression.
   sketch was from memory and is not in the Solid Protocol); apply to a graph; no where
   mapping / multiple where mappings / deletion of absent triples → 409 semantics (Conflict).
   DoD: the patch example from the Solid Protocol spec text passes; fuzz malformed patches →
-  BadInput. Done in `cistern-core` (`N3Patch`, `N3PatchParser`). Note for T2.7: the spec
-  answers a malformed patch with **422** and an unapplicable one with **409** — the parser
-  signals `BadInput` (400 today); the 400-vs-422 mapping is an open architect decision.
+  BadInput. Done in `cistern-core` (`N3Patch`, `N3PatchParser`). Open architect decisions:
+  (a) the spec answers a malformed patch with **422** and an unapplicable one with **409** —
+  the parser signals `BadInput` (400 today); the 400-vs-422 mapping is deferred to T2.7.
+  (b) **Deviation:** the spec forbids blank nodes only in `solid:inserts` / `solid:deletes`,
+  so a `solid:where` formula with a ground blank-node triple is spec-well-formed; Cistern
+  rejects it as `BadInput` because the spec's variable-mapping algorithm does not define
+  blank-node matching (CSS treats such blank nodes as existentials, like variables). Refusing
+  is the strict-by-default choice pending an architect ruling.
 
 ## Phase 2 — HTTP layer (cistern-webflux)
 
