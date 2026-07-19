@@ -20,7 +20,7 @@ regression.
 
 - [x] **T0.1 Build green.** `mvn -q verify` passes from a clean checkout. Fix anything the
   scaffold got wrong (missing deps, plugin versions). DoD: CI badge green on main.
-- [ ] **T0.2 Dependency audit.** Verify/bump every version in the parent POM to latest
+- [x] **T0.2 Dependency audit.** Verify/bump every version in the parent POM to latest
   stable (Spring Boot 3.5.x line, Jena 5.x, Nimbus, Titanium, MCP SDK). Record chosen
   versions + date in the PR description. DoD: `mvn -q verify` green on the bumped set.
 - [ ] **T0.3 CI.** `.github/workflows/ci.yml` runs build + tests on PR and main pushes.
