@@ -25,7 +25,7 @@ regression.
   versions + date in the PR description. DoD: `mvn -q verify` green on the bumped set.
 - [ ] **T0.3 CI.** `.github/workflows/ci.yml` runs build + tests on PR and main pushes.
   DoD: a deliberately failing test on a branch fails the check.
-- [ ] **T0.4 CTH baseline.** Get `./cth/run-cth.sh` to execute the dockerized harness
+- [x] **T0.4 CTH baseline.** Get `./cth/run-cth.sh` to execute the dockerized harness
   against a locally running cistern-app. Failing assertions are EXPECTED — the deliverable
   is the harness running end-to-end and `cth/reports/` capturing the report. DoD: report
   generated; baseline pass-count recorded in `cth/BASELINE.md`.
