@@ -126,15 +126,18 @@ class ResourceIdentifierTest {
 
     @Test
     void encodedIntermediateWalkKeepsEveryRawSpelling() {
-        ResourceIdentifier leaf = id("https://pod.example/enc%20oded/sub%2Edir/fi%C3%A9le.ttl");
+        // Unicode (%C3%A9) at the TOP intermediate, encoded dot (%2E) at the mid
+        // intermediate, encoded space (%20) at the leaf — the walk must keep every raw
+        // spelling and never decode-then-reparse at any level.
+        ResourceIdentifier leaf = id("https://pod.example/caf%C3%A9/sub%2Edir/fi%20le.ttl");
 
         ResourceIdentifier mid = leaf.parent().orElseThrow();
-        assertEquals(URI.create("https://pod.example/enc%20oded/sub%2Edir/"), mid.uri());
-        assertEquals("/enc%20oded/sub%2Edir/", mid.uri().getRawPath());
+        assertEquals(URI.create("https://pod.example/caf%C3%A9/sub%2Edir/"), mid.uri());
+        assertEquals("/caf%C3%A9/sub%2Edir/", mid.uri().getRawPath());
 
         ResourceIdentifier top = mid.parent().orElseThrow();
-        assertEquals(URI.create("https://pod.example/enc%20oded/"), top.uri());
-        assertEquals("/enc%20oded/", top.uri().getRawPath());
+        assertEquals(URI.create("https://pod.example/caf%C3%A9/"), top.uri());
+        assertEquals("/caf%C3%A9/", top.uri().getRawPath());
 
         ResourceIdentifier root = top.parent().orElseThrow();
         assertEquals(URI.create("https://pod.example/"), root.uri());
