@@ -124,13 +124,34 @@ public final class InMemoryResourceStore implements ResourceStore {
 
     /** {@code /foo} for {@code /foo/} and vice versa; empty for the root container. */
     private static Optional<ResourceIdentifier> oppositeKind(ResourceIdentifier identifier) {
+        // Same bug class as ResourceIdentifier.parent() (issue #54): operate on the RAW
+        // path and rebuild from raw components, never re-parsing decoded text through
+        // uri.resolve(String) which throws on octets that decode to raw-illegal chars.
         URI uri = identifier.uri();
-        String path = uri.getPath();
-        if (path == null || path.isEmpty() || path.equals("/")) {
+        String rawPath = uri.getRawPath();
+        if (rawPath == null || rawPath.isEmpty() || rawPath.equals("/")) {
             return Optional.empty();
         }
-        String flipped = path.endsWith("/") ? path.substring(0, path.length() - 1) : path + "/";
-        return Optional.of(new ResourceIdentifier(uri.resolve(flipped)));
+        String flipped = rawPath.endsWith("/")
+                ? rawPath.substring(0, rawPath.length() - 1)
+                : rawPath + "/";
+        return Optional.of(new ResourceIdentifier(withRawPath(uri, flipped)));
+    }
+
+    /** Rebuild {@code uri} substituting only the raw path (scheme/authority/query verbatim). */
+    private static URI withRawPath(URI uri, String newRawPath) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(uri.getScheme()).append(':');
+        String rawAuthority = uri.getRawAuthority();
+        if (rawAuthority != null) {
+            sb.append("//").append(rawAuthority);
+        }
+        sb.append(newRawPath);
+        String rawQuery = uri.getRawQuery();
+        if (rawQuery != null) {
+            sb.append('?').append(rawQuery);
+        }
+        return URI.create(sb.toString());
     }
 
     /** Missing ancestors of the identifier, root first (Solid Protocol §5.3). */
