@@ -250,27 +250,20 @@ class N3PatchParserTest {
         }
 
         @Test
-        void nestedFormulae() {
-            // "?deletions, ?insertions, and ?conditions MUST be non-nested cited formulae" (§n3-patch).
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch;"
-                    + " solid:where { ?a ex:b { ?c ex:d \"e\". }. }.");
-        }
-
-        @Test
-        void formulaInIllegalPositions() {
+        void formulaInIllegalPositionsAtDocumentLevel() {
             assertBadInput(PREFIXES + "{ ?a ex:b \"c\". } a solid:InsertDeletePatch.");
             assertBadInput(PREFIXES + "_:p { ?a ex:b \"c\". } solid:InsertDeletePatch.");
         }
 
         @Test
-        void unsupportedN3Constructs() {
+        void unsupportedN3ConstructsAtDocumentLevel() {
+            // Outside any formula the "only triples and/or triple patterns" constraint does
+            // not apply, so these are simply not patch documents → 400.
             assertBadInput(PREFIXES + "_:p => _:q.");
             assertBadInput(PREFIXES + "_:p <= _:q.");
             assertBadInput(PREFIXES + "_:p = _:q.");
             assertBadInput("@forAll ?x. " + PREFIXES + "_:p a solid:InsertDeletePatch.");
             assertBadInput("@forSome _:x. " + PREFIXES + "_:p a solid:InsertDeletePatch.");
-            assertBadInput(PREFIXES
-                    + "_:p a solid:InsertDeletePatch; solid:inserts { <#a> ex:list ( \"1\" \"2\" ). }.");
             assertBadInput(PREFIXES + "[ ex:a \"b\" ] a solid:InsertDeletePatch.");
         }
 
@@ -280,10 +273,15 @@ class N3PatchParserTest {
         }
 
         @Test
-        void literalAsSubject() {
+        void literalAsSubjectAtDocumentLevel() {
             assertBadInput(PREFIXES + "\"lit\" a solid:InsertDeletePatch.");
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { \"lit\" ex:a ?v. }.");
             assertBadInput(PREFIXES + "42 a solid:InsertDeletePatch.");
+        }
+
+        @Test
+        void unknownDirectiveInsideFormulaIsGarbageNotAnN3Construct() {
+            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:inserts { @nonsense x. <#a> ex:b \"c\". }.");
         }
 
         @Test
@@ -297,11 +295,6 @@ class N3PatchParserTest {
                     + "_:p a solid:InsertDeletePatch.");
         }
 
-        @Test
-        void directivesInsideFormulae() {
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch;"
-                    + " solid:inserts { @prefix x: <http://x.example/>. <#a> ex:b \"c\". }.");
-        }
     }
 
     /**
@@ -405,6 +398,67 @@ class N3PatchParserTest {
             // defined over variables only. Revisit with harness evidence — issue #57.
             assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { _:x ex:b ?v. }.");
             assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { <#a> ex:b _:x. }.");
+        }
+
+        // ---- recognized N3 content inside a formula that is not a triple/triple pattern ----
+        // "?deletions, ?insertions and ?conditions MUST be non-nested cited formulae [N3]
+        //  consisting only of triples and/or triple patterns [SPARQL11-QUERY]" (§n3-patch),
+        // and a document breaching a listed constraint is answered with 422, not 400.
+
+        @Test
+        void nestedFormulaInsideFormula() {
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { ?a ex:b { ?c ex:d \"e\". }. }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { { ?c ex:d \"e\". } ex:b ?a. }.");
+        }
+
+        @Test
+        void collectionInsideFormula() {
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:inserts { <#a> ex:list ( \"1\" \"2\" ). }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { ( \"1\" ) ex:b ?v. }.");
+        }
+
+        @Test
+        void implicationInsideFormula() {
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { ?a => ?b. }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { ?a = ?b. }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { ?a <= ?b. }.");
+        }
+
+        @Test
+        void n3DeclarationsAndQuantifiersInsideFormula() {
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:inserts { @prefix x: <http://x.example/>. <#a> ex:b \"c\". }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { @forAll ?x. ?x ex:b \"c\". }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { @forSome _:x. ?y ex:b \"c\". }.");
+        }
+
+        @Test
+        void blankNodePropertyListInsideFormula() {
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { [ ex:a \"b\" ] ex:c ?v. }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { ?s ex:c [ ex:a \"b\" ]. }.");
+        }
+
+        @Test
+        void termsInRdfInvalidPositionsInsideFormula() {
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { \"lit\" ex:a ?v. }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { 42 ex:a ?v. }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { ?s \"lit\" ?v. }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { ?s _:b ?v. }.");
         }
     }
 

@@ -37,16 +37,34 @@ import java.util.Set;
  *       numbers, booleans) and {@code ?variables}.</li>
  * </ul>
  *
- * <p>Everything else — N3 implications ({@code =>}, {@code <=}, {@code =}), quantifiers
- * ({@code @forAll}, {@code @forSome}), collections, paths, blank node property lists with
- * content, nested formulae, variables outside formulae — is a lexical/grammar error and is
- * rejected with {@link CisternException.BadInput} (400).
+ * <p>Rejection follows the two status codes §n3-patch distinguishes:
+ * <ul>
+ *   <li>{@link CisternException.UnprocessableEntity} (422) — the document is well-formed N3
+ *       but breaches a listed patch constraint. That covers both what {@link #validate}
+ *       rejects and <strong>recognized N3 content inside a formula that is not a plain triple
+ *       or triple pattern</strong>: nested formulae, collections {@code ( … )}, implications
+ *       ({@code =>}, {@code <=}, {@code =}), the N3 declarations/quantifiers
+ *       ({@code @prefix}, {@code @base}, {@code @forAll}, {@code @forSome}, {@code @keywords}),
+ *       blank node property lists {@code [ … ]}, and terms in positions RDF forbids (a literal
+ *       as subject, a literal or blank node as predicate). The constraint sentence is
+ *       "non-nested cited formulae [N3] consisting only of triples and/or triple patterns
+ *       [SPARQL11-QUERY]", so violating it is a constraint breach, not a syntax error.</li>
+ *   <li>{@link CisternException.BadInput} (400) — the document could not be parsed at all:
+ *       unbalanced braces, truncation, bad IRIs, unterminated or malformed literals, stray
+ *       tokens, unknown {@code @directives}.</li>
+ * </ul>
  *
- * <p>Violations of the spec's enumerated patch constraints are a separate, coarser failure:
- * the document parses as N3 but is not a usable patch, so it is rejected with
- * {@link CisternException.UnprocessableEntity} (422), as §n3-patch mandates. The dividing
- * line is mechanical: anything the lexer/grammar rejects is {@code BadInput}; anything
- * {@link #validate} rejects is {@code UnprocessableEntity}.
+ * <p>The same out-of-subset constructs appearing <em>outside</em> any formula (at document
+ * level) stay {@code BadInput}: the constraint sentence governs the contents of the three
+ * formulae only, so a document-level collection or implication is simply not a patch document.
+ *
+ * <p><strong>Known gap (deliberate, architect ruling on PR #56).</strong> A formula whose
+ * closing {@code '}'} is missing or corrupted into {@code '{'} is genuine unbalanced-brace
+ * garbage, yet it surfaces as 422 rather than 400: with the formula left open, the following
+ * {@code '{'} is indistinguishable from a nested formula at the point of detection.
+ * Separating the two would need brace-balance lookahead — restructuring a working,
+ * well-tested parser — so the narrow misclassification is accepted and pinned by tests
+ * instead. It is conservative in the safe direction: the server still refuses the document.
  *
  * <p><strong>Deliberate limitation — blank nodes in {@code solid:where}.</strong> The spec
  * forbids blank nodes only in {@code ?insertions}/{@code ?deletions}, so a {@code ?conditions}
@@ -66,6 +84,10 @@ final class N3PatchParser {
     static final String SOLID_INSERTS = SOLID_NS + "inserts";
     static final String SOLID_DELETES = SOLID_NS + "deletes";
     static final String SOLID_WHERE = SOLID_NS + "where";
+
+    /** N3 directives/quantifiers the format defines — recognized, but outside the patch subset. */
+    private static final Set<String> RECOGNIZED_N3_DIRECTIVES =
+            Set.of("prefix", "base", "forAll", "forSome", "keywords");
 
     /** A formula term: the object of solid:deletes / solid:inserts / solid:where. */
     private record Formula(List<Triple> triples) {
@@ -222,10 +244,10 @@ final class N3PatchParser {
         int c = peek();
         return switch (c) {
             case '<' -> {
-                rejectReverseImplication();
+                rejectReverseImplication(false);
                 yield readIri();
             }
-            case '[' -> readAnon();
+            case '[' -> readAnon(false);
             case '_' -> readBlankNodeLabel();
             case '?' -> throw error("variables are only allowed inside a formula");
             case '{' -> throw error("a formula may only appear as the object of solid:deletes, "
@@ -246,21 +268,28 @@ final class N3PatchParser {
         int c = peek();
         switch (c) {
             case '<' -> {
-                rejectReverseImplication();
+                rejectReverseImplication(inFormula);
                 return readIri();
             }
-            case '=' -> throw error("unsupported N3 construct: '=' / '=>' are outside the N3 Patch subset");
+            case '=' -> {
+                String message = "unsupported N3 construct: '=' / '=>' are outside the N3 Patch subset";
+                throw inFormula ? outOfSubsetInFormula(message) : error(message);
+            }
             case '?' -> {
                 if (inFormula) {
                     return readVariable();
                 }
                 throw error("variables are only allowed inside a formula");
             }
-            case '{' -> throw error(inFormula
-                    ? "nested formulae are not allowed in an N3 Patch"
-                    : "a formula cannot be used as a predicate");
-            case '_', '[' -> throw error("a blank node cannot be used as a predicate");
-            case '"', '\'' -> throw error("a literal cannot be used as a predicate");
+            case '{' -> throw inFormula
+                    ? outOfSubsetInFormula("nested formulae are not allowed in an N3 Patch")
+                    : error("a formula cannot be used as a predicate");
+            case '_', '[' -> throw inFormula
+                    ? outOfSubsetInFormula("a blank node cannot be used as a predicate")
+                    : error("a blank node cannot be used as a predicate");
+            case '"', '\'' -> throw inFormula
+                    ? outOfSubsetInFormula("a literal cannot be used as a predicate")
+                    : error("a literal cannot be used as a predicate");
             default -> {
                 if (prefixedNameAhead()) {
                     return readPrefixedName();
@@ -279,16 +308,16 @@ final class N3PatchParser {
         switch (c) {
             case '{' -> {
                 if (inFormula) {
-                    throw error("nested formulae are not allowed in an N3 Patch");
+                    throw outOfSubsetInFormula("nested formulae are not allowed in an N3 Patch");
                 }
                 return parseFormula();
             }
             case '<' -> {
-                rejectReverseImplication();
+                rejectReverseImplication(inFormula);
                 return readIri();
             }
             case '[' -> {
-                return readAnon();
+                return readAnon(inFormula);
             }
             case '_' -> {
                 return readBlankNodeLabel();
@@ -299,7 +328,10 @@ final class N3PatchParser {
                 }
                 throw error("variables are only allowed inside a formula");
             }
-            case '(' -> throw error("unsupported N3 construct: collections are outside the N3 Patch subset");
+            case '(' -> {
+                String message = "unsupported N3 construct: collections are outside the N3 Patch subset";
+                throw inFormula ? outOfSubsetInFormula(message) : error(message);
+            }
             case '"', '\'' -> {
                 return readStringLiteral();
             }
@@ -335,6 +367,17 @@ final class N3PatchParser {
                 break;
             }
             if (peek() == '@') {
+                // A recognized N3 declaration or quantifier is well-formed N3 that simply is
+                // not a triple, so it breaches the "only triples and/or triple patterns"
+                // constraint → 422. An unrecognized @word is just garbage → 400.
+                int mark = pos;
+                pos++;
+                String word = eof() || !isAsciiLetter(src.charAt(pos)) ? "" : readBareWord();
+                pos = mark;
+                if (RECOGNIZED_N3_DIRECTIVES.contains(word)) {
+                    throw outOfSubsetInFormula("the N3 directive @" + word
+                            + " is not allowed inside a formula");
+                }
                 throw error("directives are not allowed inside a formula");
             }
             Node subject = parseFormulaSubject();
@@ -358,18 +401,20 @@ final class N3PatchParser {
         int c = peek();
         return switch (c) {
             case '<' -> {
-                rejectReverseImplication();
+                rejectReverseImplication(true);
                 yield readIri();
             }
             case '?' -> readVariable();
-            case '[' -> readAnon();
+            case '[' -> readAnon(true);
             case '_' -> readBlankNodeLabel();
-            case '{' -> throw error("nested formulae are not allowed in an N3 Patch");
-            case '(' -> throw error("unsupported N3 construct: collections are outside the N3 Patch subset");
-            case '"', '\'' -> throw error("a literal cannot be the subject of a triple pattern");
+            case '{' -> throw outOfSubsetInFormula("nested formulae are not allowed in an N3 Patch");
+            case '(' -> throw outOfSubsetInFormula(
+                    "unsupported N3 construct: collections are outside the N3 Patch subset");
+            case '"', '\'' -> throw outOfSubsetInFormula(
+                    "a literal cannot be the subject of a triple pattern");
             default -> {
                 if (isDigit(c) || c == '+' || c == '-' || c == '.') {
-                    throw error("a literal cannot be the subject of a triple pattern");
+                    throw outOfSubsetInFormula("a literal cannot be the subject of a triple pattern");
                 }
                 yield parsePrefixedNameOnly("as a triple pattern subject");
             }
@@ -456,9 +501,10 @@ final class N3PatchParser {
         return src.substring(start, pos);
     }
 
-    private void rejectReverseImplication() {
+    private void rejectReverseImplication(boolean inFormula) {
         if (peekAt(1) == '=') {
-            throw error("unsupported N3 construct: '<=' is outside the N3 Patch subset");
+            String message = "unsupported N3 construct: '<=' is outside the N3 Patch subset";
+            throw inFormula ? outOfSubsetInFormula(message) : error(message);
         }
     }
 
@@ -600,11 +646,12 @@ final class N3PatchParser {
         return NodeFactory.createBlankNode(src.substring(start, pos));
     }
 
-    private Node readAnon() {
+    private Node readAnon(boolean inFormula) {
         expect('[');
         skipWs();
         if (peek() != ']') {
-            throw error("blank node property lists are not supported in an N3 Patch document");
+            String message = "blank node property lists are not supported in an N3 Patch document";
+            throw inFormula ? outOfSubsetInFormula(message) : error(message);
         }
         pos++;
         return NodeFactory.createBlankNode();
@@ -1014,6 +1061,26 @@ final class N3PatchParser {
     }
 
     private CisternException.BadInput error(String message) {
+        return new CisternException.BadInput("Invalid N3 Patch document " + position() + ": " + message);
+    }
+
+    /**
+     * Content inside a formula that N3 itself recognizes but that is not a plain triple or
+     * triple pattern. §n3-patch lists this among the patch constraints — the formulae must
+     * be "non-nested cited formulae [N3] consisting only of triples and/or triple patterns
+     * [SPARQL11-QUERY]" — and a document breaching a listed constraint is answered with 422,
+     * not 400: it is well-formed N3 the server declines to process, not malformed input.
+     *
+     * <p>Only used at detection sites <em>inside</em> a formula. The same constructs at
+     * document level are not covered by that constraint sentence and stay {@link #error}.
+     */
+    private CisternException.UnprocessableEntity outOfSubsetInFormula(String message) {
+        return new CisternException.UnprocessableEntity("Invalid N3 Patch document " + position()
+                + ": " + message + " — a formula must consist only of triples and/or triple "
+                + "patterns (Solid Protocol, Modifying Resources Using N3 Patches)");
+    }
+
+    private String position() {
         int line = 1;
         int column = 1;
         int limit = Math.min(pos, src.length());
@@ -1025,7 +1092,6 @@ final class N3PatchParser {
                 column++;
             }
         }
-        return new CisternException.BadInput(
-                "Invalid N3 Patch document at line " + line + ", column " + column + ": " + message);
+        return "at line " + line + ", column " + column;
     }
 }

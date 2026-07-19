@@ -64,9 +64,14 @@ regression.
   (a) **422** (`CisternException.UnprocessableEntity`, new) — well-formed N3 that violates the
   spec's patch constraints: not exactly one patch resource, missing/duplicate
   `solid:InsertDeletePatch` type, more than one of each formula, a non-formula formula object,
-  blank nodes in `inserts`/`deletes`, or `inserts`/`deletes` variables not occurring in `where`.
+  blank nodes in `inserts`/`deletes`, `inserts`/`deletes` variables not occurring in `where`,
+  **and** recognized N3 content inside a formula that is not a plain triple/triple pattern
+  (nested formulae, collections, implications, declarations/quantifiers, blank-node property
+  lists, terms in RDF-invalid positions) — the formulae must consist "only of triples and/or
+  triple patterns".
   (b) **400** (`BadInput`) — unparseable entity: wrong/missing content type, non-UTF-8 bytes,
-  null args, and lexical/grammar errors (including N3 constructs outside the patch subset).
+  null args, and malformed N3. Out-of-subset constructs at *document* level stay 400: the
+  formula-content constraint does not reach them.
   (c) **409** (`Conflict`) — three conditions, all from the spec's processing rules: no `where`
   mapping, multiple `where` mappings, and `deletes` of triples absent from the graph.
   Deliberate limitation: blank nodes in `solid:where` are refused as **422** (spec-well-formed,

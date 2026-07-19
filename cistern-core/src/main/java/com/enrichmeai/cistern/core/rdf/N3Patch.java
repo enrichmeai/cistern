@@ -38,13 +38,18 @@ import java.util.Set;
  * spec distinguishes:</strong>
  * <ul>
  *   <li>{@link #parse} → {@link CisternException.BadInput} (400): the document is not
- *       parseable — wrong or missing content type, non-UTF-8 bytes, null arguments, or a
- *       lexical/grammar error (unbalanced braces, bad IRIs, truncation, an N3 construct
- *       outside the patch subset).</li>
+ *       parseable — wrong or missing content type, non-UTF-8 bytes, null arguments, or
+ *       malformed N3 (unbalanced braces, truncation, bad IRIs, malformed literals, stray
+ *       tokens, unknown directives). Out-of-subset N3 constructs at <em>document</em> level
+ *       also land here: the formula-content constraint does not govern them.</li>
  *   <li>{@link #parse} → {@link CisternException.UnprocessableEntity} (422): the document is
  *       well-formed N3 but breaches the spec's patch constraints — §n3-patch, "Servers MUST
  *       respond with a 422 status code [RFC4918] if a patch document does not satisfy all of
- *       the above constraints."</li>
+ *       the above constraints." Besides the document-shape constraints, this includes
+ *       recognized N3 content <em>inside a formula</em> that is not a plain triple or triple
+ *       pattern (nested formulae, collections, implications, declarations/quantifiers, blank
+ *       node property lists, terms in RDF-invalid positions), since the formulae must consist
+ *       "only of triples and/or triple patterns".</li>
  *   <li>{@link #applyTo} → {@link CisternException.Conflict} (409): a valid patch that cannot
  *       be applied to <em>this</em> graph.</li>
  * </ul>

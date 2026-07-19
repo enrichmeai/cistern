@@ -30,9 +30,12 @@ import static org.junit.jupiter.params.provider.Arguments.arguments;
  * <ul>
  *   <li><strong>Syntax corruptions</strong> (unparseable) → {@link CisternException.BadInput}
  *       (400): hand-crafted grammar breaks, seeded truncations inside the patch statement,
- *       and seeded structural-character swaps.</li>
+ *       and seeded structural-character swaps. Out-of-subset N3 constructs at <em>document</em>
+ *       level belong here too — the formula-content constraint does not govern them.</li>
  *   <li><strong>Constraint violations</strong> (well-formed N3, invalid patch) →
- *       {@link CisternException.UnprocessableEntity} (422).</li>
+ *       {@link CisternException.UnprocessableEntity} (422): the document-shape constraints,
+ *       plus recognized N3 content <em>inside a formula</em> that is not a plain triple or
+ *       triple pattern.</li>
  * </ul>
  *
  * <p>Neither exception type is a subtype of the other, so each {@code assertThrows} enforces
@@ -103,8 +106,6 @@ class N3PatchFuzzTest {
         cases.add(arguments("opening brace removed", VALID.replaceFirst("\\{", "")));
         cases.add(arguments("closing brace removed", VALID.replaceFirst("\\}", "")));
         cases.add(arguments("extra closing brace", VALID + "}\n"));
-        cases.add(arguments("nested formula",
-                PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { ?a ex:knows { ?b ex:c \"d\". }. }."));
         cases.add(arguments("IRI containing a space",
                 "@prefix ex: <http://ex ample.org/terms#>.\n" + SOLID_PREFIX + "_:p a solid:InsertDeletePatch."));
         cases.add(arguments("unterminated IRI at end of document",
@@ -112,31 +113,29 @@ class N3PatchFuzzTest {
         cases.add(arguments("variable as patch subject", PREFIXES + "?p a solid:InsertDeletePatch."));
         cases.add(arguments("variable outside a formula as object",
                 PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts ?x."));
-        cases.add(arguments("@forAll quantifier",
+        // Out-of-subset N3 at DOCUMENT level: the formula-content constraint does not reach it.
+        cases.add(arguments("@forAll quantifier at document level",
                 "@forAll ?x. " + PREFIXES + "_:p a solid:InsertDeletePatch."));
-        cases.add(arguments("@forSome quantifier",
+        cases.add(arguments("@forSome quantifier at document level",
                 "@forSome _:x. " + PREFIXES + "_:p a solid:InsertDeletePatch."));
-        cases.add(arguments("collection in a formula",
-                PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts { <#a> ex:list ( \"1\" \"2\" ). }."));
-        cases.add(arguments("implication as predicate", PREFIXES + "_:p => _:q."));
-        cases.add(arguments("reverse implication as predicate", PREFIXES + "_:p <= _:q."));
-        cases.add(arguments("equality as predicate", PREFIXES + "_:p = _:q."));
+        cases.add(arguments("implication as predicate at document level", PREFIXES + "_:p => _:q."));
+        cases.add(arguments("reverse implication at document level", PREFIXES + "_:p <= _:q."));
+        cases.add(arguments("equality as predicate at document level", PREFIXES + "_:p = _:q."));
         cases.add(arguments("undeclared prefix",
                 SOLID_PREFIX + "_:p a solid:InsertDeletePatch; solid:inserts { <#a> ex:b \"c\". }."));
-        cases.add(arguments("literal as statement subject", PREFIXES + "\"lit\" a solid:InsertDeletePatch."));
-        cases.add(arguments("numeric literal as statement subject", PREFIXES + "42 a solid:InsertDeletePatch."));
-        cases.add(arguments("literal as triple pattern subject",
-                PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { \"lit\" ex:a ?v. }."));
-        cases.add(arguments("blank node property list with content",
+        cases.add(arguments("literal as statement subject at document level",
+                PREFIXES + "\"lit\" a solid:InsertDeletePatch."));
+        cases.add(arguments("numeric literal as statement subject at document level",
+                PREFIXES + "42 a solid:InsertDeletePatch."));
+        cases.add(arguments("blank node property list at document level",
                 PREFIXES + "[ ex:a \"b\" ] a solid:InsertDeletePatch."));
+        cases.add(arguments("unknown directive inside a formula (garbage, not an N3 construct)",
+                PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts { @nonsense x. <#a> ex:b \"c\". }."));
         cases.add(arguments("unterminated string literal",
                 PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts { <#a> ex:b \"unterminated. }."));
         cases.add(arguments("bad unicode escape in string",
                 PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts { <#a> ex:b \"\\uZZZZ\". }."));
         cases.add(arguments("junk after the final statement", VALID + "\ngarbage"));
-        cases.add(arguments("prefix directive inside a formula",
-                PREFIXES + "_:p a solid:InsertDeletePatch;"
-                        + " solid:inserts { @prefix x: <http://x.example/>. <#a> ex:b \"c\". }."));
         cases.add(arguments("uppercase @PREFIX directive",
                 "@PREFIX solid: <http://www.w3.org/ns/solid/terms#>.\n_:p a solid:InsertDeletePatch."));
         cases.add(arguments("prefix declaration without a colon",
@@ -169,13 +168,18 @@ class N3PatchFuzzTest {
     }
 
     /**
-     * Structural-character swaps at seeded-random occurrences: unbalancing a brace, inverting
-     * an IRI delimiter, or replacing a ';' with a '{' always breaks the grammar.
+     * Structural-character swaps at seeded-random occurrences: unbalancing an opening brace,
+     * inverting an IRI delimiter, or replacing a ';' with a '{' always breaks the grammar at
+     * document level.
+     *
+     * <p>The {@code '}' -> '{'} swap is deliberately excluded here and covered as a 422 in
+     * {@link #constraintViolations()}: it leaves the formula unclosed, so the following
+     * {@code '{'} is indistinguishable from a nested formula at the detection site. See the
+     * documented gap in {@code N3PatchParser}'s javadoc.
      */
     private static void seededStructuralSwaps(List<Arguments> cases) {
         Map<Character, Character> swaps = Map.of(
                 '{', '}',
-                '}', '{',
                 '<', '>',
                 '>', '<',
                 ';', '{');
@@ -201,6 +205,24 @@ class N3PatchFuzzTest {
     }
 
     // ------------------------------------------------------------ UnprocessableEntity (422)
+
+    /**
+     * Replacing a formula's closing '}' with '{' — a genuine unbalanced-brace corruption that
+     * nevertheless surfaces as 422, because the unclosed formula makes the following '{' look
+     * exactly like a nested formula at the point of detection. Telling the two apart would
+     * require brace-balance lookahead, i.e. restructuring the parser; the architect ruling on
+     * PR #56 explicitly prefers a documented narrow gap over that. Asserted here so the
+     * behaviour is pinned rather than accidental.
+     */
+    private static void unbalancedClosingBraceSwaps(List<Arguments> cases) {
+        for (int i = 0; i < VALID.length(); i++) {
+            if (VALID.charAt(i) == '}') {
+                cases.add(arguments(
+                        "unbalanced '}'->'{' at index " + i + " (reads as a nested formula)",
+                        VALID.substring(0, i) + '{' + VALID.substring(i + 1)));
+            }
+        }
+    }
 
     static Stream<Arguments> constraintViolations() {
         List<Arguments> cases = new ArrayList<>();
@@ -258,6 +280,36 @@ class N3PatchFuzzTest {
         // Deliberate limitation, NOT a spec constraint — see issue #57.
         cases.add(arguments("blank node in where (deliberate limitation, issue #57)",
                 PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { _:x ex:b ?v. }."));
+        // "...non-nested cited formulae consisting only of triples and/or triple patterns":
+        // recognized N3 content inside a formula that is not a plain triple/triple pattern.
+        cases.add(arguments("nested formula as object",
+                PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { ?a ex:knows { ?b ex:c \"d\". }. }."));
+        cases.add(arguments("nested formula as subject",
+                PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { { ?b ex:c \"d\". } ex:k ?a. }."));
+        cases.add(arguments("collection in a formula",
+                PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts { <#a> ex:list ( \"1\" \"2\" ). }."));
+        cases.add(arguments("collection as formula subject",
+                PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { ( \"1\" ) ex:b ?v. }."));
+        cases.add(arguments("implication inside a formula",
+                PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { ?a => ?b. }."));
+        cases.add(arguments("equality inside a formula",
+                PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { ?a = ?b. }."));
+        cases.add(arguments("reverse implication inside a formula",
+                PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { ?a <= ?b. }."));
+        cases.add(arguments("@prefix declaration inside a formula",
+                PREFIXES + "_:p a solid:InsertDeletePatch;"
+                        + " solid:inserts { @prefix x: <http://x.example/>. <#a> ex:b \"c\". }."));
+        cases.add(arguments("@forAll quantifier inside a formula",
+                PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { @forAll ?x. ?x ex:b \"c\". }."));
+        cases.add(arguments("blank node property list inside a formula",
+                PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { [ ex:a \"b\" ] ex:c ?v. }."));
+        cases.add(arguments("literal as triple pattern subject",
+                PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { \"lit\" ex:a ?v. }."));
+        cases.add(arguments("literal as triple pattern predicate",
+                PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { ?s \"lit\" ?v. }."));
+        cases.add(arguments("blank node as triple pattern predicate",
+                PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { ?s _:b ?v. }."));
+        unbalancedClosingBraceSwaps(cases);
         return cases.stream();
     }
 }
