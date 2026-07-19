@@ -42,7 +42,7 @@ regression.
   container delete → Conflict, children of non-container → error, etag change-on-write,
   lastModified monotonicity. DoD: kit published as test-jar; in-memory reference impl
   (`InMemoryResourceStore`, test scope) passes it.
-- [ ] **T1.3 File backend.** cistern-storage-file: file-per-resource under
+- [x] **T1.3 File backend.** cistern-storage-file: file-per-resource under
   `cistern.storage.root`; sidecar metadata files (`.meta.json`: contentType, etag) — never
   guess type from extension; atomic writes (tmp + move); containers = directories. DoD:
   extends and passes the contract kit; survives kill-mid-write (tmp files ignored on read).
