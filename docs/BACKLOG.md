@@ -52,10 +52,15 @@ regression.
   managed triples) with Conflict (409 per Solid Protocol §5.3 — architect ruling on PR #52,
   spec text wins over the original BadInput wording). DoD: StepVerifier tests; a container
   GET shows exactly the live children.
-- [ ] **T1.5 N3 Patch engine.** Parse `text/n3` patch documents (solid:InsertionPatch /
-  solid:DeletionPatch / solid:where); apply to a graph; deletion of absent triples → 409
-  semantics (Conflict). DoD: the patch examples from the Solid Protocol spec text pass;
-  fuzz malformed patches → BadInput.
+- [x] **T1.5 N3 Patch engine.** Parse `text/n3` patch documents (the single
+  `solid:InsertDeletePatch` resource with `solid:where` / `solid:inserts` / `solid:deletes`
+  formulae — the spec vocabulary; the earlier `solid:InsertionPatch` / `solid:DeletionPatch`
+  sketch was from memory and is not in the Solid Protocol); apply to a graph; no where
+  mapping / multiple where mappings / deletion of absent triples → 409 semantics (Conflict).
+  DoD: the patch example from the Solid Protocol spec text passes; fuzz malformed patches →
+  BadInput. Done in `cistern-core` (`N3Patch`, `N3PatchParser`). Note for T2.7: the spec
+  answers a malformed patch with **422** and an unapplicable one with **409** — the parser
+  signals `BadInput` (400 today); the 400-vs-422 mapping is an open architect decision.
 
 ## Phase 2 — HTTP layer (cistern-webflux)
 
