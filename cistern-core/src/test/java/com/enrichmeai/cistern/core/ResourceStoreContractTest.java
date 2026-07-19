@@ -169,6 +169,51 @@ public abstract class ResourceStoreContractTest {
     }
 
     @Test
+    void putGetChildrenDeleteWithPercentEncodedSegments() {
+        // Issue #54: ancestor walking (parent(), intermediate-container creation,
+        // kind-flip checks) must operate on RAW paths, so percent-encoded segments that
+        // decode to raw-illegal characters (space, '.', non-ASCII) do not break the
+        // lifecycle and their raw spelling survives every containment listing. Pins the
+        // fix for EVERY backend that extends this kit.
+        ResourceIdentifier leaf = id("/enc%20oded/sub%2Edir/fi%C3%A9le.ttl");
+        ResourceIdentifier mid = id("/enc%20oded/sub%2Edir/");
+        ResourceIdentifier top = id("/enc%20oded/");
+
+        // put creates the leaf AND its encoded-name intermediate containers (§5.3).
+        StepVerifier.create(call(() -> store.put(leaf, turtle("<#x> a <#Y> ."))))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        // get round-trips the leaf with its raw percent-encoding intact.
+        StepVerifier.create(call(() -> store.get(leaf)))
+                .assertNext(stored -> {
+                    assertEquals(leaf, stored.identifier());
+                    assertEquals("/enc%20oded/sub%2Edir/fi%C3%A9le.ttl",
+                            stored.identifier().uri().getRawPath(),
+                            "raw percent-encoding must survive the storage round-trip");
+                })
+                .verifyComplete();
+
+        // Intermediate containers exist as real encoded-name resources.
+        for (ResourceIdentifier ancestor : new ResourceIdentifier[] {id("/"), top, mid}) {
+            StepVerifier.create(call(() -> store.exists(ancestor)))
+                    .expectNext(true)
+                    .as("encoded ancestor container must exist: " + ancestor.uri())
+                    .verifyComplete();
+        }
+
+        // Children at every level return identifiers with the RAW spellings preserved.
+        assertChildren(id("/"), Set.of(top));
+        assertChildren(top, Set.of(mid));
+        assertChildren(mid, Set.of(leaf));
+
+        // delete of the encoded-name leaf updates its parent's containment listing.
+        StepVerifier.create(call(() -> store.delete(leaf))).verifyComplete();
+        assertChildren(mid, Set.of());
+        StepVerifier.create(call(() -> store.exists(leaf))).expectNext(false).verifyComplete();
+    }
+
+    @Test
     void putReplaceKeepsIdentityAndChangesEtagWhenBytesDiffer() {
         ResourceIdentifier doc = id("/replace-me.ttl");
         StoredResource v1 = putAndReturn(doc, turtle("<#v> <#is> 1 ."));
