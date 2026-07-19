@@ -32,7 +32,7 @@ regression.
 
 ## Phase 1 — Core semantics (cistern-core)
 
-- [ ] **T1.1 RDF io.** `RdfIo` class: parse/serialize Turtle and JSON-LD via Jena; resolve
+- [x] **T1.1 RDF io.** `RdfIo` class: parse/serialize Turtle and JSON-LD via Jena; resolve
   relative URIs against the resource URI as base; reject malformed input with
   `CisternException.BadInput`. DoD: round-trip property tests Turtle⇄JSON-LD; malformed
   docs produce BadInput, not Jena exceptions leaking through.
