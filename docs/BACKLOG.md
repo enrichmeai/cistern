@@ -58,14 +58,19 @@ regression.
   sketch was from memory and is not in the Solid Protocol); apply to a graph; no where
   mapping / multiple where mappings / deletion of absent triples → 409 semantics (Conflict).
   DoD: the patch example from the Solid Protocol spec text passes; fuzz malformed patches →
-  BadInput. Done in `cistern-core` (`N3Patch`, `N3PatchParser`). Open architect decisions:
-  (a) the spec answers a malformed patch with **422** and an unapplicable one with **409** —
-  the parser signals `BadInput` (400 today); the 400-vs-422 mapping is deferred to T2.7.
-  (b) **Deviation:** the spec forbids blank nodes only in `solid:inserts` / `solid:deletes`,
-  so a `solid:where` formula with a ground blank-node triple is spec-well-formed; Cistern
-  rejects it as `BadInput` because the spec's variable-mapping algorithm does not define
-  blank-node matching (CSS treats such blank nodes as existentials, like variables). Refusing
-  is the strict-by-default choice pending an architect ruling.
+  BadInput. Done in `cistern-core` (`N3Patch`, `N3PatchParser`). Three status codes are kept
+  distinct at the core boundary, because the HTTP layer cannot reconstruct them afterwards
+  (architect ruling, PR #56):
+  (a) **422** (`CisternException.UnprocessableEntity`, new) — well-formed N3 that violates the
+  spec's patch constraints: not exactly one patch resource, missing/duplicate
+  `solid:InsertDeletePatch` type, more than one of each formula, a non-formula formula object,
+  blank nodes in `inserts`/`deletes`, or `inserts`/`deletes` variables not occurring in `where`.
+  (b) **400** (`BadInput`) — unparseable entity: wrong/missing content type, non-UTF-8 bytes,
+  null args, and lexical/grammar errors (including N3 constructs outside the patch subset).
+  (c) **409** (`Conflict`) — three conditions, all from the spec's processing rules: no `where`
+  mapping, multiple `where` mappings, and `deletes` of triples absent from the graph.
+  Deliberate limitation: blank nodes in `solid:where` are refused as **422** (spec-well-formed,
+  but the mapping algorithm is defined over variables only) — revisit with CTH evidence, #57.
 
 ## Phase 2 — HTTP layer (cistern-webflux)
 

@@ -207,6 +207,11 @@ class N3PatchParserTest {
         }
     }
 
+    /**
+     * Lexical/grammar errors and unparseable entities → {@link CisternException.BadInput}
+     * (400). Note {@code UnprocessableEntity} is not a subtype of {@code BadInput}, so these
+     * assertions genuinely enforce the split.
+     */
     @Nested
     class RejectsAsBadInput {
 
@@ -239,91 +244,9 @@ class N3PatchParserTest {
         }
 
         @Test
-        void documentWithoutPatchResource() {
-            // "A patch document MUST contain one or more patch resources" (§n3-patch).
-            assertBadInput("");
-            assertBadInput(PREFIXES);
-        }
-
-        @Test
-        void missingInsertDeletePatchType() {
-            // "A patch resource MUST contain a triple ?patch rdf:type solid:InsertDeletePatch" (§n3-patch).
-            assertBadInput(PREFIXES + "_:p a solid:Patch; solid:inserts { <#a> ex:b \"c\". }.");
-            assertBadInput(PREFIXES + "_:p solid:inserts { <#a> ex:b \"c\". }.");
-        }
-
-        @Test
-        void multiplePatchResources() {
-            // "The patch document MUST contain exactly one patch resource" (§n3-patch).
-            assertBadInput(PREFIXES
-                    + "_:p a solid:InsertDeletePatch. _:q a solid:InsertDeletePatch.");
-        }
-
-        @Test
-        void duplicateFormulaTriples() {
-            // "A patch resource MUST contain at most one triple of the form
-            //  ?patch solid:inserts ?insertions" (§n3-patch) — and likewise deletes/where.
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch;"
-                    + " solid:inserts { <#a> ex:b \"c\". }; solid:inserts { <#d> ex:e \"f\". }.");
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch;"
-                    + " solid:where { ?a ex:b \"c\". }; solid:where { ?a ex:e \"f\". }.");
-        }
-
-        @Test
-        void formulaPredicateObjectMustBeFormula() {
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts <#a>.");
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch; solid:where \"x\".");
-        }
-
-        @Test
-        void unexpectedPredicateOnPatchResource() {
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch; ex:comment \"hi\".");
-        }
-
-        @Test
-        void extraneousTripleOutsideThePatchResource() {
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch. <#x> ex:comment \"hi\".");
-        }
-
-        @Test
-        void rdfTypeOfAnotherClass() {
-            assertBadInput(PREFIXES + "_:p a ex:Thing, solid:InsertDeletePatch.");
-        }
-
-        @Test
         void variablesOutsideFormulae() {
             assertBadInput(PREFIXES + "?p a solid:InsertDeletePatch.");
             assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts ?x.");
-        }
-
-        @Test
-        void insertsVariableNotOccurringInWhere() {
-            // "The ?insertions and ?deletions formulae MUST NOT contain variables that do
-            //  not occur in the ?conditions formula" (§n3-patch).
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts { ?x ex:b \"c\". }.");
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch;"
-                    + " solid:where { ?y ex:a \"v\". }; solid:inserts { ?x ex:b ?y. }.");
-        }
-
-        @Test
-        void deletesVariableNotOccurringInWhere() {
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch; solid:deletes { ?x ex:b \"c\". }.");
-        }
-
-        @Test
-        void blankNodesInInsertsOrDeletes() {
-            // "The ?insertions and ?deletions formulae MUST NOT contain blank nodes" (§n3-patch).
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts { <#a> ex:b _:x. }.");
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch; solid:deletes { _:x ex:b \"c\". }.");
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts { [] ex:b \"c\". }.");
-        }
-
-        @Test
-        void blankNodesInWhere() {
-            // Stricter than the spec (which constrains only ?insertions/?deletions):
-            // blank-node matching semantics in ?conditions are undefined by the
-            // variable-mapping rule, so Cistern rejects them. Flagged on the T1.5 PR.
-            assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { _:x ex:b ?v. }.");
         }
 
         @Test
@@ -378,6 +301,110 @@ class N3PatchParserTest {
         void directivesInsideFormulae() {
             assertBadInput(PREFIXES + "_:p a solid:InsertDeletePatch;"
                     + " solid:inserts { @prefix x: <http://x.example/>. <#a> ex:b \"c\". }.");
+        }
+    }
+
+    /**
+     * Documents that are well-formed N3 but breach the spec's enumerated patch constraints →
+     * {@link CisternException.UnprocessableEntity} (422). §n3-patch: "Servers MUST respond
+     * with a 422 status code [RFC4918] if a patch document does not satisfy all of the above
+     * constraints."
+     */
+    @Nested
+    class RejectsAsUnprocessableEntity {
+
+        private void assertUnprocessable(String document) {
+            assertThrows(CisternException.UnprocessableEntity.class, () -> parse(document));
+        }
+
+        @Test
+        void documentWithoutPatchResource() {
+            // "A patch document MUST contain one or more patch resources" (§n3-patch).
+            // An empty or directives-only document is well-formed N3, hence 422 not 400.
+            assertUnprocessable("");
+            assertUnprocessable("   \n\t\n");
+            assertUnprocessable("# just a comment\n");
+            assertUnprocessable(PREFIXES);
+        }
+
+        @Test
+        void missingInsertDeletePatchType() {
+            // "A patch resource MUST contain a triple ?patch rdf:type solid:InsertDeletePatch" (§n3-patch).
+            assertUnprocessable(PREFIXES + "_:p a solid:Patch; solid:inserts { <#a> ex:b \"c\". }.");
+            assertUnprocessable(PREFIXES + "_:p solid:inserts { <#a> ex:b \"c\". }.");
+        }
+
+        @Test
+        void multiplePatchResources() {
+            // "The patch document MUST contain exactly one patch resource" (§n3-patch).
+            assertUnprocessable(PREFIXES
+                    + "_:p a solid:InsertDeletePatch. _:q a solid:InsertDeletePatch.");
+        }
+
+        @Test
+        void duplicateFormulaTriples() {
+            // "A patch resource MUST contain at most one triple of the form
+            //  ?patch solid:inserts ?insertions" (§n3-patch) — and likewise deletes/where.
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:inserts { <#a> ex:b \"c\". }; solid:inserts { <#d> ex:e \"f\". }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { ?a ex:b \"c\". }; solid:where { ?a ex:e \"f\". }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:deletes { <#a> ex:b \"c\". }; solid:deletes { <#d> ex:e \"f\". }.");
+        }
+
+        @Test
+        void formulaPredicateObjectMustBeFormula() {
+            // "?deletions, ?insertions, and ?conditions MUST be non-nested cited formulae" (§n3-patch).
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts <#a>.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch; solid:where \"x\".");
+        }
+
+        @Test
+        void unexpectedPredicateOnPatchResource() {
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch; ex:comment \"hi\".");
+        }
+
+        @Test
+        void extraneousTripleOutsideThePatchResource() {
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch. <#x> ex:comment \"hi\".");
+        }
+
+        @Test
+        void rdfTypeOfAnotherClass() {
+            assertUnprocessable(PREFIXES + "_:p a ex:Thing, solid:InsertDeletePatch.");
+        }
+
+        @Test
+        void insertsVariableNotOccurringInWhere() {
+            // "The ?insertions and ?deletions formulae MUST NOT contain variables that do
+            //  not occur in the ?conditions formula" (§n3-patch).
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts { ?x ex:b \"c\". }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch;"
+                    + " solid:where { ?y ex:a \"v\". }; solid:inserts { ?x ex:b ?y. }.");
+        }
+
+        @Test
+        void deletesVariableNotOccurringInWhere() {
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch; solid:deletes { ?x ex:b \"c\". }.");
+        }
+
+        @Test
+        void blankNodesInInsertsOrDeletes() {
+            // "The ?insertions and ?deletions formulae MUST NOT contain blank nodes" (§n3-patch).
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts { <#a> ex:b _:x. }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch; solid:deletes { _:x ex:b \"c\". }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch; solid:inserts { [] ex:b \"c\". }.");
+        }
+
+        @Test
+        void blankNodesInWhere() {
+            // Deliberate limitation, NOT a spec constraint: the spec forbids blank nodes only
+            // in inserts/deletes, so this document is spec-well-formed. Cistern refuses it as
+            // 422 ("well-formed but unprocessable") because the spec's mapping algorithm is
+            // defined over variables only. Revisit with harness evidence — issue #57.
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { _:x ex:b ?v. }.");
+            assertUnprocessable(PREFIXES + "_:p a solid:InsertDeletePatch; solid:where { <#a> ex:b _:x. }.");
         }
     }
 

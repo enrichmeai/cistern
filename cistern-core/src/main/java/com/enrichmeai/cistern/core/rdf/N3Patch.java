@@ -34,18 +34,23 @@ import java.util.Set;
  * from the document is the empty list ("When not present, they are presumed to be the empty
  * formula {}" — §n3-patch).
  *
- * <p><strong>Error split (load-bearing):</strong> {@link #parse} signals only
- * {@link CisternException.BadInput} — a malformed document, a violation of the spec's patch
- * constraints, or an N3 construct outside the patch subset. {@link #applyTo} signals only
- * {@link CisternException.Conflict} — a well-formed patch that cannot be applied to this
- * graph (409 semantics per spec). Parsing never signals Conflict; applying never signals
- * BadInput. No Jena or parser-internal exception escapes either method.
- *
- * <p>Note for the HTTP layer (T2.7): the spec requires <em>422</em> for documents violating
- * the patch constraints (§n3-patch, "Servers MUST respond with a 422 status code
- * [RFC4918]...") and <em>409</em> for patches that cannot be applied. {@code BadInput}
- * currently maps to 400; the 400-vs-422 distinction is an open architect decision recorded
- * on the T1.5 PR.
+ * <p><strong>Error split (load-bearing) — three-way, mirroring the three status codes the
+ * spec distinguishes:</strong>
+ * <ul>
+ *   <li>{@link #parse} → {@link CisternException.BadInput} (400): the document is not
+ *       parseable — wrong or missing content type, non-UTF-8 bytes, null arguments, or a
+ *       lexical/grammar error (unbalanced braces, bad IRIs, truncation, an N3 construct
+ *       outside the patch subset).</li>
+ *   <li>{@link #parse} → {@link CisternException.UnprocessableEntity} (422): the document is
+ *       well-formed N3 but breaches the spec's patch constraints — §n3-patch, "Servers MUST
+ *       respond with a 422 status code [RFC4918] if a patch document does not satisfy all of
+ *       the above constraints."</li>
+ *   <li>{@link #applyTo} → {@link CisternException.Conflict} (409): a valid patch that cannot
+ *       be applied to <em>this</em> graph.</li>
+ * </ul>
+ * Parsing never signals Conflict; applying never signals BadInput or UnprocessableEntity. No
+ * Jena or parser-internal exception escapes either method. The 400/422 split is made here
+ * because the HTTP layer (T2.7) cannot reconstruct it after the fact.
  *
  * <p>Deliberately synchronous, like {@link RdfIo}: parsing and application are CPU-bound,
  * so callers lift invocations into their reactive chains ({@code Mono.fromCallable}).
@@ -83,9 +88,11 @@ public record N3Patch(List<Triple> where, List<Triple> deletes, List<Triple> ins
      * @param resource       the resource the patch targets; its URI is the base for
      *                       relative IRI resolution
      * @return the parsed, validated patch
-     * @throws CisternException.BadInput on null arguments, a wrong content type, malformed
-     *                                   N3, a violation of the spec's patch constraints, or
-     *                                   an unsupported N3 construct
+     * @throws CisternException.BadInput            on null arguments, a wrong content type,
+     *                                              non-UTF-8 bytes, malformed N3, or an N3
+     *                                              construct outside the patch subset (400)
+     * @throws CisternException.UnprocessableEntity on well-formed N3 that violates the spec's
+     *                                              patch constraints (422)
      */
     public static N3Patch parse(Representation representation, ResourceIdentifier resource) {
         if (representation == null) {

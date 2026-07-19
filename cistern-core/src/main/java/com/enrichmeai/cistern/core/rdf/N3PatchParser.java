@@ -39,14 +39,23 @@ import java.util.Set;
  *
  * <p>Everything else — N3 implications ({@code =>}, {@code <=}, {@code =}), quantifiers
  * ({@code @forAll}, {@code @forSome}), collections, paths, blank node property lists with
- * content, nested formulae, variables outside formulae — is rejected with
- * {@link CisternException.BadInput}, as are all violations of the spec's patch constraints
- * (which the spec answers with 422; see the note on {@link N3Patch}).
+ * content, nested formulae, variables outside formulae — is a lexical/grammar error and is
+ * rejected with {@link CisternException.BadInput} (400).
  *
- * <p>Deviation (strictness over cleverness, flagged on the T1.5 PR): blank nodes inside the
- * {@code solid:where} formula are rejected as unsupported. The spec forbids them only in
- * {@code ?insertions}/{@code ?deletions}; in {@code ?conditions} their matching semantics
- * are undefined by the spec's variable-mapping rule, so Cistern refuses rather than guesses.
+ * <p>Violations of the spec's enumerated patch constraints are a separate, coarser failure:
+ * the document parses as N3 but is not a usable patch, so it is rejected with
+ * {@link CisternException.UnprocessableEntity} (422), as §n3-patch mandates. The dividing
+ * line is mechanical: anything the lexer/grammar rejects is {@code BadInput}; anything
+ * {@link #validate} rejects is {@code UnprocessableEntity}.
+ *
+ * <p><strong>Deliberate limitation — blank nodes in {@code solid:where}.</strong> The spec
+ * forbids blank nodes only in {@code ?insertions}/{@code ?deletions}, so a {@code ?conditions}
+ * formula containing a ground blank-node triple is spec-well-formed. Cistern nonetheless
+ * refuses it, classified as {@link CisternException.UnprocessableEntity} (422 — "well-formed
+ * but I cannot process it", the honest answer; 400 would wrongly claim the document is
+ * malformed). The reason is that the spec's processing rule is defined over <em>variable</em>
+ * mappings only and says nothing about matching blank nodes, so any behaviour here would be
+ * invention. To revisit with harness evidence during T2.7/T3.3 — see issue #57.
  */
 final class N3PatchParser {
 
@@ -822,9 +831,10 @@ final class N3PatchParser {
      */
     private N3Patch validate(List<OuterTriple> triples) {
         if (triples.isEmpty()) {
-            throw new CisternException.BadInput(
-                    "Invalid N3 Patch document: it contains no patch resource "
-                            + "(a triple '?patch a solid:InsertDeletePatch' is required)");
+            // "A patch document MUST contain one or more patch resources" (§n3-patch): an
+            // empty (or directives-only) document is well-formed N3, so this is 422, not 400.
+            throw constraintError("it contains no patch resource "
+                    + "(a triple '?patch a solid:InsertDeletePatch' is required)");
         }
         Set<Node> subjects = new LinkedHashSet<>();
         boolean hasRequiredType = false;
@@ -891,9 +901,11 @@ final class N3PatchParser {
         for (Triple triple : triples) {
             if (triple.getSubject().isBlank() || triple.getObject().isBlank()) {
                 if (predicate.equals("solid:where")) {
-                    // Stricter than the spec, which forbids blank nodes only in
-                    // ?insertions/?deletions; see the class Javadoc.
-                    throw constraintError("blank nodes in the solid:where formula are not supported");
+                    // Spec-well-formed but deliberately unprocessable: the mapping algorithm
+                    // is defined over variables only. See the class Javadoc and issue #57.
+                    throw constraintError("blank nodes in the solid:where formula are not "
+                            + "supported: the specification defines the mapping algorithm over "
+                            + "variables only and leaves blank-node matching undefined");
                 }
                 throw constraintError("the " + predicate + " formula must not contain blank nodes");
             }
@@ -921,8 +933,14 @@ final class N3PatchParser {
         return variables;
     }
 
-    private CisternException.BadInput constraintError(String message) {
-        return new CisternException.BadInput("Invalid N3 Patch document: " + message
+    /**
+     * A document that is well-formed N3 but breaches one of the spec's enumerated patch
+     * constraints — the server can parse it and cannot process it, which is exactly 422
+     * (RFC 4918), as §n3-patch mandates: "Servers MUST respond with a 422 status code if a
+     * patch document does not satisfy all of the above constraints."
+     */
+    private CisternException.UnprocessableEntity constraintError(String message) {
+        return new CisternException.UnprocessableEntity("Invalid N3 Patch document: " + message
                 + " (Solid Protocol, Modifying Resources Using N3 Patches)");
     }
 
