@@ -18,7 +18,7 @@ regression.
 
 ## Phase 0 — Bootstrap
 
-- [ ] **T0.1 Build green.** `mvn -q verify` passes from a clean checkout. Fix anything the
+- [x] **T0.1 Build green.** `mvn -q verify` passes from a clean checkout. Fix anything the
   scaffold got wrong (missing deps, plugin versions). DoD: CI badge green on main.
 - [ ] **T0.2 Dependency audit.** Verify/bump every version in the parent POM to latest
   stable (Spring Boot 3.5.x line, Jena 5.x, Nimbus, Titanium, MCP SDK). Record chosen
