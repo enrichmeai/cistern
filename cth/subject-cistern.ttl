@@ -1,13 +1,29 @@
 # Test-subject description for the Solid conformance test harness.
-# T0.4: flesh this out from the examples in
-# https://github.com/solid-contrib/specification-tests (test-subjects.ttl) —
-# fields below are the known-required skeleton, values to be verified there.
+# Format follows the real examples in
+# https://github.com/solid-contrib/specification-tests/blob/main/test-subjects.ttl
+# (vocabulary: https://github.com/solid/conformance-test-harness/vocab#).
+# The subject IRI must match the --target flag in run-cth.sh.
+#
+# NOTE: the CTH reads only solid-test:skip from this file as configuration.
+# We deliberately declare no skip tags — honest numbers only. Server location and
+# user credentials are supplied as environment variables by run-cth.sh.
 
-@prefix solid-test: <https://github.com/solid/conformance-test-harness/vocab#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix doap: <http://usefulinc.com/ns/doap#> .
+@prefix earl: <http://www.w3.org/ns/earl#> .
+@prefix solid-test: <https://github.com/solid/conformance-test-harness/vocab#> .
 
 <https://github.com/enrichmeai/cistern>
-    a doap:Project ;
-    doap:name "Cistern" ;
-    solid-test:skip "" ;    # keep empty — we do not skip suites to look good
-    solid-test:origin <http://localhost:3000> .
+    a earl:Software, earl:TestSubject ;
+    doap:name "Cistern"@en ;
+    doap:release <https://github.com/enrichmeai/cistern#test-subject-release> ;
+    doap:developer <https://github.com/enrichmeai> ;
+    doap:homepage <https://github.com/enrichmeai/cistern> ;
+    doap:description "Open, self-hostable Solid pod server for the AI era: JVM-native, reactive, MCP-fronted."@en ;
+    doap:programming-language "Java"@en ;
+    rdfs:comment "Pre-alpha: no HTTP resource layer and no Solid-OIDC yet; baseline runs capture harness wiring only (T0.4)."@en .
+
+<https://github.com/enrichmeai/cistern#test-subject-release>
+    doap:revision "0.1.0-SNAPSHOT" ;
+    doap:created "2026-07-19"^^xsd:date .
