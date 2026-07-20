@@ -24,15 +24,17 @@ public record CisternProperties(String baseUrl, Storage storage) {
 
     private static final String DEFAULT_BASE_URL = "http://localhost:3000";
 
+    /** Insignificant on the base URL: every request path already supplies its own leading one. */
+    private static final String TRAILING_SEPARATOR = "/";
+
     public CisternProperties {
         baseUrl = (baseUrl == null || baseUrl.isBlank()) ? DEFAULT_BASE_URL : baseUrl.trim();
-        while (baseUrl.endsWith("/")) {
-            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        while (baseUrl.endsWith(TRAILING_SEPARATOR)) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - TRAILING_SEPARATOR.length());
         }
         URI parsed = URI.create(baseUrl);
         if (!parsed.isAbsolute() || parsed.getRawFragment() != null) {
-            throw new IllegalArgumentException(
-                    "cistern.base-url must be an absolute URI without a fragment: " + baseUrl);
+            throw new IllegalArgumentException(WebfluxMessage.BASE_URL_INVALID.format(baseUrl));
         }
         storage = storage == null ? new Storage(null) : storage;
     }

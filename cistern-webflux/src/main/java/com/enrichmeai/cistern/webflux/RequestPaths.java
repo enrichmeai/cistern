@@ -48,6 +48,23 @@ import java.util.Locale;
 @Component
 public class RequestPaths {
 
+    /** The URI path separator; also the container marker (Solid Protocol §3.1). */
+    private static final String SEPARATOR = "/";
+
+    /** Two separators with nothing between them: a segment the store cannot name. */
+    private static final String EMPTY_SEGMENT = SEPARATOR + SEPARATOR;
+
+    /** Percent-encoded {@code /}, upper-cased for a case-insensitive comparison. */
+    private static final String ENCODED_SLASH = "%2F";
+
+    private static final String CURRENT_SEGMENT = ".";
+    private static final String PARENT_SEGMENT = "..";
+
+    private static final String[] NO_SEGMENTS = new String[0];
+
+    /** Negative limit for {@link String#split}: trailing empty segments are kept, not hidden. */
+    private static final int KEEP_TRAILING_EMPTY = -1;
+
     private final String baseUrl;
 
     public RequestPaths(CisternProperties properties) {
@@ -65,22 +82,22 @@ public class RequestPaths {
 
     /** Package-visible seam so the rules can be unit-tested without an HTTP stack. */
     ResourceIdentifier identifierFor(String rawPath) {
-        if (rawPath == null || !rawPath.startsWith("/")) {
+        if (rawPath == null || !rawPath.startsWith(SEPARATOR)) {
             throw new CisternException.BadInput(
-                    "Request target must be an absolute path: " + rawPath);
+                    WebfluxMessage.TARGET_NOT_ABSOLUTE.format(rawPath));
         }
-        if (rawPath.contains("//")) {
+        if (rawPath.contains(EMPTY_SEGMENT)) {
             throw new CisternException.BadInput(
-                    "Empty path segment in request target: " + rawPath);
+                    WebfluxMessage.TARGET_EMPTY_SEGMENT.format(rawPath));
         }
         for (String segment : segmentsOf(rawPath)) {
-            if (segment.equals(".") || segment.equals("..")) {
+            if (segment.equals(CURRENT_SEGMENT) || segment.equals(PARENT_SEGMENT)) {
                 throw new CisternException.BadInput(
-                        "Dot segments are not addressable; send a normalized path: " + rawPath);
+                        WebfluxMessage.TARGET_DOT_SEGMENT.format(rawPath));
             }
-            if (segment.toUpperCase(Locale.ROOT).contains("%2F")) {
+            if (segment.toUpperCase(Locale.ROOT).contains(ENCODED_SLASH)) {
                 throw new CisternException.BadInput(
-                        "Encoded slash (%2F) in a path segment is not addressable: " + rawPath);
+                        WebfluxMessage.TARGET_ENCODED_SLASH.format(rawPath));
             }
         }
         return new ResourceIdentifier(parse(baseUrl + rawPath, rawPath));
@@ -91,11 +108,11 @@ public class RequestPaths {
      * container marker). {@code "/"} yields no segments.
      */
     private static String[] segmentsOf(String rawPath) {
-        String body = rawPath.substring(1);
-        if (body.endsWith("/")) {
-            body = body.substring(0, body.length() - 1);
+        String body = rawPath.substring(SEPARATOR.length());
+        if (body.endsWith(SEPARATOR)) {
+            body = body.substring(0, body.length() - SEPARATOR.length());
         }
-        return body.isEmpty() ? new String[0] : body.split("/", -1);
+        return body.isEmpty() ? NO_SEGMENTS : body.split(SEPARATOR, KEEP_TRAILING_EMPTY);
     }
 
     /**
@@ -108,7 +125,7 @@ public class RequestPaths {
             return new URI(candidate);
         } catch (URISyntaxException e) {
             throw new CisternException.BadInput(
-                    "Malformed request target " + rawPath + ": " + e.getReason());
+                    WebfluxMessage.TARGET_MALFORMED.format(rawPath, e.getReason()));
         }
     }
 }

@@ -1,11 +1,9 @@
 package com.enrichmeai.cistern.webflux;
 
 import com.enrichmeai.cistern.core.CisternException;
-import com.enrichmeai.cistern.core.Representation;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.ldp.LdpService;
 import com.enrichmeai.cistern.core.ldp.ResourceView;
-import com.enrichmeai.cistern.core.rdf.RdfIo;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
@@ -22,7 +20,8 @@ import java.util.List;
  * <p>Thin by rule: it maps a request path to an identifier, asks {@link LdpService#read} what
  * the resource is, picks a serialization, and writes headers. Every decision about
  * <em>what</em> a resource contains — containment triples, graph vs bytes, absence — belongs
- * to core and arrives here already made.
+ * to core and arrives here already made; every header value comes from the {@link ResourceKind}
+ * table rather than from a literal at this call site.
  *
  * <h2>HEAD cannot drift from GET</h2>
  * Both methods enter through {@link #read(ServerRequest)}; there is no second code path and
@@ -72,35 +71,39 @@ public class ResourceReadHandler {
             // is available for any RDF source — and it is the only option for a container,
             // whose containment triples exist in no stored byte (§4.2).
             case ResourceView.Rdf rdf -> {
-                MediaType type = negotiator.negotiateRdf(accept);
-                Representation body = RdfIo.serialize(rdf.graph(), RdfMediaTypes.canonical(type));
-                yield new Rendered(view, type, body.data());
+                RdfSerialization serialization = negotiator.negotiateRdf(accept);
+                yield new Rendered(view, serialization.mediaType(),
+                        serialization.serialize(rdf.graph()).data());
             }
             // A non-RDF source has exactly one representation and is copied out untouched.
             case ResourceView.NonRdf binary -> {
-                MediaType stored = storedTypeOf(binary);
-                negotiator.requireAcceptable(accept, stored);
+                MediaType stored = negotiator.requireAcceptable(accept, storedTypeOf(binary));
                 yield new Rendered(view, stored, binary.representation().data());
             }
         }).flatMap(this::write);
     }
 
-    /** The response body and the headers that describe it, before it becomes a response. */
+    /** The response body and the resource it describes, before it becomes a response. */
     private record Rendered(ResourceView view, MediaType contentType, byte[] body) {
+
+        ResourceKind kind() {
+            return ResourceKind.of(view);
+        }
     }
 
     private Mono<ServerResponse> write(Rendered rendered) {
-        ResourceKind kind = ResourceKind.of(rendered.view());
+        ResourceKind kind = rendered.kind();
         return ServerResponse.ok()
                 .headers(headers -> {
                     // Strong validator, quoted (RFC 9110 §8.8.3). The store guarantees it
                     // changes whenever the representation changes.
-                    headers.set(HttpHeaders.ETAG, "\"" + rendered.view().etag() + "\"");
+                    headers.set(HttpHeaders.ETAG,
+                            HttpConstants.strongETag(rendered.view().etag()));
                     // IMF-fixdate, one-second resolution (RFC 9110 §5.6.7, §8.8.2); the
                     // store already truncates to seconds, so nothing is rounded here.
                     headers.setLastModified(rendered.view().lastModified());
-                    for (String type : kind.linkTypes()) {
-                        headers.add(HttpHeaders.LINK, "<" + type + ">; rel=\"type\"");
+                    for (String linkValue : kind.linkTypeValues()) {
+                        headers.add(HttpHeaders.LINK, linkValue);
                     }
                     headers.set(HttpHeaders.ALLOW, kind.allow());
                     setIfPresent(headers, HttpConstants.ACCEPT_PUT, kind.acceptPut());
@@ -132,7 +135,8 @@ public class ResourceReadHandler {
         try {
             return request.headers().accept();
         } catch (InvalidMediaTypeException e) {
-            throw new CisternException.BadInput("Malformed Accept header: " + e.getMessage());
+            throw new CisternException.BadInput(
+                    WebfluxMessage.ACCEPT_MALFORMED.format(e.getMessage()));
         }
     }
 
@@ -147,8 +151,8 @@ public class ResourceReadHandler {
         try {
             return MediaType.parseMediaType(contentType);
         } catch (InvalidMediaTypeException e) {
-            throw new IllegalStateException("Stored content type for <" + binary.identifier().uri()
-                    + "> is not a valid media type: " + contentType, e);
+            throw new IllegalStateException(WebfluxMessage.STORED_CONTENT_TYPE_INVALID
+                    .format(binary.identifier().uri(), contentType), e);
         }
     }
 }

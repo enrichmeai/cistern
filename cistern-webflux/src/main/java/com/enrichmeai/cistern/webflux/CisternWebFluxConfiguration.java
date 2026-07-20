@@ -27,6 +27,12 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 public class CisternWebFluxConfiguration {
 
     /**
+     * Every path in a pod names a resource, so the read route matches the whole path space;
+     * whether a resource exists there is a storage question, not a routing one.
+     */
+    private static final String ALL_PATHS = "/**";
+
+    /**
      * The read route. {@code GET} and {@code HEAD} are one route to one handler method, so
      * they are the same code path by construction rather than by discipline — RFC 9110
      * §9.3.2 requires {@code HEAD} to be {@code GET} minus the content, and WebFlux's
@@ -41,7 +47,7 @@ public class CisternWebFluxConfiguration {
         return RouterFunctions.route(
                 RequestPredicates.method(HttpMethod.GET)
                         .or(RequestPredicates.method(HttpMethod.HEAD))
-                        .and(RequestPredicates.path("/**")),
+                        .and(RequestPredicates.path(ALL_PATHS)),
                 handler::read);
     }
 

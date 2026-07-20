@@ -4,6 +4,7 @@ import com.enrichmeai.cistern.core.Representation;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.ResourceStore;
 import com.enrichmeai.cistern.core.StoredResource;
+import com.enrichmeai.cistern.core.ldp.Ldp;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,9 +63,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ResourceReadHttpTest {
 
     private static final String BASE = "http://localhost:3000";
-    private static final String LDP_RESOURCE = "<http://www.w3.org/ns/ldp#Resource>; rel=\"type\"";
+
+    /** Expected Link values, built from the vocabulary class rather than spelled out. */
+    private static final String LDP_RESOURCE = HttpConstants.linkType(Ldp.RESOURCE.getURI());
     private static final String LDP_BASIC_CONTAINER =
-            "<http://www.w3.org/ns/ldp#BasicContainer>; rel=\"type\"";
+            HttpConstants.linkType(Ldp.BASIC_CONTAINER.getURI());
+    private static final String BASIC_CONTAINER_IRI = Ldp.BASIC_CONTAINER.getURI();
 
     private static final Path STORAGE_ROOT = createTempRoot();
 
@@ -139,7 +143,7 @@ class ResourceReadHttpTest {
         EntityExchangeResult<byte[]> result = get("/notes/a.ttl")
                 .exchange()
                 .expectStatus().isOk()
-                .expectHeader().contentTypeCompatibleWith(RdfMediaTypes.TURTLE)
+                .expectHeader().contentTypeCompatibleWith(RdfSerialization.TURTLE.mediaType())
                 .expectBody().returnResult();
 
         assertTrue(body(result).contains("https://vocab.example/k"),
@@ -152,7 +156,7 @@ class ResourceReadHttpTest {
                 .header(HttpHeaders.ACCEPT, "*/*")
                 .exchange()
                 .expectStatus().isOk()
-                .expectHeader().contentTypeCompatibleWith(RdfMediaTypes.TURTLE);
+                .expectHeader().contentTypeCompatibleWith(RdfSerialization.TURTLE.mediaType());
     }
 
     @Test
@@ -161,7 +165,7 @@ class ResourceReadHttpTest {
                 .header(HttpHeaders.ACCEPT, Representation.JSON_LD)
                 .exchange()
                 .expectStatus().isOk()
-                .expectHeader().contentTypeCompatibleWith(RdfMediaTypes.JSON_LD)
+                .expectHeader().contentTypeCompatibleWith(RdfSerialization.JSON_LD.mediaType())
                 .expectBody().returnResult();
 
         String json = body(result);
@@ -177,7 +181,7 @@ class ResourceReadHttpTest {
                 .header(HttpHeaders.ACCEPT, "text/turtle;q=0.5, application/ld+json;q=0.9")
                 .exchange()
                 .expectStatus().isOk()
-                .expectHeader().contentTypeCompatibleWith(RdfMediaTypes.JSON_LD);
+                .expectHeader().contentTypeCompatibleWith(RdfSerialization.JSON_LD.mediaType());
     }
 
     @Test
@@ -187,7 +191,7 @@ class ResourceReadHttpTest {
                 .header(HttpHeaders.ACCEPT, "*/*;q=0.8, text/turtle;q=0")
                 .exchange()
                 .expectStatus().isOk()
-                .expectHeader().contentTypeCompatibleWith(RdfMediaTypes.JSON_LD);
+                .expectHeader().contentTypeCompatibleWith(RdfSerialization.JSON_LD.mediaType());
     }
 
     @Test
@@ -204,7 +208,7 @@ class ResourceReadHttpTest {
                 .header(HttpHeaders.ACCEPT, Representation.JSON_LD)
                 .exchange()
                 .expectStatus().isOk()
-                .expectHeader().contentTypeCompatibleWith(RdfMediaTypes.JSON_LD);
+                .expectHeader().contentTypeCompatibleWith(RdfSerialization.JSON_LD.mediaType());
     }
 
     // ---------------------------------------------------------------- containers
@@ -219,7 +223,7 @@ class ResourceReadHttpTest {
         String turtle = body(result);
         assertTrue(turtle.contains(BASE + "/notes/a.ttl"),
                 "ldp:contains must list the live child (Solid Protocol §4.2); got: " + turtle);
-        assertTrue(turtle.contains("ldp#BasicContainer") || turtle.contains("BasicContainer"),
+        assertTrue(turtle.contains(BASIC_CONTAINER_IRI) || turtle.contains("BasicContainer"),
                 "the container's server-asserted LDP types must be in the body; got: " + turtle);
         assertTrue(turtle.contains("My notes"), "client-authored triples survive");
     }
@@ -264,7 +268,7 @@ class ResourceReadHttpTest {
                 .exchange().expectBody().returnResult();
 
         List<String> links = result.getResponseHeaders().getOrEmpty(HttpHeaders.LINK);
-        assertTrue(links.stream().noneMatch(link -> link.contains("BasicContainer")),
+        assertTrue(links.stream().noneMatch(link -> link.contains(BASIC_CONTAINER_IRI)),
                 "a document is not a container: " + links);
     }
 
@@ -420,7 +424,7 @@ class ResourceReadHttpTest {
                 .header(HttpHeaders.ACCEPT, Representation.JSON_LD)
                 .exchange()
                 .expectStatus().isOk()
-                .expectHeader().contentTypeCompatibleWith(RdfMediaTypes.JSON_LD);
+                .expectHeader().contentTypeCompatibleWith(RdfSerialization.JSON_LD.mediaType());
     }
 
     @Test
@@ -443,10 +447,10 @@ class ResourceReadHttpTest {
         assertTrue(body(document).contains("document"));
         assertTrue(body(container).contains("container"));
         assertTrue(document.getResponseHeaders().getOrEmpty(HttpHeaders.LINK).stream()
-                        .noneMatch(link -> link.contains("BasicContainer")),
+                        .noneMatch(link -> link.contains(BASIC_CONTAINER_IRI)),
                 "/thing is a document (Solid Protocol §3.1)");
         assertTrue(container.getResponseHeaders().getOrEmpty(HttpHeaders.LINK).stream()
-                        .anyMatch(link -> link.contains("BasicContainer")),
+                        .anyMatch(link -> link.contains(BASIC_CONTAINER_IRI)),
                 "/thing-c/ is a container (Solid Protocol §3.1)");
     }
 

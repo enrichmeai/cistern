@@ -1,8 +1,10 @@
 package com.enrichmeai.cistern.webflux;
 
-import com.enrichmeai.cistern.core.Representation;
 import com.enrichmeai.cistern.core.ldp.Ldp;
 import com.enrichmeai.cistern.core.ldp.ResourceView;
+import org.apache.jena.rdf.model.Resource;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 
 import java.util.List;
 
@@ -28,10 +30,10 @@ import java.util.List;
  *       {@code type}", and §5.2.1.4 adds the container's own type. Solid Protocol §4.2 fixes
  *       which container type that is: Solid containers correspond to LDP Basic Container.
  *       Advertised on every kind, binary resources included — an LDPR need not be an RDF
- *       source.</li>
- *   <li><b>Accept-Put</b> — a container's stored representation is a graph, so only the two
- *       RDF media types of Solid Protocol §5.5 may replace it. A document may hold anything,
- *       so any media type is accepted.</li>
+ *       source. The IRIs come from the {@link Ldp} vocabulary class, never from literals.</li>
+ *   <li><b>Accept-Put</b> — a container's stored representation is a graph, so only the
+ *       {@link RdfSerialization} media types of Solid Protocol §5.5 may replace it. A
+ *       document may hold anything, so any media type is accepted.</li>
  *   <li><b>Accept-Post</b> — containers only, matching {@code POST} in {@code Allow}; a
  *       posted child may be of any media type.</li>
  *   <li><b>Accept-Patch</b> — {@code text/n3}, the N3 Patch content type of Solid Protocol
@@ -49,41 +51,46 @@ enum ResourceKind {
 
     /** An LDP Basic Container (Solid Protocol §3.1: a path ending in a slash). */
     CONTAINER(
-            "GET, HEAD, OPTIONS, POST, PUT, PATCH, DELETE",
-            Representation.TURTLE + ", " + Representation.JSON_LD,
-            "*/*",
+            HttpConstants.allow(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
+                    HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE),
+            RdfSerialization.mediaTypeList(),
+            MediaType.ALL_VALUE,
             HttpConstants.TEXT_N3,
-            List.of(Ldp.RESOURCE.getURI(), Ldp.BASIC_CONTAINER.getURI())),
+            List.of(Ldp.RESOURCE, Ldp.BASIC_CONTAINER)),
 
     /** A document stored as one of the RDF media types: patchable, not postable to. */
     RDF_DOCUMENT(
-            "GET, HEAD, OPTIONS, PUT, PATCH, DELETE",
-            "*/*",
+            HttpConstants.allow(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
+                    HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE),
+            MediaType.ALL_VALUE,
             null,
             HttpConstants.TEXT_N3,
-            List.of(Ldp.RESOURCE.getURI())),
+            List.of(Ldp.RESOURCE)),
 
     /** A binary document: replaceable and deletable, but there is no graph to patch. */
     NON_RDF_DOCUMENT(
-            "GET, HEAD, OPTIONS, PUT, DELETE",
-            "*/*",
+            HttpConstants.allow(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
+                    HttpMethod.PUT, HttpMethod.DELETE),
+            MediaType.ALL_VALUE,
             null,
             null,
-            List.of(Ldp.RESOURCE.getURI()));
+            List.of(Ldp.RESOURCE));
 
     private final String allow;
     private final String acceptPut;
     private final String acceptPost;
     private final String acceptPatch;
-    private final List<String> linkTypes;
+    private final List<String> linkTypeValues;
 
     ResourceKind(String allow, String acceptPut, String acceptPost, String acceptPatch,
-                 List<String> linkTypes) {
+                 List<Resource> types) {
         this.allow = allow;
         this.acceptPut = acceptPut;
         this.acceptPost = acceptPost;
         this.acceptPatch = acceptPatch;
-        this.linkTypes = linkTypes;
+        this.linkTypeValues = types.stream()
+                .map(type -> HttpConstants.linkType(type.getURI()))
+                .toList();
     }
 
     static ResourceKind of(ResourceView view) {
@@ -110,8 +117,8 @@ enum ResourceKind {
         return acceptPatch;
     }
 
-    /** LDP type URIs to advertise as {@code Link: <uri>; rel="type"}. */
-    List<String> linkTypes() {
-        return linkTypes;
+    /** Ready-to-emit {@code Link} field values typing this resource. */
+    List<String> linkTypeValues() {
+        return linkTypeValues;
     }
 }

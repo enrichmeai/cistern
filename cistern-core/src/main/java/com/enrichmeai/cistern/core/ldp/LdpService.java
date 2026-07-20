@@ -1,6 +1,7 @@
 package com.enrichmeai.cistern.core.ldp;
 
 import com.enrichmeai.cistern.core.CisternException;
+import com.enrichmeai.cistern.core.CoreMessage;
 import com.enrichmeai.cistern.core.Representation;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.ResourceStore;
@@ -81,8 +82,7 @@ public final class LdpService {
         return Mono.defer(() -> {
             if (!container.isContainer()) {
                 return Mono.error(new IllegalArgumentException(
-                        "getContainer() requires a container identifier (trailing slash): "
-                                + container.uri()));
+                        CoreMessage.NOT_A_CONTAINER_IDENTIFIER.format(container.uri())));
             }
             return store.get(container)
                     .flatMap(stored -> store.children(container)
@@ -128,8 +128,8 @@ public final class LdpService {
      */
     public Mono<ResourceView> read(ResourceIdentifier target) {
         return Mono.defer(() -> store.get(target)
-                .switchIfEmpty(Mono.error(() ->
-                        new CisternException.NotFound("No such resource: " + target.uri())))
+                .switchIfEmpty(Mono.error(() -> new CisternException.NotFound(
+                        CoreMessage.RESOURCE_NOT_FOUND.format(target.uri()))))
                 .flatMap(stored -> viewOf(target, stored)));
     }
 
@@ -169,8 +169,7 @@ public final class LdpService {
         Resource subject = body.createResource(target.uri().toString());
         if (body.listStatements(subject, Ldp.CONTAINS, (RDFNode) null).hasNext()) {
             throw new CisternException.Conflict(
-                    "Containment triples are server-managed (Solid Protocol §5.3): the request body"
-                            + " must not assert ldp:contains for <" + target.uri() + ">");
+                    CoreMessage.CONTAINMENT_SERVER_MANAGED.format(target.uri()));
         }
     }
 
@@ -229,8 +228,8 @@ public final class LdpService {
             return RdfIo.parse(representation, resource);
         } catch (CisternException.BadInput e) {
             throw new IllegalStateException(
-                    "Stored representation for <" + resource.uri() + "> is corrupt: "
-                            + e.getMessage(), e);
+                    CoreMessage.STORED_REPRESENTATION_CORRUPT.format(resource.uri(), e.getMessage()),
+                    e);
         }
     }
 

@@ -25,7 +25,7 @@ class ContentNegotiatorTest {
         return MediaType.parseMediaTypes(header);
     }
 
-    private MediaType negotiate(String header) {
+    private RdfSerialization negotiate(String header) {
         return negotiator.negotiateRdf(accept(header));
     }
 
@@ -33,34 +33,34 @@ class ContentNegotiatorTest {
 
     @Test
     void absentAcceptYieldsTurtle() {
-        assertEquals(RdfMediaTypes.TURTLE, negotiator.negotiateRdf(List.of()),
+        assertEquals(RdfSerialization.TURTLE, negotiator.negotiateRdf(List.of()),
                 "LDP 1.0 §4.3.2.2 — Turtle when the client states no preference");
     }
 
     @Test
     void wildcardYieldsTurtleAsServerPreference() {
-        assertEquals(RdfMediaTypes.TURTLE, negotiate("*/*"));
+        assertEquals(RdfSerialization.TURTLE, negotiate("*/*"));
     }
 
     @Test
     void anExplicitRequestIsHonouredEitherWay() {
         assertAll(
-                () -> assertEquals(RdfMediaTypes.TURTLE, negotiate("text/turtle")),
-                () -> assertEquals(RdfMediaTypes.JSON_LD, negotiate("application/ld+json")));
+                () -> assertEquals(RdfSerialization.TURTLE, negotiate("text/turtle")),
+                () -> assertEquals(RdfSerialization.JSON_LD, negotiate("application/ld+json")));
     }
 
     @Test
     void higherQualityWins() {
         assertAll(
-                () -> assertEquals(RdfMediaTypes.JSON_LD,
+                () -> assertEquals(RdfSerialization.JSON_LD,
                         negotiate("text/turtle;q=0.5, application/ld+json;q=0.9")),
-                () -> assertEquals(RdfMediaTypes.TURTLE,
+                () -> assertEquals(RdfSerialization.TURTLE,
                         negotiate("text/turtle;q=0.9, application/ld+json;q=0.5")));
     }
 
     @Test
     void equalQualityIsBrokenByServerPreference() {
-        assertEquals(RdfMediaTypes.TURTLE, negotiate("application/ld+json;q=0.7, text/turtle;q=0.7"),
+        assertEquals(RdfSerialization.TURTLE, negotiate("application/ld+json;q=0.7, text/turtle;q=0.7"),
                 "a tie must be deterministic, and Turtle is the pod's preferred form");
     }
 
@@ -68,20 +68,20 @@ class ContentNegotiatorTest {
     void aMoreSpecificRangeOverridesAWildcard() {
         // RFC 9110 §12.5.1: "media ranges can be overridden by more specific media ranges".
         assertAll(
-                () -> assertEquals(RdfMediaTypes.JSON_LD, negotiate("*/*;q=0.8, text/turtle;q=0"),
+                () -> assertEquals(RdfSerialization.JSON_LD, negotiate("*/*;q=0.8, text/turtle;q=0"),
                         "the specific q=0 excludes Turtle even though */* would allow it"),
-                () -> assertEquals(RdfMediaTypes.TURTLE, negotiate("*/*;q=0.1, text/turtle;q=0.9")));
+                () -> assertEquals(RdfSerialization.TURTLE, negotiate("*/*;q=0.1, text/turtle;q=0.9")));
     }
 
     @Test
     void typeWildcardMatchesTurtleButNotJsonLd() {
-        assertEquals(RdfMediaTypes.TURTLE, negotiate("text/*"));
-        assertEquals(RdfMediaTypes.JSON_LD, negotiate("application/*"));
+        assertEquals(RdfSerialization.TURTLE, negotiate("text/*"));
+        assertEquals(RdfSerialization.JSON_LD, negotiate("application/*"));
     }
 
     @Test
     void charsetParametersDoNotDefeatMatching() {
-        assertEquals(RdfMediaTypes.TURTLE, negotiate("text/turtle;charset=utf-8"));
+        assertEquals(RdfSerialization.TURTLE, negotiate("text/turtle;charset=utf-8"));
     }
 
     @Test
