@@ -10,8 +10,12 @@ raise it in the same PR that improves it. Honest numbers only.
 Re-verified 2026-07-20 under T3.1, against the full HTTP layer (Phase 2 complete) with
 `CISTERN_BASE_URL=http://host.docker.internal:3000`: unchanged at 0 / 0 / 41. The blocker
 is unchanged and is not about the HTTP layer — the harness still stops in REGISTER CLIENTS
-on a 404 for alice's WebID document, before executing any feature. CI now runs this on
-every PR (report-only) and publishes the same numbers to the job summary.
+on a 404 for a WebID document, before executing any feature. (Whichever of alice/bob it
+checks first, so the name in the error varies between runs; it is not significant.) CI now
+runs this on every PR (report-only) and publishes the same numbers to the job summary,
+confirmed on run 29757151369: `host.docker.internal` resolves from the harness container
+on the Linux runner via `--add-host=host-gateway`, so the 404 is a real answer from
+Cistern rather than a connection failure.
 
 Baseline run details (2026-07-19, `solidproject/conformance-test-harness:latest`,
 digest `sha256:4a38077d…`, test suite version 0.0.19 2024-03-21):
