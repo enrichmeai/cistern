@@ -1,6 +1,7 @@
 package com.enrichmeai.cistern.core.rdf;
 
 import com.enrichmeai.cistern.core.CisternException;
+import com.enrichmeai.cistern.core.CoreMessage;
 import org.apache.jena.datatypes.RDFDatatype;
 import org.apache.jena.datatypes.TypeMapper;
 import org.apache.jena.datatypes.xsd.XSDDatatype;
@@ -161,8 +162,8 @@ final class N3PatchParser {
                 expect('.');
             }
             case "forAll", "forSome", "keywords" ->
-                    throw error("unsupported N3 construct: @" + word + " is outside the N3 Patch subset");
-            default -> throw error("unknown directive @" + word);
+                    throw error(CoreMessage.N3_DIRECTIVE_OUT_OF_SUBSET.format(word));
+            default -> throw error(CoreMessage.N3_DIRECTIVE_UNKNOWN.format(word));
         }
     }
 
@@ -193,7 +194,7 @@ final class N3PatchParser {
         expect(':');
         skipWs();
         if (peek() != '<') {
-            throw error("expected an IRI after the prefix label in a prefix declaration");
+            throw error(CoreMessage.N3_PREFIX_IRI_EXPECTED.format());
         }
         Node iri = readIri();
         prefixes.put(label, iri.getURI());
@@ -202,7 +203,7 @@ final class N3PatchParser {
     private void parseBaseDeclaration() {
         skipWs();
         if (peek() != '<') {
-            throw error("expected an IRI in a base declaration");
+            throw error(CoreMessage.N3_BASE_IRI_EXPECTED.format());
         }
         Node iri = readIri();
         this.base = URI.create(iri.getURI());
@@ -255,14 +256,13 @@ final class N3PatchParser {
             }
             case '[' -> readAnon(false);
             case '_' -> readBlankNodeLabel();
-            case '?' -> throw error("variables are only allowed inside a formula");
-            case '{' -> throw error("a formula may only appear as the object of solid:deletes, "
-                    + "solid:inserts or solid:where");
-            case '(' -> throw error("unsupported N3 construct: collections are outside the N3 Patch subset");
-            case '"', '\'' -> throw error("a literal cannot be the subject of a statement");
+            case '?' -> throw error(CoreMessage.N3_VARIABLE_OUTSIDE_FORMULA.format());
+            case '{' -> throw error(CoreMessage.N3_FORMULA_MISPLACED.format());
+            case '(' -> throw error(CoreMessage.N3_COLLECTION_OUT_OF_SUBSET.format());
+            case '"', '\'' -> throw error(CoreMessage.N3_LITERAL_SUBJECT.format());
             default -> {
                 if (isDigit(c) || c == '+' || c == '-' || c == '.') {
-                    throw error("unexpected character at the start of a statement");
+                    throw error(CoreMessage.N3_STATEMENT_START_UNEXPECTED.format());
                 }
                 yield parsePrefixedNameOnly("as a statement subject");
             }
@@ -278,24 +278,24 @@ final class N3PatchParser {
                 return readIri();
             }
             case '=' -> {
-                String message = "unsupported N3 construct: '=' / '=>' are outside the N3 Patch subset";
+                String message = CoreMessage.N3_IMPLICATION_OUT_OF_SUBSET.format();
                 throw inFormula ? outOfSubsetInFormula(message) : error(message);
             }
             case '?' -> {
                 if (inFormula) {
                     return readVariable();
                 }
-                throw error("variables are only allowed inside a formula");
+                throw error(CoreMessage.N3_VARIABLE_OUTSIDE_FORMULA.format());
             }
             case '{' -> throw inFormula
-                    ? outOfSubsetInFormula("nested formulae are not allowed in an N3 Patch")
-                    : error("a formula cannot be used as a predicate");
+                    ? outOfSubsetInFormula(CoreMessage.N3_FORMULA_NESTED.format())
+                    : error(CoreMessage.N3_FORMULA_PREDICATE.format());
             case '_', '[' -> throw inFormula
-                    ? outOfSubsetInFormula("a blank node cannot be used as a predicate")
-                    : error("a blank node cannot be used as a predicate");
+                    ? outOfSubsetInFormula(CoreMessage.N3_BLANK_NODE_PREDICATE.format())
+                    : error(CoreMessage.N3_BLANK_NODE_PREDICATE.format());
             case '"', '\'' -> throw inFormula
-                    ? outOfSubsetInFormula("a literal cannot be used as a predicate")
-                    : error("a literal cannot be used as a predicate");
+                    ? outOfSubsetInFormula(CoreMessage.N3_LITERAL_PREDICATE.format())
+                    : error(CoreMessage.N3_LITERAL_PREDICATE.format());
             default -> {
                 if (prefixedNameAhead()) {
                     return readPrefixedName();
@@ -303,7 +303,7 @@ final class N3PatchParser {
                 if (readNameToken().equals("a")) {
                     return NodeFactory.createURI(RDF_TYPE);
                 }
-                throw error("expected a predicate (IRI, prefixed name or 'a')");
+                throw error(CoreMessage.N3_PREDICATE_EXPECTED.format());
             }
         }
     }
@@ -314,7 +314,7 @@ final class N3PatchParser {
         switch (c) {
             case '{' -> {
                 if (inFormula) {
-                    throw outOfSubsetInFormula("nested formulae are not allowed in an N3 Patch");
+                    throw outOfSubsetInFormula(CoreMessage.N3_FORMULA_NESTED.format());
                 }
                 return parseFormula();
             }
@@ -332,10 +332,10 @@ final class N3PatchParser {
                 if (inFormula) {
                     return readVariable();
                 }
-                throw error("variables are only allowed inside a formula");
+                throw error(CoreMessage.N3_VARIABLE_OUTSIDE_FORMULA.format());
             }
             case '(' -> {
-                String message = "unsupported N3 construct: collections are outside the N3 Patch subset";
+                String message = CoreMessage.N3_COLLECTION_OUT_OF_SUBSET.format();
                 throw inFormula ? outOfSubsetInFormula(message) : error(message);
             }
             case '"', '\'' -> {
@@ -352,8 +352,7 @@ final class N3PatchParser {
                 if (word.equals("true") || word.equals("false")) {
                     return NodeFactory.createLiteralDT(word, XSDDatatype.XSDboolean);
                 }
-                throw error("expected an object (IRI, prefixed name, literal"
-                        + (inFormula ? ", variable" : ", formula") + ")");
+                throw error(inFormula ? CoreMessage.N3_OBJECT_EXPECTED_IN_FORMULA.format() : CoreMessage.N3_OBJECT_EXPECTED.format());
             }
         }
     }
@@ -366,7 +365,7 @@ final class N3PatchParser {
         while (true) {
             skipWs();
             if (eof()) {
-                throw error("unterminated formula: missing '}'");
+                throw error(CoreMessage.N3_FORMULA_UNTERMINATED.format());
             }
             if (peek() == '}') {
                 pos++;
@@ -381,10 +380,9 @@ final class N3PatchParser {
                 String word = eof() || !isAsciiLetter(src.charAt(pos)) ? "" : readBareWord();
                 pos = mark;
                 if (RECOGNIZED_N3_DIRECTIVES.contains(word)) {
-                    throw outOfSubsetInFormula("the N3 directive @" + word
-                            + " is not allowed inside a formula");
+                    throw outOfSubsetInFormula(CoreMessage.N3_DIRECTIVE_IN_FORMULA.format(word));
                 }
-                throw error("directives are not allowed inside a formula");
+                throw error(CoreMessage.N3_DIRECTIVES_IN_FORMULA.format());
             }
             Node subject = parseFormulaSubject();
             parseFormulaPredicateObjectList(subject, triples);
@@ -397,7 +395,7 @@ final class N3PatchParser {
                 pos++;
                 break; // final '.' inside a formula is optional
             }
-            throw error("expected '.' or '}' after a statement in a formula");
+            throw error(CoreMessage.N3_FORMULA_STATEMENT_END_EXPECTED.format());
         }
         return new Formula(List.copyOf(triples));
     }
@@ -413,14 +411,12 @@ final class N3PatchParser {
             case '?' -> readVariable();
             case '[' -> readAnon(true);
             case '_' -> readBlankNodeLabel();
-            case '{' -> throw outOfSubsetInFormula("nested formulae are not allowed in an N3 Patch");
-            case '(' -> throw outOfSubsetInFormula(
-                    "unsupported N3 construct: collections are outside the N3 Patch subset");
-            case '"', '\'' -> throw outOfSubsetInFormula(
-                    "a literal cannot be the subject of a triple pattern");
+            case '{' -> throw outOfSubsetInFormula(CoreMessage.N3_FORMULA_NESTED.format());
+            case '(' -> throw outOfSubsetInFormula(CoreMessage.N3_COLLECTION_OUT_OF_SUBSET.format());
+            case '"', '\'' -> throw outOfSubsetInFormula(CoreMessage.N3_LITERAL_SUBJECT_IN_PATTERN.format());
             default -> {
                 if (isDigit(c) || c == '+' || c == '-' || c == '.') {
-                    throw outOfSubsetInFormula("a literal cannot be the subject of a triple pattern");
+                    throw outOfSubsetInFormula(CoreMessage.N3_LITERAL_SUBJECT_IN_PATTERN.format());
                 }
                 yield parsePrefixedNameOnly("as a triple pattern subject");
             }
@@ -462,7 +458,7 @@ final class N3PatchParser {
         if (prefixedNameAhead()) {
             return readPrefixedName();
         }
-        throw error("expected an IRI, prefixed name or blank node " + what);
+        throw error(CoreMessage.N3_TERM_EXPECTED.format(what));
     }
 
     /**
@@ -509,7 +505,7 @@ final class N3PatchParser {
 
     private void rejectReverseImplication(boolean inFormula) {
         if (peekAt(1) == '=') {
-            String message = "unsupported N3 construct: '<=' is outside the N3 Patch subset";
+            String message = CoreMessage.N3_REVERSE_IMPLICATION_OUT_OF_SUBSET.format();
             throw inFormula ? outOfSubsetInFormula(message) : error(message);
         }
     }
@@ -519,7 +515,7 @@ final class N3PatchParser {
         StringBuilder sb = new StringBuilder();
         while (true) {
             if (eof()) {
-                throw error("unterminated IRI: missing '>'");
+                throw error(CoreMessage.N3_IRI_UNTERMINATED.format());
             }
             char c = src.charAt(pos);
             if (c == '>') {
@@ -536,12 +532,12 @@ final class N3PatchParser {
                     pos++;
                     sb.appendCodePoint(readHex(8));
                 } else {
-                    throw error("illegal escape sequence in IRI (only \\uXXXX and \\UXXXXXXXX are allowed)");
+                    throw error(CoreMessage.N3_IRI_ESCAPE_ILLEGAL.format());
                 }
                 continue;
             }
             if (c <= ' ' || c == '<' || c == '"' || c == '{' || c == '}' || c == '|' || c == '^' || c == '`') {
-                throw error("illegal character in IRI: '" + printable(c) + "'");
+                throw error(CoreMessage.N3_IRI_CHARACTER_ILLEGAL.format(printable(c)));
             }
             sb.append(c);
             pos++;
@@ -554,11 +550,11 @@ final class N3PatchParser {
             URI reference = new URI(iri);
             URI resolved = reference.isAbsolute() ? reference : base.resolve(reference);
             if (!resolved.isAbsolute()) {
-                throw error("cannot resolve relative IRI <" + iri + "> against base <" + base + ">");
+                throw error(CoreMessage.N3_IRI_UNRESOLVABLE.format(iri, base));
             }
             return resolved.toString();
         } catch (URISyntaxException e) {
-            throw error("invalid IRI <" + iri + ">");
+            throw error(CoreMessage.N3_IRI_INVALID.format(iri));
         }
     }
 
@@ -568,7 +564,7 @@ final class N3PatchParser {
         String local = readLocalName();
         String namespace = prefixes.get(prefix);
         if (namespace == null) {
-            throw error("undeclared prefix \"" + prefix + ":\"");
+            throw error(CoreMessage.N3_PREFIX_UNDECLARED.format(prefix));
         }
         return NodeFactory.createURI(namespace + local);
     }
@@ -605,7 +601,7 @@ final class N3PatchParser {
                 pos++;
             } else if (c == '%') {
                 if (pos + 2 >= src.length() || !isHex(src.charAt(pos + 1)) || !isHex(src.charAt(pos + 2))) {
-                    throw error("'%' in a local name must start a %XX percent-encoded triplet");
+                    throw error(CoreMessage.N3_LOCAL_NAME_PERCENT.format());
                 }
                 sb.append(src, pos, pos + 3);
                 pos += 3;
@@ -613,7 +609,7 @@ final class N3PatchParser {
                 pos++;
                 int e = peek();
                 if (e == -1 || "_~.-!$&'()*+,;=/?#@%".indexOf(e) < 0) {
-                    throw error("illegal escape sequence in local name");
+                    throw error(CoreMessage.N3_LOCAL_NAME_ESCAPE_ILLEGAL.format());
                 }
                 sb.append((char) e);
                 pos++;
@@ -647,7 +643,7 @@ final class N3PatchParser {
             }
         }
         if (pos == start) {
-            throw error("expected a blank node label after '_:'");
+            throw error(CoreMessage.N3_BLANK_NODE_LABEL_EXPECTED.format());
         }
         return NodeFactory.createBlankNode(src.substring(start, pos));
     }
@@ -656,7 +652,7 @@ final class N3PatchParser {
         expect('[');
         skipWs();
         if (peek() != ']') {
-            String message = "blank node property lists are not supported in an N3 Patch document";
+            String message = CoreMessage.N3_BLANK_NODE_PROPERTY_LIST.format();
             throw inFormula ? outOfSubsetInFormula(message) : error(message);
         }
         pos++;
@@ -675,12 +671,12 @@ final class N3PatchParser {
             }
         }
         if (pos == start) {
-            throw error("expected a variable name after '?'");
+            throw error(CoreMessage.N3_VARIABLE_NAME_EXPECTED.format());
         }
         String name = src.substring(start, pos);
         char firstChar = name.charAt(0);
         if (isDigit(firstChar)) {
-            throw error("a variable name must not start with a digit: ?" + name);
+            throw error(CoreMessage.N3_VARIABLE_NAME_LEADING_DIGIT.format(name));
         }
         return Var.alloc(name);
     }
@@ -720,7 +716,7 @@ final class N3PatchParser {
         StringBuilder sb = new StringBuilder();
         while (true) {
             if (eof()) {
-                throw error("unterminated string literal");
+                throw error(CoreMessage.N3_STRING_UNTERMINATED.format());
             }
             char c = src.charAt(pos);
             if (c == quote) {
@@ -728,7 +724,7 @@ final class N3PatchParser {
                 return sb.toString();
             }
             if (c == '\n' || c == '\r') {
-                throw error("unescaped line break in string literal");
+                throw error(CoreMessage.N3_STRING_LINE_BREAK.format());
             }
             if (c == '\\') {
                 pos++;
@@ -745,7 +741,7 @@ final class N3PatchParser {
         StringBuilder sb = new StringBuilder();
         while (true) {
             if (eof()) {
-                throw error("unterminated long string literal");
+                throw error(CoreMessage.N3_LONG_STRING_UNTERMINATED.format());
             }
             char c = src.charAt(pos);
             if (c == quote
@@ -786,7 +782,7 @@ final class N3PatchParser {
                 sb.appendCodePoint(readHex(8));
                 return;
             }
-            default -> throw error("illegal escape sequence in string literal");
+            default -> throw error(CoreMessage.N3_STRING_ESCAPE_ILLEGAL.format());
         }
         pos++;
     }
@@ -797,7 +793,7 @@ final class N3PatchParser {
             pos++;
         }
         if (pos == start) {
-            throw error("expected a language tag after '@'");
+            throw error(CoreMessage.N3_LANGUAGE_TAG_EXPECTED.format());
         }
         while (peek() == '-') {
             pos++;
@@ -806,7 +802,7 @@ final class N3PatchParser {
                 pos++;
             }
             if (pos == segment) {
-                throw error("malformed language tag");
+                throw error(CoreMessage.N3_LANGUAGE_TAG_MALFORMED.format());
             }
         }
         return src.substring(start, pos);
@@ -825,7 +821,7 @@ final class N3PatchParser {
             readDigits();
         }
         if (integerDigits == 0 && !hasDot) {
-            throw error("malformed numeric literal");
+            throw error(CoreMessage.N3_NUMERIC_MALFORMED.format());
         }
         boolean hasExponent = false;
         if (peek() == 'e' || peek() == 'E') {
@@ -835,7 +831,7 @@ final class N3PatchParser {
                 pos++;
             }
             if (readDigits() == 0) {
-                throw error("malformed exponent in numeric literal");
+                throw error(CoreMessage.N3_NUMERIC_EXPONENT_MALFORMED.format());
             }
         }
         String lexicalForm = src.substring(start, pos);
@@ -856,19 +852,19 @@ final class N3PatchParser {
 
     private int readHex(int digits) {
         if (pos + digits > src.length()) {
-            throw error("truncated \\u escape sequence");
+            throw error(CoreMessage.N3_UNICODE_ESCAPE_TRUNCATED.format());
         }
         int value = 0;
         for (int i = 0; i < digits; i++) {
             char c = src.charAt(pos + i);
             if (!isHex(c)) {
-                throw error("malformed \\u escape sequence");
+                throw error(CoreMessage.N3_UNICODE_ESCAPE_MALFORMED.format());
             }
             value = value * 16 + Character.digit(c, 16);
         }
         pos += digits;
         if (!Character.isValidCodePoint(value)) {
-            throw error("\\u escape sequence is not a valid code point");
+            throw error(CoreMessage.N3_UNICODE_ESCAPE_INVALID_CODE_POINT.format());
         }
         return value;
     }
@@ -886,8 +882,7 @@ final class N3PatchParser {
         if (triples.isEmpty()) {
             // "A patch document MUST contain one or more patch resources" (§n3-patch): an
             // empty (or directives-only) document is well-formed N3, so this is 422, not 400.
-            throw constraintError("it contains no patch resource "
-                    + "(a triple '?patch a solid:InsertDeletePatch' is required)");
+            throw constraintError(CoreMessage.N3_NO_PATCH_RESOURCE.format());
         }
         Set<Node> subjects = new LinkedHashSet<>();
         boolean hasRequiredType = false;
@@ -903,8 +898,7 @@ final class N3PatchParser {
                     if (!(object instanceof Node node) || !node.isURI()
                             || !(SOLID_PATCH.equals(node.getURI())
                                     || SOLID_INSERT_DELETE_PATCH.equals(node.getURI()))) {
-                        throw constraintError("the type of a patch resource must be solid:Patch or "
-                                + "solid:InsertDeletePatch");
+                        throw constraintError(CoreMessage.N3_PATCH_TYPE_INVALID.format());
                     }
                     if (SOLID_INSERT_DELETE_PATCH.equals(node.getURI())) {
                         hasRequiredType = true;
@@ -913,17 +907,14 @@ final class N3PatchParser {
                 case SOLID_WHERE -> where = formulaObject(triple, "solid:where", where);
                 case SOLID_DELETES -> deletes = formulaObject(triple, "solid:deletes", deletes);
                 case SOLID_INSERTS -> inserts = formulaObject(triple, "solid:inserts", inserts);
-                default -> throw constraintError("unexpected predicate <" + predicate + ">: a patch "
-                        + "resource may only use rdf:type, solid:deletes, solid:inserts and solid:where");
+                default -> throw constraintError(CoreMessage.N3_PREDICATE_UNEXPECTED.format(predicate));
             }
         }
         if (subjects.size() > 1) {
-            throw constraintError("the patch document must contain exactly one patch resource, "
-                    + "but " + subjects.size() + " subjects were found");
+            throw constraintError(CoreMessage.N3_PATCH_RESOURCE_NOT_UNIQUE.format(subjects.size()));
         }
         if (!hasRequiredType) {
-            throw constraintError("the patch resource must contain a triple "
-                    + "'?patch a solid:InsertDeletePatch'");
+            throw constraintError(CoreMessage.N3_PATCH_RESOURCE_TYPE_MISSING.format());
         }
         List<Triple> whereTriples = where == null ? List.of() : where.triples();
         List<Triple> deleteTriples = deletes == null ? List.of() : deletes.triples();
@@ -942,10 +933,10 @@ final class N3PatchParser {
 
     private Formula formulaObject(OuterTriple triple, String predicate, Formula existing) {
         if (existing != null) {
-            throw constraintError("a patch resource must contain at most one " + predicate + " triple");
+            throw constraintError(CoreMessage.N3_PREDICATE_REPEATED.format(predicate));
         }
         if (!(triple.object() instanceof Formula formula)) {
-            throw constraintError("the object of " + predicate + " must be a formula { ... }");
+            throw constraintError(CoreMessage.N3_PREDICATE_OBJECT_NOT_FORMULA.format(predicate));
         }
         return formula;
     }
@@ -956,11 +947,9 @@ final class N3PatchParser {
                 if (predicate.equals("solid:where")) {
                     // Spec-well-formed but deliberately unprocessable: the mapping algorithm
                     // is defined over variables only. See the class Javadoc and issue #57.
-                    throw constraintError("blank nodes in the solid:where formula are not "
-                            + "supported: the specification defines the mapping algorithm over "
-                            + "variables only and leaves blank-node matching undefined");
+                    throw constraintError(CoreMessage.N3_WHERE_BLANK_NODE.format());
                 }
-                throw constraintError("the " + predicate + " formula must not contain blank nodes");
+                throw constraintError(CoreMessage.N3_FORMULA_BLANK_NODE.format(predicate));
             }
         }
     }
@@ -968,8 +957,7 @@ final class N3PatchParser {
     private void requireVariablesDeclared(List<Triple> triples, Set<Node> whereVariables, String predicate) {
         for (Node variable : variablesOf(triples)) {
             if (!whereVariables.contains(variable)) {
-                throw constraintError("variable ?" + variable.getName() + " in the " + predicate
-                        + " formula does not occur in the solid:where formula");
+                throw constraintError(CoreMessage.N3_VARIABLE_NOT_IN_WHERE.format(variable.getName(), predicate));
             }
         }
     }
@@ -993,8 +981,8 @@ final class N3PatchParser {
      * patch document does not satisfy all of the above constraints."
      */
     private CisternException.UnprocessableEntity constraintError(String message) {
-        return new CisternException.UnprocessableEntity("Invalid N3 Patch document: " + message
-                + " (Solid Protocol, Modifying Resources Using N3 Patches)");
+        return new CisternException.UnprocessableEntity(
+                CoreMessage.N3_CONSTRAINT_VIOLATION.format(message));
     }
 
     // ------------------------------------------------------------------ lexing helpers
@@ -1020,15 +1008,14 @@ final class N3PatchParser {
             pos++;
         }
         if (pos == start) {
-            throw error("expected a word");
+            throw error(CoreMessage.N3_WORD_EXPECTED.format());
         }
         return src.substring(start, pos);
     }
 
     private void expect(char expected) {
         if (eof() || src.charAt(pos) != expected) {
-            throw error("expected '" + expected + "'"
-                    + (eof() ? " but reached the end of the document" : ""));
+            throw error(eof() ? CoreMessage.N3_TOKEN_EXPECTED_AT_EOF.format(expected) : CoreMessage.N3_TOKEN_EXPECTED.format(expected));
         }
         pos++;
     }
@@ -1067,7 +1054,8 @@ final class N3PatchParser {
     }
 
     private CisternException.BadInput error(String message) {
-        return new CisternException.BadInput("Invalid N3 Patch document " + position() + ": " + message);
+        return new CisternException.BadInput(
+                CoreMessage.N3_PARSE_ERROR.format(position(), message));
     }
 
     /**
@@ -1081,9 +1069,8 @@ final class N3PatchParser {
      * document level are not covered by that constraint sentence and stay {@link #error}.
      */
     private CisternException.UnprocessableEntity outOfSubsetInFormula(String message) {
-        return new CisternException.UnprocessableEntity("Invalid N3 Patch document " + position()
-                + ": " + message + " — a formula must consist only of triples and/or triple "
-                + "patterns (Solid Protocol, Modifying Resources Using N3 Patches)");
+        return new CisternException.UnprocessableEntity(
+                CoreMessage.N3_FORMULA_OUT_OF_SUBSET.format(position(), message));
     }
 
     private String position() {

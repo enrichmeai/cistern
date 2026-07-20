@@ -140,6 +140,122 @@ public enum CoreMessage {
     /** Solid Protocol §5.5 fixes the pair of RDF serializations; anything else is a client fault. */
     RDF_CONTENT_TYPE_UNSUPPORTED("Unsupported RDF content type \"%s\"; supported: %s"),
 
+    // ---------------------------------------------------------------- N3 Patch (T1.5)
+
+    // Parse and constraint failures from N3Patch/N3PatchParser. The three wrapper templates
+    // below (N3_PARSE_ERROR, N3_CONSTRAINT_VIOLATION, N3_FORMULA_OUT_OF_SUBSET) each take a
+    // nested message from one of the entries that follow, so the position prefix and the
+    // spec citation are written once rather than at every one of the parser's throw sites.
+
+    N3_DIRECTIVE_OUT_OF_SUBSET("unsupported N3 construct: @%s is outside the N3 Patch subset"),
+    N3_DIRECTIVE_UNKNOWN("unknown directive @%s"),
+    N3_PREFIX_IRI_EXPECTED("expected an IRI after the prefix label in a prefix declaration"),
+    N3_BASE_IRI_EXPECTED("expected an IRI in a base declaration"),
+    N3_VARIABLE_OUTSIDE_FORMULA("variables are only allowed inside a formula"),
+    N3_FORMULA_MISPLACED(
+            "a formula may only appear as the object of solid:deletes, solid:inserts "
+                    + "or solid:where"),
+    N3_COLLECTION_OUT_OF_SUBSET(
+            "unsupported N3 construct: collections are outside the N3 Patch subset"),
+    N3_LITERAL_SUBJECT("a literal cannot be the subject of a statement"),
+    N3_STATEMENT_START_UNEXPECTED("unexpected character at the start of a statement"),
+    N3_FORMULA_NESTED("nested formulae are not allowed in an N3 Patch"),
+    N3_FORMULA_PREDICATE("a formula cannot be used as a predicate"),
+    N3_BLANK_NODE_PREDICATE("a blank node cannot be used as a predicate"),
+    N3_LITERAL_PREDICATE("a literal cannot be used as a predicate"),
+    N3_PREDICATE_EXPECTED("expected a predicate (IRI, prefixed name or 'a')"),
+    N3_FORMULA_UNTERMINATED("unterminated formula: missing '}'"),
+    N3_DIRECTIVE_IN_FORMULA("the N3 directive @%s is not allowed inside a formula"),
+    N3_DIRECTIVES_IN_FORMULA("directives are not allowed inside a formula"),
+    N3_FORMULA_STATEMENT_END_EXPECTED("expected '.' or '}' after a statement in a formula"),
+    N3_LITERAL_SUBJECT_IN_PATTERN("a literal cannot be the subject of a triple pattern"),
+    N3_TERM_EXPECTED("expected an IRI, prefixed name or blank node %s"),
+    N3_IRI_UNTERMINATED("unterminated IRI: missing '>'"),
+    N3_IRI_ESCAPE_ILLEGAL(
+            "illegal escape sequence in IRI (only \\uXXXX and \\UXXXXXXXX are "
+                    + "allowed)"),
+    N3_IRI_CHARACTER_ILLEGAL("illegal character in IRI: '%s'"),
+    N3_IRI_UNRESOLVABLE("cannot resolve relative IRI <%s> against base <%s>"),
+    N3_IRI_INVALID("invalid IRI <%s>"),
+    N3_PREFIX_UNDECLARED("undeclared prefix \"%s:\""),
+    N3_LOCAL_NAME_PERCENT("'%%' in a local name must start a %%XX percent-encoded triplet"),
+    N3_LOCAL_NAME_ESCAPE_ILLEGAL("illegal escape sequence in local name"),
+    N3_BLANK_NODE_LABEL_EXPECTED("expected a blank node label after '_:'"),
+    N3_VARIABLE_NAME_EXPECTED("expected a variable name after '?'"),
+    N3_VARIABLE_NAME_LEADING_DIGIT("a variable name must not start with a digit: ?%s"),
+    N3_STRING_UNTERMINATED("unterminated string literal"),
+    N3_STRING_LINE_BREAK("unescaped line break in string literal"),
+    N3_LONG_STRING_UNTERMINATED("unterminated long string literal"),
+    N3_STRING_ESCAPE_ILLEGAL("illegal escape sequence in string literal"),
+    N3_LANGUAGE_TAG_EXPECTED("expected a language tag after '@'"),
+    N3_LANGUAGE_TAG_MALFORMED("malformed language tag"),
+    N3_NUMERIC_MALFORMED("malformed numeric literal"),
+    N3_NUMERIC_EXPONENT_MALFORMED("malformed exponent in numeric literal"),
+    N3_UNICODE_ESCAPE_TRUNCATED("truncated \\u escape sequence"),
+    N3_UNICODE_ESCAPE_MALFORMED("malformed \\u escape sequence"),
+    N3_UNICODE_ESCAPE_INVALID_CODE_POINT("\\u escape sequence is not a valid code point"),
+    N3_WORD_EXPECTED("expected a word"),
+    N3_NO_PATCH_RESOURCE(
+            "it contains no patch resource (a triple '?patch a "
+                    + "solid:InsertDeletePatch' is required)"),
+    N3_PATCH_TYPE_INVALID(
+            "the type of a patch resource must be solid:Patch or "
+                    + "solid:InsertDeletePatch"),
+    N3_PREDICATE_UNEXPECTED(
+            "unexpected predicate <%s>: a patch resource may only use rdf:type, "
+                    + "solid:deletes, solid:inserts and solid:where"),
+    N3_PATCH_RESOURCE_NOT_UNIQUE(
+            "the patch document must contain exactly one patch resource, but %s "
+                    + "subjects were found"),
+    N3_PATCH_RESOURCE_TYPE_MISSING(
+            "the patch resource must contain a triple '?patch a "
+                    + "solid:InsertDeletePatch'"),
+    N3_PREDICATE_REPEATED("a patch resource must contain at most one %s triple"),
+    N3_PREDICATE_OBJECT_NOT_FORMULA("the object of %s must be a formula { ... }"),
+    N3_WHERE_BLANK_NODE(
+            "blank nodes in the solid:where formula are not supported: the "
+                    + "specification defines the mapping algorithm over variables only and "
+                    + "leaves blank-node matching undefined"),
+    N3_FORMULA_BLANK_NODE("the %s formula must not contain blank nodes"),
+    N3_VARIABLE_NOT_IN_WHERE(
+            "variable ?%s in the %s formula does not occur in the solid:where formula"),
+    N3_IMPLICATION_OUT_OF_SUBSET(
+            "unsupported N3 construct: '=' / '=>' are outside the N3 Patch subset"),
+    N3_REVERSE_IMPLICATION_OUT_OF_SUBSET(
+            "unsupported N3 construct: '<=' is outside the N3 Patch subset"),
+    N3_BLANK_NODE_PROPERTY_LIST(
+            "blank node property lists are not supported in an N3 Patch document"),
+    N3_OBJECT_EXPECTED_IN_FORMULA("expected an object (IRI, prefixed name, literal, variable)"),
+    N3_OBJECT_EXPECTED("expected an object (IRI, prefixed name, literal, formula)"),
+    N3_TOKEN_EXPECTED("expected '%s'"),
+    N3_TOKEN_EXPECTED_AT_EOF("expected '%s' but reached the end of the document"),
+    N3_CONSTRAINT_VIOLATION(
+            "Invalid N3 Patch document: %s (Solid Protocol, Modifying Resources Using "
+                    + "N3 Patches)"),
+    N3_PARSE_ERROR("Invalid N3 Patch document %s: %s"),
+    N3_FORMULA_OUT_OF_SUBSET(
+            "Invalid N3 Patch document %s: %s — a formula must consist only of "
+                    + "triples and/or triple patterns (Solid Protocol, Modifying Resources "
+                    + "Using N3 Patches)"),
+    N3_NO_REPRESENTATION("Cannot parse N3 Patch: no representation given"),
+    N3_NO_DATA("Cannot parse N3 Patch: representation has no data"),
+    N3_NO_BASE("Cannot parse N3 Patch: no resource identifier given as base"),
+    N3_DOCUMENT_MALFORMED("Malformed %s patch document for <%s>: %s"),
+    N3_APPLY_NO_MAPPING(
+            "Cannot apply N3 Patch: no variable mapping exists for which all "
+                    + "solid:where triples occur in the target graph"),
+    N3_APPLY_AMBIGUOUS_MAPPING(
+            "Cannot apply N3 Patch: multiple variable mappings satisfy the "
+                    + "solid:where formula; the Solid Protocol requires exactly one"),
+    N3_APPLY_DELETION_ABSENT(
+            "Cannot apply N3 Patch: solid:deletes triple is not present in the target "
+                    + "graph: %s"),
+    N3_UNBOUND_VARIABLE("Unbound variable after mapping propagation: %s"),
+    N3_CONTENT_TYPE_MISSING("No content type given; an N3 Patch document must be %s"),
+    N3_CONTENT_TYPE_UNSUPPORTED(
+            "Unsupported content type \"%s\" for an N3 Patch document; must be %s"),
+    N3_NOT_UTF8("N3 Patch document is not valid UTF-8"),
+
     /** A caller programming error: a Slug instance may only ever hold a sanitized name. */
     SLUG_NOT_A_NAME(
             "A Slug value must be a single non-empty path segment of unreserved characters"
