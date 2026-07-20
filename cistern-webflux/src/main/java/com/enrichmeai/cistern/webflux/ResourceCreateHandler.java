@@ -149,13 +149,7 @@ public class ResourceCreateHandler {
         ResourceKind targetKind = ResourceKind.ofContainer(container);
         return ServerResponse.created(created.identifier().uri())
                 .headers(headers -> {
-                    for (String linkValue : targetKind.linkTypeValues()) {
-                        headers.add(HttpHeaders.LINK, linkValue);
-                    }
-                    headers.set(HttpHeaders.ALLOW, targetKind.allow());
-                    setIfPresent(headers, HttpConstants.ACCEPT_PUT, targetKind.acceptPut());
-                    setIfPresent(headers, HttpConstants.ACCEPT_POST, targetKind.acceptPost());
-                    setIfPresent(headers, HttpHeaders.ACCEPT_PATCH, targetKind.acceptPatch());
+                    InterfaceMetadata.write(headers, targetKind);
                     writeValidators(headers, created, stored);
                 })
                 .build();
@@ -182,9 +176,4 @@ public class ResourceCreateHandler {
     }
 
     /** The kind table leaves an entry absent where the corresponding method is not supported. */
-    private static void setIfPresent(HttpHeaders headers, String name, String value) {
-        if (value != null) {
-            headers.set(name, value);
-        }
-    }
 }

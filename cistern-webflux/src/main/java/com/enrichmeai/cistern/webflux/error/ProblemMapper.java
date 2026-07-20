@@ -3,6 +3,7 @@ package com.enrichmeai.cistern.webflux.error;
 import com.enrichmeai.cistern.core.CisternException;
 import com.enrichmeai.cistern.core.ldp.LdpKind;
 import com.enrichmeai.cistern.core.rdf.N3Patch;
+import com.enrichmeai.cistern.webflux.InterfaceMetadata;
 import com.enrichmeai.cistern.webflux.ResourceKind;
 import java.net.URI;
 import org.springframework.http.HttpHeaders;
@@ -114,7 +115,7 @@ final class ProblemMapper {
     private static HttpHeaders domainHeaders(CisternException error, ServerWebExchange exchange) {
         if (error instanceof CisternException.MethodNotAllowed methodNotAllowed) {
             HttpHeaders headers = new HttpHeaders();
-            headers.set(HttpHeaders.ALLOW, ResourceKind.forKind(methodNotAllowed.kind()).allow());
+            InterfaceMetadata.writeAllow(headers, ResourceKind.forKind(methodNotAllowed.kind()));
             return headers;
         }
         if (error instanceof CisternException.UnsupportedMediaType

@@ -185,26 +185,16 @@ public class ResourceReadHandler {
                     // IMF-fixdate, one-second resolution (RFC 9110 §5.6.7, §8.8.2); the
                     // store already truncates to seconds, so nothing is rounded here.
                     headers.setLastModified(selected.view().lastModified());
-                    for (String linkValue : kind.linkTypeValues()) {
-                        headers.add(HttpHeaders.LINK, linkValue);
-                    }
-                    // Solid Protocol §4.1 (T2.9): "Servers MUST include the Link header field
-                    // with rel="http://www.w3.org/ns/solid/terms#storageDescription" targeting
-                    // the URI of the storage description resource in the response of HTTP GET,
-                    // HEAD and OPTIONS requests targeting a resource in a storage." Added, not
-                    // set: the rel="type" links above are equally mandatory (LDP §4.2.1.4), and
-                    // Link is a list field (RFC 8288 §3).
-                    headers.add(HttpHeaders.LINK, storageDescription.linkValue());
                     if (selected.negotiated()) {
                         // RFC 9110 §12.5.5: without this a shared cache may hand a Turtle
                         // body to a client that asked for JSON-LD. A non-RDF resource has one
                         // representation, so its response does not vary by Accept.
                         headers.set(HttpHeaders.VARY, HttpHeaders.ACCEPT);
                     }
-                    headers.set(HttpHeaders.ALLOW, kind.allow());
-                    setIfPresent(headers, HttpConstants.ACCEPT_PUT, kind.acceptPut());
-                    setIfPresent(headers, HttpConstants.ACCEPT_POST, kind.acceptPost());
-                    setIfPresent(headers, HttpHeaders.ACCEPT_PATCH, kind.acceptPatch());
+                    // Solid Protocol §4.1 (T2.9): GET/HEAD additionally carry the
+                    // storage-description Link, which is a property of the storage rather
+                    // than of this resource — hence the three-argument form.
+                    InterfaceMetadata.write(headers, kind, storageDescription.linkValue());
                     // Set explicitly rather than left to the codec, so a HEAD reports the
                     // same length a GET would have written (RFC 9110 §9.3.2).
                     headers.setContentLength(body.length);
@@ -252,11 +242,6 @@ public class ResourceReadHandler {
                 .build();
     }
 
-    private static void setIfPresent(HttpHeaders headers, String name, String value) {
-        if (value != null) {
-            headers.set(name, value);
-        }
-    }
 
     // ---------------------------------------------------------------- request parsing
 

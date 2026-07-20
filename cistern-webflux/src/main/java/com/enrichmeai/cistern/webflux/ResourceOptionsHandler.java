@@ -178,25 +178,15 @@ public class ResourceOptionsHandler {
     private static Mono<ServerResponse> options(ResourceKind kind, String storageDescriptionLink) {
         return ServerResponse.noContent()
                 .headers(headers -> {
-                    headers.set(HttpHeaders.ALLOW, kind.allow());
-                    setIfPresent(headers, HttpConstants.ACCEPT_PUT, kind.acceptPut());
-                    setIfPresent(headers, HttpConstants.ACCEPT_POST, kind.acceptPost());
-                    setIfPresent(headers, HttpHeaders.ACCEPT_PATCH, kind.acceptPatch());
-                    // LDP §4.2.1.4 — the interaction model is discoverable from any response,
-                    // and OPTIONS is the response a client asks discovery questions of. On the
-                    // storage root this is also where §4.1's pim:Storage type link appears, so
-                    // an OPTIONS answers "is this the storage?" as well as a HEAD does.
-                    for (String linkValue : kind.linkTypeValues()) {
-                        headers.add(HttpHeaders.LINK, linkValue);
-                    }
-                    headers.add(HttpHeaders.LINK, storageDescriptionLink);
+                    // Includes the Link rel="type" values: LDP §4.2.1.4 makes the interaction
+                    // model discoverable from any response, and OPTIONS is the response a client
+                    // asks discovery questions of. On the storage root this is also where §4.1's
+                    // pim:Storage type link appears, so an OPTIONS answers "is this the storage?"
+                    // as well as a HEAD does. The trailing argument is §4.1's storage-description
+                    // Link, mandatory on GET/HEAD/OPTIONS alike.
+                    InterfaceMetadata.write(headers, kind, storageDescriptionLink);
                 })
                 .build();
     }
 
-    private static void setIfPresent(HttpHeaders headers, String name, String value) {
-        if (value != null) {
-            headers.set(name, value);
-        }
-    }
 }
