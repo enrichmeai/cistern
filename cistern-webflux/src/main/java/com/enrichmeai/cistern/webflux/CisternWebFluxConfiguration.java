@@ -84,6 +84,23 @@ public class CisternWebFluxConfiguration {
     }
 
     /**
+     * The create route (T2.3), one bean per method for the reason T2.4 gives above.
+     *
+     * <p>{@code /**} rather than a predicate restricted to paths ending in {@code /}: whether a
+     * {@code POST} target is a container is not a routing fact, and the two ways it can fail
+     * have different answers that only core can choose between — Solid Protocol §5.3 makes a
+     * target with no representation a 404, while a target that exists but is not a container is
+     * a 405. Routing containers only would collapse both into whatever the framework produced
+     * for an unmatched path.
+     */
+    @Bean
+    public RouterFunction<ServerResponse> cisternCreateRoutes(ResourceCreateHandler handler) {
+        return RouterFunctions.route(
+                RequestPredicates.method(HttpMethod.POST).and(RequestPredicates.path(ALL_PATHS)),
+                handler::post);
+    }
+
+    /**
      * The LDP/Solid semantics layer over whichever {@link ResourceStore} is configured.
      * Conditional so an embedder can supply its own.
      */

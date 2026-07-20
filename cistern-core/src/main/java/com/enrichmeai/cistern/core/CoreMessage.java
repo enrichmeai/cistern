@@ -42,7 +42,57 @@ public enum CoreMessage {
                     + " it cannot be written as \"%s\"; use %s or %s"),
 
     /** Stored bytes that will not parse: server-side corruption, never a client fault. */
-    STORED_REPRESENTATION_CORRUPT("Stored representation for <%s> is corrupt: %s");
+    STORED_REPRESENTATION_CORRUPT("Stored representation for <%s> is corrupt: %s"),
+
+    // ---------------------------------------------------------------- POST (T2.3)
+
+    /** Solid Protocol §5.3: a POST to a URI with no representation is a 404, not a create. */
+    POST_TARGET_NOT_FOUND(
+            "POST targets a resource without an existing representation (Solid Protocol §5.3):"
+                    + " <%s>"),
+
+    /**
+     * Solid Protocol §5.3 requires creation by POST only "to a URI path ending with /". A
+     * document is not a container and mints no children, which §5.2's {@code Allow} already
+     * advertises — so the refusal is RFC 9110 §15.5.6's 405.
+     */
+    POST_TARGET_NOT_A_CONTAINER(
+            "POST creates resources in containers, and <%s> is not one (Solid Protocol §5.3:"
+                    + " creation by POST is to a URI path ending with \"/\")"),
+
+    /**
+     * Every candidate name drawn for a new child was already taken — see LdpService.
+     *
+     * <p>Every placeholder in this catalogue is {@code %s}, including the ones that carry a
+     * number: {@code CoreMessageTest} formats each template with string arguments to prove that
+     * building a 4xx message can never throw and turn a client error into a 500, and a
+     * {@code %d} would fail that guard.
+     */
+    CHILD_NAME_UNAVAILABLE(
+            "Could not mint an unused name for a new child of <%s> after %s attempts"),
+
+    /** RFC 5023 §9.7.1 admits printable ASCII and tab; a control character is a malformed header. */
+    SLUG_MALFORMED(
+            "Slug header contains a control character (0x%s); RFC 5023 §9.7.1 admits only"
+                    + " printable characters and horizontal tab"),
+
+    /** RFC 5023 §9.7.1: the field value is percent-encoded, so a broken escape is malformed. */
+    SLUG_ESCAPE_MALFORMED("Malformed percent-escape in the Slug header: \"%s\""),
+
+    /**
+     * LDP §5.2.3.4: "If any requested interaction model cannot be honored, the server MUST fail
+     * the request." Raised for the LDP container types Cistern does not implement.
+     */
+    INTERACTION_MODEL_UNHONOURABLE(
+            "Cistern cannot honour the requested interaction model <%s> (LDP 1.0 §5.2.3.4 requires"
+                    + " the request to fail rather than be downgraded): Solid containers are LDP"
+                    + " Basic Containers (Solid Protocol §4.2), and membership-based containers are"
+                    + " not implemented"),
+
+    /** A caller programming error: a Slug instance may only ever hold a sanitized name. */
+    SLUG_NOT_A_NAME(
+            "A Slug value must be a single non-empty path segment of unreserved characters"
+                    + " (RFC 3986 §2.3) that neither starts nor ends with \".\" or \"-\": \"%s\"");
 
     private final String template;
 

@@ -26,14 +26,23 @@ final class HttpConstants {
     static final String TEXT_N3 = "text/n3";
 
     /**
-     * A {@code Link} field value typing the resource (RFC 8288 §3): {@code <IRI>; rel="type"}.
-     * The IRI always comes from a vocabulary constant class, never from a literal.
+     * RFC 5023 §9.7 — the client's name hint on a {@code POST}, adopted by LDP §5.2.3.10. Not a
+     * field {@link HttpHeaders} names, and never spelled at a call site; see
+     * {@code com.enrichmeai.cistern.core.ldp.Slug} for what is done with the value.
      */
-    static final String LINK_TYPE_TEMPLATE = "<%s>; rel=\"type\"";
+    static final String SLUG = "Slug";
+
+    /**
+     * A {@code Link} field value typing the resource (RFC 8288 §3): {@code <IRI>; rel="type"}.
+     * The IRI always comes from a vocabulary constant class, never from a literal, and the
+     * relation from {@link LinkRelation} — the same constant the request-side parser matches
+     * against, so what Cistern emits and what it reads cannot drift.
+     */
+    static final String LINK_TYPE_TEMPLATE = "<%s>; rel=\"%s\"";
 
     /** {@code Link: <IRI>; rel="type"} for one vocabulary IRI. */
     static String linkType(String iri) {
-        return LINK_TYPE_TEMPLATE.formatted(iri);
+        return LINK_TYPE_TEMPLATE.formatted(iri, LinkRelation.TYPE.value());
     }
 
     /** An {@code Allow} field value (RFC 9110 §10.2.1) from typed methods, in the given order. */

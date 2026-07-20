@@ -15,8 +15,11 @@ import org.apache.jena.rdf.model.Statement;
 import org.apache.jena.vocabulary.RDF;
 import reactor.core.publisher.Mono;
 
+import java.net.URI;
+import java.security.SecureRandom;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * LDP/Solid semantics over a {@link ResourceStore} — the single service the HTTP layer
@@ -53,6 +56,38 @@ import java.util.Objects;
  * and re-derived on read instead.
  */
 public final class LdpService {
+
+    /** Solid Protocol §3.1: a URI path ending with this separator denotes a container. */
+    private static final String CONTAINER_SUFFIX = "/";
+
+    /**
+     * How many names {@link #createIn} may draw before giving up. The first draw is the client's
+     * slug when it sent a usable one; every later draw is a fresh generated name, so reaching the
+     * end of this budget means {@link #generatedName()} collided
+     * {@value #NAME_ATTEMPTS} times in a row — a ~2^-114 event per draw. The bound exists so a
+     * corrupt store that reports every name as taken fails fast instead of spinning forever.
+     */
+    private static final int NAME_ATTEMPTS = 4;
+
+    /**
+     * Alphabet for generated names. Lower-case alphanumerics only, which is a deliberate
+     * narrowing of the URL-safe Base64 set on two grounds: no name can begin with {@code -}
+     * (awkward for every command-line tool a pod operator will point at the storage directory),
+     * and case-insensitive file systems — macOS's default among them — cannot fold two distinct
+     * generated names onto one backing file.
+     */
+    private static final String NAME_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+    /**
+     * Length of a generated name: 22 characters over a 36-symbol alphabet is
+     * log2(36) × 22 ≈ 114 bits of entropy — UUID-scale (122 bits) collision resistance, in 22
+     * URL-safe characters instead of 36. "Short, URL-safe, collision-resistant", in that order
+     * of what had to give.
+     */
+    private static final int NAME_LENGTH = 22;
+
+    /** Names must be unguessable as well as unique: a client must not be able to predict them. */
+    private static final SecureRandom NAME_RANDOM = new SecureRandom();
 
     private final ResourceStore store;
 
@@ -288,6 +323,120 @@ public final class LdpService {
     }
 
     /**
+     * The create-in-container path every front-end uses (HTTP {@code POST} in T2.3, MCP later):
+     * mints a name for a new child of {@code container}, stores the body against it, and reports
+     * the created resource — whose identifier the caller is obliged to disclose (LDP 1.0
+     * §5.2.3.1: "If the resource was created successfully, LDP servers MUST respond with status
+     * code 201 (Created) and the Location header set to the new resource's URL").
+     *
+     * <h2>Why this returns a {@link ResourceView} and not a {@link WriteOutcome}</h2>
+     * A {@code POST} has exactly one successful effect. It never replaces: the name is chosen
+     * <em>because</em> nothing holds it, so a {@link WriteEffect} field would be a constant
+     * dressed up as a decision, and a front-end could switch on it as though 204 were reachable.
+     * The view carries what the caller actually needs — the minted identifier, the validators,
+     * and the post-write state.
+     *
+     * <h2>The two refusals, and their order</h2>
+     * Both are decided before a name is drawn, and existence is checked first because the spec
+     * makes it the more general rule:
+     * <ol>
+     *   <li><b>Nothing there → {@link CisternException.NotFound}.</b> Solid Protocol §5.3: "When
+     *       a {@code POST} method request targets a resource without an existing representation,
+     *       the server MUST respond with the {@code 404} status code." This is unconditional —
+     *       it does not ask whether the target's path ends in a slash — so a {@code POST} to a
+     *       container that does not exist is a 404 and not an implicit create. That is the
+     *       deliberate asymmetry with {@link #put}, which does create intermediate containers:
+     *       {@code PUT} names the resource it wants, so the server can build the path to it,
+     *       while {@code POST} asks an existing container to mint a child.</li>
+     *   <li><b>There but not a container → {@link CisternException.MethodNotAllowed}.</b> Solid
+     *       Protocol §5.3 requires creation by {@code POST} only "to a URI path ending with
+     *       {@code /}", and §5.2 requires the server to advertise the methods a resource
+     *       supports — {@code Allow} for a document does not list {@code POST}. RFC 9110
+     *       §15.5.6 is the matching status: the method "is known by the origin server but not
+     *       supported by the target resource". 405 rather than 404, because the resource
+     *       demonstrably exists and answering 404 for something a {@code GET} will serve would
+     *       be a lie.</li>
+     * </ol>
+     *
+     * <h2>Choosing the name</h2>
+     * The client may hint with a {@link Slug} (RFC 5023 §9.7, adopted by LDP §5.2.3.10 as "a
+     * client hint"); {@link Slug} has already reduced it to a safe single path segment, or to
+     * nothing at all. With no usable hint the server mints its own, which LDP §5.2.3.8 expects:
+     * "LDP servers SHOULD assign the URI for the resource to be created using server application
+     * specific rules in the absence of a client hint."
+     *
+     * <p><b>A taken name is never overwritten.</b> {@code POST} creates; it has no replace
+     * semantics to fall back on, and silently overwriting a resource the client did not name
+     * would be data loss triggered by a header. A candidate counts as taken if <em>either</em>
+     * spelling of the name exists — {@code name} or {@code name/} — because Solid Protocol §3.1
+     * makes those one name in two kinds ("if a server has associated a resource with one, the
+     * other URI MUST NOT correspond to another resource"), so writing the free spelling would be
+     * refused by the store as a kind flip anyway. Checking both here turns that 409 into what
+     * the client asked for: a different name.
+     *
+     * <p><b>A collision falls back to a generated name, never to a suffix.</b> Numbering a
+     * collision ({@code note}, {@code note-1}, {@code note-2}) discloses that {@code note}
+     * exists — a probe a client could run against a container it may write but not read, which
+     * becomes a genuine information leak once WAC lands in Phase 4. A freshly drawn name
+     * discloses nothing, and {@link #generatedName()} is collision-resistant enough that the
+     * retry below is a safety net rather than an expected path.
+     *
+     * <h2>Storing the body reuses {@link #put}</h2>
+     * Once the identifier is settled, a create by {@code POST} and a create by {@code PUT} are
+     * the same operation, so this delegates rather than restating it: RDF bodies are parsed
+     * before they are stored, a non-RDF body offered to a container URI is a
+     * {@link CisternException.Conflict}, and §5.3's server-managed containment guard runs. The
+     * base URI for parsing is the <em>created</em> resource, which is what LDP §4.2.1.5 requires
+     * ("LDP servers MUST assign the default base-URI ... to the URI of the created resource when
+     * the request results in the creation of a new resource") and what makes §5.2.3.7's rule
+     * fall out for free: a triple whose subject is the null relative URI ends up describing the
+     * new resource.
+     *
+     * <p>The containment triple LDP §5.2.3.2 requires the container to gain needs no work here
+     * either — containment is derived from {@link ResourceStore#children} on every read (see the
+     * class javadoc), so the new child is listed the moment the parent is read.
+     *
+     * <p><b>The same known race as {@link #put}.</b> "Is this name free?" and "store it" are two
+     * calls, so two writers racing on one generated name could both see it free. The window is
+     * vanishingly small (the names are drawn from ~114 bits of entropy) and the fix is the same
+     * atomic-create the storage SPI owes {@link #put}; it is tracked there, not worked around
+     * here.
+     *
+     * @param container      the container to create in; existence and kind are checked, not assumed
+     * @param slug           the client's sanitized name hint, or empty for none
+     * @param model          what to create — a document or a child container (LDP §5.2.3.4)
+     * @param representation the body to store, with an already-canonical media type
+     * @return the created resource. Signals {@link CisternException.NotFound} if the target has
+     *         no representation, {@link CisternException.MethodNotAllowed} if it is not a
+     *         container, {@link CisternException.BadInput} for an unparseable RDF body,
+     *         {@link CisternException.Conflict} for a non-RDF body offered for a child container
+     *         or a body asserting the new resource's containment. Never throws synchronously.
+     */
+    public Mono<ResourceView> createIn(ResourceIdentifier container, Optional<Slug> slug,
+                                       InteractionModel model, Representation representation) {
+        return Mono.defer(() -> {
+            Objects.requireNonNull(container, "container");
+            Objects.requireNonNull(slug, "slug");
+            Objects.requireNonNull(model, "model");
+            Objects.requireNonNull(representation, "representation");
+            return store.exists(container)
+                    .flatMap(exists -> {
+                        if (!exists) {
+                            return Mono.error(new CisternException.NotFound(
+                                    CoreMessage.POST_TARGET_NOT_FOUND.format(container.uri())));
+                        }
+                        if (!container.isContainer()) {
+                            return Mono.error(new CisternException.MethodNotAllowed(
+                                    CoreMessage.POST_TARGET_NOT_A_CONTAINER.format(container.uri())));
+                        }
+                        return freeChild(container, slug.map(Slug::value), model, NAME_ATTEMPTS)
+                                .flatMap(child -> put(child, representation))
+                                .map(WriteOutcome::view);
+                    });
+        });
+    }
+
+    /**
      * Write-path guard for Solid Protocol §5.3: rejects a client body that tries to
      * update the target's containment triples ("Servers MUST NOT allow HTTP PUT or
      * PATCH on a container to update its containment triples; if the server receives
@@ -328,6 +477,70 @@ public final class LdpService {
     }
 
     // ---------------------------------------------------------------- internals
+
+    /**
+     * The identifier of a child of {@code container} that nothing currently occupies.
+     *
+     * <p>Recursive rather than iterative because each attempt is an asynchronous question to the
+     * store: the recursion happens on the reactive chain, one {@code flatMap} deep per attempt,
+     * and {@link #NAME_ATTEMPTS} bounds it. Only the first attempt may use the client's hint —
+     * every retry drops it and draws a generated name, which is why {@code preferred} is passed
+     * as {@link Optional#empty()} on the way down.
+     *
+     * @param preferred    the name to try first, or empty to generate one
+     * @param attemptsLeft remaining draws, including this one
+     */
+    private Mono<ResourceIdentifier> freeChild(ResourceIdentifier container,
+                                               Optional<String> preferred,
+                                               InteractionModel model,
+                                               int attemptsLeft) {
+        return Mono.defer(() -> {
+            String name = preferred.orElseGet(LdpService::generatedName);
+            ResourceIdentifier asDocument = childOf(container, name, false);
+            ResourceIdentifier asContainer = childOf(container, name, true);
+            // Both spellings, because Solid Protocol §3.1 makes them one name: a document
+            // /c/note and a container /c/note/ cannot coexist, so either one occupies the name.
+            return Mono.zip(store.exists(asDocument), store.exists(asContainer),
+                            (documentExists, containerExists) -> documentExists || containerExists)
+                    .flatMap(taken -> {
+                        if (!taken) {
+                            return Mono.just(model.container() ? asContainer : asDocument);
+                        }
+                        if (attemptsLeft <= 1) {
+                            return Mono.error(new CisternException.Conflict(
+                                    CoreMessage.CHILD_NAME_UNAVAILABLE.format(
+                                            container.uri(), NAME_ATTEMPTS)));
+                        }
+                        return freeChild(container, Optional.empty(), model, attemptsLeft - 1);
+                    });
+        });
+    }
+
+    /**
+     * The identifier one name below {@code container}, in the requested kind.
+     *
+     * <p>Built by RFC 3986 §5 reference resolution rather than string concatenation: the
+     * container's URI ends with {@code /}, so resolving a single-segment relative reference
+     * against it appends exactly that segment and drops any query the base carried, which a
+     * child does not inherit. The name is unreserved characters only — enforced by
+     * {@link Slug}'s invariant, and by construction for {@link #generatedName()} — so it needs
+     * no percent-encoding, contains no {@code :} that could be read as a scheme, and cannot
+     * introduce a path segment of its own.
+     */
+    private static ResourceIdentifier childOf(ResourceIdentifier container, String name,
+                                              boolean asContainer) {
+        URI child = container.uri().resolve(asContainer ? name + CONTAINER_SUFFIX : name);
+        return new ResourceIdentifier(child);
+    }
+
+    /** A fresh name; see {@link #NAME_ALPHABET} and {@link #NAME_LENGTH} for the arithmetic. */
+    private static String generatedName() {
+        StringBuilder name = new StringBuilder(NAME_LENGTH);
+        for (int i = 0; i < NAME_LENGTH; i++) {
+            name.append(NAME_ALPHABET.charAt(NAME_RANDOM.nextInt(NAME_ALPHABET.length())));
+        }
+        return name.toString();
+    }
 
     /**
      * Everything {@link #put} must establish about a body before it may reach storage. Pure

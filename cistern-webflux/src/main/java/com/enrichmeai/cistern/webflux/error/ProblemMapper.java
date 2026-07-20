@@ -31,6 +31,9 @@ final class ProblemMapper {
 
     private static final Logger log = LoggerFactory.getLogger(ProblemMapper.class);
 
+    /** Solid Protocol §3.1: a URI path ending with this separator denotes a container. */
+    private static final String CONTAINER_SUFFIX = "/";
+
     /**
      * Exception class → problem type, for every {@link CisternException} subtype whose status
      * depends on nothing but its class. {@code AccessDenied} is deliberately absent:
@@ -59,7 +62,8 @@ final class ProblemMapper {
         URI instance = URI.create(exchange.getRequest().getPath().value());
 
         if (error instanceof CisternException domainError) {
-            return new Problem(domain(domainError, instance, exchange), domainHeaders(domainError));
+            return new Problem(domain(domainError, instance, exchange),
+                    domainHeaders(domainError, exchange));
         }
         // Every Spring web exception worth mapping (UnsupportedMediaTypeStatusException →
         // 415, MethodNotAllowedException → 405 + Allow, ServerWebInputException → 400,
@@ -98,19 +102,44 @@ final class ProblemMapper {
      * for the root ("Server MUST exclude the {@code DELETE} method in the field value of the
      * {@code Allow} header field, in response to requests to these resources").
      *
-     * <p>The storage root is currently the only resource in Cistern whose method set is
-     * restricted, so its kind is the right answer for every {@code MethodNotAllowed} there is.
-     * The day a second one appears — §5.4's other case, an ACL resource, is the likely first —
-     * the exception will have to carry the kind it was raised for, and this method becomes a
-     * lookup instead of a constant.
+     * <p>T2.3 brought the second such resource this method's earlier note predicted: a
+     * {@code POST} to a document is a 405 (Solid Protocol §5.3 confines creation by {@code POST}
+     * to paths ending in {@code /}), and answering it with the storage root's {@code Allow} would
+     * have listed {@code POST} in the refusal of a {@code POST} — a self-contradicting response.
+     * See {@link #allowedMethods} for how the kind is chosen without the exception having to
+     * carry it.
      */
-    private static HttpHeaders domainHeaders(CisternException error) {
+    private static HttpHeaders domainHeaders(CisternException error, ServerWebExchange exchange) {
         if (!(error instanceof CisternException.MethodNotAllowed)) {
             return HttpHeaders.EMPTY;
         }
         HttpHeaders headers = new HttpHeaders();
-        headers.set(HttpHeaders.ALLOW, ResourceKind.STORAGE_ROOT.allow());
+        headers.set(HttpHeaders.ALLOW, allowedMethods(exchange));
         return headers;
+    }
+
+    /**
+     * The {@code Allow} field value for a resource known only by its request path.
+     *
+     * <p>Solid Protocol §3.1 makes the trailing slash decide the container/document split, so the
+     * path alone separates the two resources that can raise a {@link
+     * CisternException.MethodNotAllowed} today: the storage root refusing {@code DELETE} (§5.4)
+     * and a document refusing {@code POST} (§5.3). Reading it from the exchange keeps a
+     * {@code CisternException} free of HTTP, which is the whole point of the type.
+     *
+     * <p>{@link ResourceKind#NON_RDF_DOCUMENT} is the document row rather than
+     * {@link ResourceKind#RDF_DOCUMENT} because the two differ only in {@code PATCH}, the path
+     * cannot say which applies, and RFC 9110 §10.2.1 defines {@code Allow} as the methods the
+     * resource supports — so the row that claims only what every document supports is the one
+     * that cannot over-advertise. {@code PATCH} is not served until T2.7, which is when this
+     * needs to become exact; at that point the distinction is a fact only core holds, and the
+     * exception will have to carry it.
+     */
+    private static String allowedMethods(ServerWebExchange exchange) {
+        boolean container = exchange.getRequest().getPath().value().endsWith(CONTAINER_SUFFIX);
+        return container
+                ? ResourceKind.STORAGE_ROOT.allow()
+                : ResourceKind.NON_RDF_DOCUMENT.allow();
     }
 
     private ProblemDocument domain(CisternException error, URI instance, ServerWebExchange exchange) {
