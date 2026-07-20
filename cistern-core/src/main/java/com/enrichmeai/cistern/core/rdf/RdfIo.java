@@ -1,19 +1,17 @@
 package com.enrichmeai.cistern.core.rdf;
 
 import com.enrichmeai.cistern.core.CisternException;
+import com.enrichmeai.cistern.core.CoreMessage;
 import com.enrichmeai.cistern.core.Representation;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
-import org.apache.jena.riot.Lang;
-import org.apache.jena.riot.RDFFormat;
 import org.apache.jena.riot.RDFParser;
 import org.apache.jena.riot.RDFWriter;
 import org.apache.jena.riot.system.ErrorHandlerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.util.Locale;
 
 /**
  * Parse and serialize RDF resource representations.
@@ -54,27 +52,26 @@ public final class RdfIo {
      */
     public static Model parse(Representation representation, ResourceIdentifier resource) {
         if (representation == null) {
-            throw new CisternException.BadInput("Cannot parse RDF: no representation given");
+            throw new CisternException.BadInput(CoreMessage.RDF_NO_REPRESENTATION.format());
         }
         if (representation.data() == null) {
-            throw new CisternException.BadInput("Cannot parse RDF: representation has no data");
+            throw new CisternException.BadInput(CoreMessage.RDF_NO_DATA.format());
         }
         if (resource == null) {
-            throw new CisternException.BadInput("Cannot parse RDF: no resource identifier given as base");
+            throw new CisternException.BadInput(CoreMessage.RDF_NO_BASE.format());
         }
-        Lang lang = langFor(representation.contentType());
+        RdfMediaType type = RdfMediaType.require(representation.contentType());
         Model model = ModelFactory.createDefaultModel();
         try {
             RDFParser.create()
                     .source(new ByteArrayInputStream(representation.data()))
-                    .forceLang(lang)
+                    .forceLang(type.lang())
                     .base(resource.uri().toString())
                     .errorHandler(ErrorHandlerFactory.errorHandlerStrictNoLogging)
                     .parse(model);
         } catch (RuntimeException e) {
-            throw new CisternException.BadInput(
-                    "Malformed " + lang.getContentType().getContentTypeStr() + " document for <"
-                            + resource.uri() + ">: " + safeMessage(e));
+            throw new CisternException.BadInput(CoreMessage.RDF_DOCUMENT_MALFORMED.format(
+                    type.contentType(), resource.uri(), safeMessage(e)));
         }
         return model;
     }
@@ -91,45 +88,17 @@ public final class RdfIo {
      */
     public static Representation serialize(Model model, String contentType) {
         if (model == null) {
-            throw new CisternException.BadInput("Cannot serialize RDF: no model given");
+            throw new CisternException.BadInput(CoreMessage.RDF_NO_MODEL.format());
         }
-        String canonical = canonicalMediaType(contentType);
-        RDFFormat format = Representation.TURTLE.equals(canonical) ? RDFFormat.TURTLE : RDFFormat.JSONLD;
+        RdfMediaType type = RdfMediaType.require(contentType);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
-            RDFWriter.source(model).format(format).output(out);
+            RDFWriter.source(model).format(type.format()).output(out);
         } catch (RuntimeException e) {
-            throw new CisternException.BadInput(
-                    "Cannot serialize RDF as " + canonical + ": " + safeMessage(e));
+            throw new CisternException.BadInput(CoreMessage.RDF_SERIALIZATION_FAILED.format(
+                    type.contentType(), safeMessage(e)));
         }
-        return new Representation(canonical, out.toByteArray());
-    }
-
-    private static Lang langFor(String contentType) {
-        String canonical = canonicalMediaType(contentType);
-        return Representation.TURTLE.equals(canonical) ? Lang.TURTLE : Lang.JSONLD;
-    }
-
-    /**
-     * Reduces a media type to its canonical bare form (parameters stripped, lower-cased)
-     * and rejects anything other than the two supported RDF types.
-     */
-    private static String canonicalMediaType(String contentType) {
-        if (contentType == null) {
-            throw new CisternException.BadInput(
-                    "No content type given; supported RDF content types: "
-                            + Representation.TURTLE + ", " + Representation.JSON_LD);
-        }
-        int semicolon = contentType.indexOf(';');
-        String bare = (semicolon >= 0 ? contentType.substring(0, semicolon) : contentType)
-                .trim()
-                .toLowerCase(Locale.ROOT);
-        if (!Representation.TURTLE.equals(bare) && !Representation.JSON_LD.equals(bare)) {
-            throw new CisternException.BadInput(
-                    "Unsupported RDF content type \"" + contentType + "\"; supported: "
-                            + Representation.TURTLE + ", " + Representation.JSON_LD);
-        }
-        return bare;
+        return new Representation(type.contentType(), out.toByteArray());
     }
 
     private static String safeMessage(Throwable t) {

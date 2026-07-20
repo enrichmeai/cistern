@@ -110,6 +110,36 @@ public enum CoreMessage {
             "The kind of a document cannot be known from its URI alone; ofContainer() requires a"
                     + " container identifier (trailing slash): <%s>"),
 
+    // ---------------------------------------------------------------- RDF io
+
+    /** {@code RdfIo.parse} called with no representation — a caller programming error. */
+    RDF_NO_REPRESENTATION("Cannot parse RDF: no representation given"),
+
+    /** A representation carrying a null byte array. */
+    RDF_NO_DATA("Cannot parse RDF: representation has no data"),
+
+    /** Relative-reference resolution needs a base (Solid Protocol §1.4.1, RFC 3986 §5.1.3). */
+    RDF_NO_BASE("Cannot parse RDF: no resource identifier given as base"),
+
+    /** Syntax Jena rejected. The trailing {@code %s} is the parser's own complaint. */
+    RDF_DOCUMENT_MALFORMED("Malformed %s document for <%s>: %s"),
+
+    /** {@code RdfIo.serialize} called with no model — a caller programming error. */
+    RDF_NO_MODEL("Cannot serialize RDF: no model given"),
+
+    /** A write that Jena failed, which is a server fault rather than a syntax one. */
+    RDF_SERIALIZATION_FAILED("Cannot serialize RDF as %s: %s"),
+
+    /**
+     * No media type offered where one is required. The supported set is rendered by
+     * {@code RdfMediaType.contentTypeList()}, so the message cannot list types the RDF layer
+     * does not actually accept.
+     */
+    RDF_CONTENT_TYPE_MISSING("No content type given; supported RDF content types: %s"),
+
+    /** Solid Protocol §5.5 fixes the pair of RDF serializations; anything else is a client fault. */
+    RDF_CONTENT_TYPE_UNSUPPORTED("Unsupported RDF content type \"%s\"; supported: %s"),
+
     /** A caller programming error: a Slug instance may only ever hold a sanitized name. */
     SLUG_NOT_A_NAME(
             "A Slug value must be a single non-empty path segment of unreserved characters"
