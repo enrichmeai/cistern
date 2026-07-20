@@ -31,6 +31,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -71,6 +72,9 @@ class ResourceReadHttpTest {
     private static final String BASIC_CONTAINER_IRI = Ldp.BASIC_CONTAINER.getURI();
 
     private static final Path STORAGE_ROOT = createTempRoot();
+
+    /** Enough repeats to expose a per-request-varying validator without slowing the suite. */
+    private static final int REPEATED_READS = 4;
 
     private static final byte[] PNG_BYTES = {
             (byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x01, 0x02, 0x03};
@@ -130,6 +134,12 @@ class ResourceReadHttpTest {
     /** {@code uri(URI)} rather than {@code uri(String)}: no template expansion, no re-encoding. */
     private WebTestClient.RequestHeadersSpec<?> get(String rawPath) {
         return client.get().uri(URI.create(rawPath));
+    }
+
+    private static String etagOf(EntityExchangeResult<byte[]> result) {
+        String etag = result.getResponseHeaders().getFirst(HttpHeaders.ETAG);
+        assertNotNull(etag, "every successful read carries a validator");
+        return etag;
     }
 
     private static String body(EntityExchangeResult<byte[]> result) {
@@ -275,23 +285,120 @@ class ResourceReadHttpTest {
     // ---------------------------------------------------------------- validators
 
     @Test
-    void etagIsTheStoredStrongValidatorQuoted() {
-        StoredResource stored = put("/notes/a.ttl", turtle("<> <https://vocab.example/k> \"v2\" ."));
-
-        get("/notes/a.ttl").exchange()
-                .expectStatus().isOk()
-                .expectHeader().valueEquals(HttpHeaders.ETAG, "\"" + stored.etag() + "\"");
-    }
-
-    @Test
-    void etagIsStrongNotWeak() {
+    void etagIsAStrongQuotedValidator() {
         EntityExchangeResult<byte[]> result = get("/notes/a.ttl")
                 .exchange().expectBody().returnResult();
 
-        String etag = result.getResponseHeaders().getFirst(HttpHeaders.ETAG);
-        assertNotNull(etag);
+        String etag = etagOf(result);
         assertTrue(etag.startsWith("\"") && etag.endsWith("\""),
                 "RFC 9110 §8.8.3: a strong validator carries no W/ prefix; got " + etag);
+    }
+
+    @Test
+    void etagIsNotTheStoredValidatorBecauseTheRepresentationIsNotTheStoredBytes() {
+        StoredResource stored = put("/notes/a.ttl", turtle("<> <https://vocab.example/k> \"v2\" ."));
+
+        String etag = etagOf(get("/notes/a.ttl").exchange().expectBody().returnResult());
+        assertNotEquals("\"" + stored.etag() + "\"", etag,
+                "the served representation is a re-serialization of the graph in a negotiated"
+                        + " media type, so its validator is derived, not copied from the store");
+    }
+
+    @Test
+    void etagIsStableAcrossRepeatedIdenticalGets() {
+        // Regression guard for serializer non-determinism: EntityTag hashes canonical inputs,
+        // never Jena's output bytes. A validator that changed per request would defeat caching
+        // and make T2.5's conditional requests fail spuriously.
+        String first = etagOf(get("/notes/").exchange().expectBody().returnResult());
+        for (int i = 0; i < REPEATED_READS; i++) {
+            assertEquals(first, etagOf(get("/notes/").exchange().expectBody().returnResult()),
+                    "the same representation must yield the same validator every time");
+        }
+    }
+
+    @Test
+    void etagIsStableAcrossRepeatedJsonLdGetsToo() {
+        // The sharper half of the guard: Jena's JSON-LD writer is measurably NOT byte-stable
+        // (the same graph serializes to different bytes on repeat calls), so an implementation
+        // that hashed output would fail here while passing the Turtle case above.
+        String first = jsonLdEtagOf("/notes/");
+        for (int i = 0; i < REPEATED_READS; i++) {
+            assertEquals(first, jsonLdEtagOf("/notes/"));
+        }
+    }
+
+    private String jsonLdEtagOf(String path) {
+        return etagOf(get(path).header(HttpHeaders.ACCEPT, Representation.JSON_LD)
+                .exchange().expectBody().returnResult());
+    }
+
+    @Test
+    void turtleAndJsonLdOfOneResourceHaveDifferentEtags() {
+        String turtleTag = etagOf(get("/notes/a.ttl").exchange().expectBody().returnResult());
+        String jsonLdTag = etagOf(get("/notes/a.ttl")
+                .header(HttpHeaders.ACCEPT, Representation.JSON_LD)
+                .exchange().expectBody().returnResult());
+
+        assertNotEquals(turtleTag, jsonLdTag,
+                "two representations with different bytes must not share a strong validator"
+                        + " (RFC 9110 §8.8.1)");
+    }
+
+    @Test
+    void containerEtagChangesWhenAChildIsAdded() {
+        put("/etag-add/", turtle(""));
+        String before = etagOf(get("/etag-add/").exchange().expectBody().returnResult());
+
+        put("/etag-add/new.ttl", turtle("<> <https://vocab.example/k> \"v\" ."));
+        String after = etagOf(get("/etag-add/").exchange().expectBody().returnResult());
+
+        assertNotEquals(before, after,
+                "a container's representation includes derived ldp:contains (Solid Protocol"
+                        + " §4.2), so a new child changes what is served and must change the"
+                        + " validator — otherwise a cache serves a stale listing");
+    }
+
+    @Test
+    void containerEtagChangesWhenAChildIsDeleted() {
+        put("/etag-del/", turtle(""));
+        put("/etag-del/gone.ttl", turtle(""));
+        String before = etagOf(get("/etag-del/").exchange().expectBody().returnResult());
+
+        StepVerifier.create(store.delete(id("/etag-del/gone.ttl"))).verifyComplete();
+        String after = etagOf(get("/etag-del/").exchange().expectBody().returnResult());
+
+        assertNotEquals(before, after, "removing a child changes the representation too");
+    }
+
+    @Test
+    void containerEtagIsUnchangedByAnUnrelatedContainer() {
+        put("/etag-other/", turtle(""));
+        String before = etagOf(get("/etag-other/").exchange().expectBody().returnResult());
+
+        put("/etag-elsewhere/", turtle(""));
+        put("/etag-elsewhere/child.ttl", turtle(""));
+
+        assertEquals(before, etagOf(get("/etag-other/").exchange().expectBody().returnResult()),
+                "only this container's own representation may move its validator");
+    }
+
+    @Test
+    void documentEtagChangesWhenItsContentChanges() {
+        put("/etag-doc.ttl", turtle("<> <https://vocab.example/k> \"one\" ."));
+        String before = etagOf(get("/etag-doc.ttl").exchange().expectBody().returnResult());
+
+        put("/etag-doc.ttl", turtle("<> <https://vocab.example/k> \"two\" ."));
+
+        assertNotEquals(before, etagOf(get("/etag-doc.ttl").exchange().expectBody().returnResult()));
+    }
+
+    @Test
+    void headAndGetEmitTheIdenticalEtag() {
+        String getTag = etagOf(get("/notes/").exchange().expectBody().returnResult());
+        String headTag = etagOf(client.head().uri(URI.create("/notes/"))
+                .exchange().expectBody().returnResult());
+
+        assertEquals(getTag, headTag, "one computation behind both methods");
     }
 
     @Test
@@ -306,6 +413,36 @@ class ResourceReadHttpTest {
         // Parses as an IMF-fixdate and, at second resolution, is the store's instant.
         ZonedDateTime parsed = ZonedDateTime.parse(lastModified, DateTimeFormatter.RFC_1123_DATE_TIME);
         assertEquals(stored.lastModified(), parsed.toInstant());
+    }
+
+    // ---------------------------------------------------------------- Vary
+
+    @Test
+    void negotiatedResponsesVaryOnAccept() {
+        // RFC 9110 §12.5.5 — without this a shared cache may hand a Turtle body to a client
+        // that asked for JSON-LD.
+        get("/notes/a.ttl").exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals(HttpHeaders.VARY, HttpHeaders.ACCEPT);
+        get("/notes/").exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals(HttpHeaders.VARY, HttpHeaders.ACCEPT);
+    }
+
+    @Test
+    void headCarriesVaryToo() {
+        client.head().uri(URI.create("/notes/a.ttl")).exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals(HttpHeaders.VARY, HttpHeaders.ACCEPT);
+    }
+
+    @Test
+    void unnegotiatedResponsesDoNotVaryOnAccept() {
+        EntityExchangeResult<byte[]> result = get("/logo.png")
+                .exchange().expectStatus().isOk().expectBody().returnResult();
+
+        assertNull(result.getResponseHeaders().getFirst(HttpHeaders.VARY),
+                "a non-RDF resource has exactly one representation, so nothing varies by Accept");
     }
 
     // ---------------------------------------------------------------- Allow / Accept-*
@@ -397,7 +534,8 @@ class ResourceReadHttpTest {
         HttpHeaders headHeaders = headResult.getResponseHeaders();
         for (String header : List.of(HttpHeaders.CONTENT_TYPE, HttpHeaders.CONTENT_LENGTH,
                 HttpHeaders.ETAG, HttpHeaders.LAST_MODIFIED, HttpHeaders.ALLOW,
-                HttpHeaders.LINK, HttpConstants.ACCEPT_PUT, HttpHeaders.ACCEPT_PATCH)) {
+                HttpHeaders.LINK, HttpHeaders.VARY, HttpConstants.ACCEPT_PUT,
+                HttpHeaders.ACCEPT_PATCH)) {
             assertEquals(getHeaders.get(header), headHeaders.get(header),
                     "RFC 9110 §9.3.2: HEAD sends the same header fields as GET — " + header);
         }

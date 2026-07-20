@@ -72,22 +72,44 @@ public class ResourceReadHandler {
             // whose containment triples exist in no stored byte (§4.2).
             case ResourceView.Rdf rdf -> {
                 RdfSerialization serialization = negotiator.negotiateRdf(accept);
-                yield new Rendered(view, serialization.mediaType(),
+                yield Rendered.negotiated(view, serialization.mediaType(),
                         serialization.serialize(rdf.graph()).data());
             }
             // A non-RDF source has exactly one representation and is copied out untouched.
             case ResourceView.NonRdf binary -> {
                 MediaType stored = negotiator.requireAcceptable(accept, storedTypeOf(binary));
-                yield new Rendered(view, stored, binary.representation().data());
+                yield Rendered.unnegotiated(view, stored, binary.representation().data());
             }
         }).flatMap(this::write);
     }
 
-    /** The response body and the resource it describes, before it becomes a response. */
-    private record Rendered(ResourceView view, MediaType contentType, byte[] body) {
+    /**
+     * The response body and the resource it describes, before it becomes a response.
+     *
+     * @param negotiated whether {@code Accept} selected among several possible
+     *                   representations — true for an RDF source (Turtle or JSON-LD), false
+     *                   for a non-RDF source, which has only the one. Drives {@code Vary}.
+     */
+    private record Rendered(ResourceView view, MediaType contentType, byte[] body,
+                            boolean negotiated) {
+
+        /** An RDF source: {@code Accept} chose this serialization out of several. */
+        static Rendered negotiated(ResourceView view, MediaType contentType, byte[] body) {
+            return new Rendered(view, contentType, body, true);
+        }
+
+        /** A non-RDF source: one representation, so {@code Accept} selected nothing. */
+        static Rendered unnegotiated(ResourceView view, MediaType contentType, byte[] body) {
+            return new Rendered(view, contentType, body, false);
+        }
 
         ResourceKind kind() {
             return ResourceKind.of(view);
+        }
+
+        /** The validator for THIS representation, not for the stored bytes. */
+        EntityTag entityTag() {
+            return EntityTag.forRepresentation(view, contentType);
         }
     }
 
@@ -95,15 +117,21 @@ public class ResourceReadHandler {
         ResourceKind kind = rendered.kind();
         return ServerResponse.ok()
                 .headers(headers -> {
-                    // Strong validator, quoted (RFC 9110 §8.8.3). The store guarantees it
-                    // changes whenever the representation changes.
-                    headers.set(HttpHeaders.ETAG,
-                            HttpConstants.strongETag(rendered.view().etag()));
+                    // Strong validator for the representation being served, not for the
+                    // stored bytes (RFC 9110 §8.8.1, §8.8.3) — see EntityTag for why those
+                    // differ for a container and across the two RDF serializations.
+                    headers.set(HttpHeaders.ETAG, rendered.entityTag().headerValue());
                     // IMF-fixdate, one-second resolution (RFC 9110 §5.6.7, §8.8.2); the
                     // store already truncates to seconds, so nothing is rounded here.
                     headers.setLastModified(rendered.view().lastModified());
                     for (String linkValue : kind.linkTypeValues()) {
                         headers.add(HttpHeaders.LINK, linkValue);
+                    }
+                    if (rendered.negotiated()) {
+                        // RFC 9110 §12.5.5: without this a shared cache may hand a Turtle
+                        // body to a client that asked for JSON-LD. A non-RDF resource has one
+                        // representation, so its response does not vary by Accept.
+                        headers.set(HttpHeaders.VARY, HttpHeaders.ACCEPT);
                     }
                     headers.set(HttpHeaders.ALLOW, kind.allow());
                     setIfPresent(headers, HttpConstants.ACCEPT_PUT, kind.acceptPut());

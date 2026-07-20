@@ -31,17 +31,9 @@ final class HttpConstants {
      */
     static final String LINK_TYPE_TEMPLATE = "<%s>; rel=\"type\"";
 
-    /** RFC 9110 §8.8.3 — a strong entity-tag is the opaque value in double quotes. */
-    static final String STRONG_ETAG_TEMPLATE = "\"%s\"";
-
     /** {@code Link: <IRI>; rel="type"} for one vocabulary IRI. */
     static String linkType(String iri) {
         return LINK_TYPE_TEMPLATE.formatted(iri);
-    }
-
-    /** A quoted strong entity-tag around the store's opaque validator. */
-    static String strongETag(String validator) {
-        return STRONG_ETAG_TEMPLATE.formatted(validator);
     }
 
     /** An {@code Allow} field value (RFC 9110 §10.2.1) from typed methods, in the given order. */

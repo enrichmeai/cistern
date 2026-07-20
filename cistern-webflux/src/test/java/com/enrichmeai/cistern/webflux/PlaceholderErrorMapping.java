@@ -11,7 +11,11 @@ import org.springframework.web.server.WebExceptionHandler;
 import reactor.core.publisher.Mono;
 
 /**
- * <b>Temporary scaffolding — delete when T2.6 merges.</b>
+ * <b>TEMPORARY SCAFFOLDING — DELETE THIS FILE WHEN T2.6 MERGES.</b> It exists only because
+ * T2.6's global error mapper is not on this branch. Once it is, this class must go: leaving
+ * it would mean these tests keep asserting against a stand-in instead of against the real
+ * mapper, which is the one way this file could quietly outlive its purpose. The architect is
+ * tracking the deletion; this comment is the second guard.
  *
  * <p>T2.1's handler deliberately maps no status codes: it signals {@link CisternException}
  * subtypes and the single global error mapper (T2.6, {@code webflux/error/}) renders them.
