@@ -167,10 +167,39 @@ public final class LdpService {
      *         fault). Never throws synchronously.
      */
     public Mono<ResourceView> read(ResourceIdentifier target) {
-        return Mono.defer(() -> store.get(target)
-                .switchIfEmpty(Mono.error(() -> new CisternException.NotFound(
-                        CoreMessage.RESOURCE_NOT_FOUND.format(target.uri()))))
-                .flatMap(stored -> viewOf(target, stored)));
+        return find(target).switchIfEmpty(Mono.error(() -> new CisternException.NotFound(
+                CoreMessage.RESOURCE_NOT_FOUND.format(target.uri()))));
+    }
+
+    /**
+     * The same resolution as {@link #read}, but with absence left as an <b>empty Mono</b>
+     * instead of a {@link CisternException.NotFound} signal — the low-level form, matching
+     * {@link #getContainer} and {@link ResourceStore#get}.
+     *
+     * <p>Both exist because the two callers need genuinely different things from absence, and
+     * neither can reconstruct the other's:
+     *
+     * <ul>
+     *   <li>A <b>front-end serving a response</b> wants {@link #read}. An empty Mono returned
+     *       from a WebFlux handler means "no response was produced", which the framework — not
+     *       Cistern's one error mapper — would turn into a bare 404 with no problem document.</li>
+     *   <li>A <b>caller deciding what to do next</b> wants this. Conditional requests (T2.5) are
+     *       the motivating case: RFC 9110 §13.1.1 and §13.1.2 both branch on whether "the origin
+     *       server has a current representation for the target resource", so absence is an input
+     *       to the decision rather than the end of it — an {@code If-None-Match: *} on a
+     *       {@code PUT} <em>succeeds</em> precisely because the resource is not there. Forcing
+     *       that caller to go through {@link #read} would make it catch an exception to learn a
+     *       fact, which in the HTTP layer additionally trips the ground-rule-4 guard against
+     *       error operators outside the error mapper.</li>
+     * </ul>
+     *
+     * @param target the resource to resolve; container or document
+     * @return the view, or an empty Mono if no such resource exists. Signals
+     *         {@link IllegalStateException} if a stored RDF representation is unparseable
+     *         (server-side corruption → 500). Never throws synchronously.
+     */
+    public Mono<ResourceView> find(ResourceIdentifier target) {
+        return Mono.defer(() -> store.get(target).flatMap(stored -> viewOf(target, stored)));
     }
 
     /**

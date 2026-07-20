@@ -36,17 +36,37 @@ public class ResourceDeleteHandler {
 
     private final LdpService ldp;
     private final RequestPaths requestPaths;
+    private final ConditionalRequests conditionalRequests;
 
-    public ResourceDeleteHandler(LdpService ldp, RequestPaths requestPaths) {
+    public ResourceDeleteHandler(LdpService ldp, RequestPaths requestPaths,
+                                 ConditionalRequests conditionalRequests) {
         this.ldp = ldp;
         this.requestPaths = requestPaths;
+        this.conditionalRequests = conditionalRequests;
     }
 
-    /** The handler behind {@code DELETE}. */
+    /**
+     * The handler behind {@code DELETE}.
+     *
+     * <p>The precondition gate (T2.5) sits in front of {@link LdpService#delete}, so a failed
+     * {@code If-Match} means nothing is ever asked of the store — RFC 9110 §13.2.1 requires
+     * preconditions to be evaluated "just before it would ... perform the action associated
+     * with the request method", and a delete has no content to process first.
+     *
+     * <p>{@link ConditionalRequests.AbsentTarget#IS_REJECTED} because a {@code DELETE} of a
+     * resource that is not there is a 404, and §13.2.1 says a server "MUST ignore all received
+     * preconditions if its response to the same request without those conditions ... would have
+     * been a status code other than a 2xx (Successful) or 412 (Precondition Failed)". So a
+     * conditional {@code DELETE} of a missing resource still answers 404, not 412 — the
+     * opposite of {@code PUT}, whose absent target is a create.
+     */
     public Mono<ServerResponse> delete(ServerRequest request) {
         return Mono.defer(() -> {
             ResourceIdentifier target = requestPaths.identifierFor(request);
-            return ldp.delete(target).then(ServerResponse.noContent().build());
+            return conditionalRequests
+                    .requireMayProceed(request, target, ConditionalRequests.AbsentTarget.IS_REJECTED)
+                    .then(ldp.delete(target))
+                    .then(ServerResponse.noContent().build());
         });
     }
 }

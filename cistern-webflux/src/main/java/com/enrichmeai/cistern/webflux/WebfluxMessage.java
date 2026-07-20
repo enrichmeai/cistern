@@ -62,6 +62,42 @@ public enum WebfluxMessage {
     CONTENT_TYPE_NOT_CONCRETE(
             "Content-Type must name a concrete media type, not a range: %s"),
 
+    // ---------------------------------------------------------------- conditional requests
+
+    /**
+     * A failed {@code If-Match} (RFC 9110 §13.1.1). Names the field, so a client that sent
+     * several conditionals knows which one to fix, and quotes the tags back so it can see the
+     * server read them as it meant them.
+     */
+    PRECONDITION_IF_MATCH_FAILED(
+            "The %s precondition failed for <%s>: no current representation of the resource"
+                    + " matches %s (RFC 9110 §13.1.1). Re-read the resource to obtain its"
+                    + " current ETag before retrying."),
+
+    /**
+     * A failed {@code If-None-Match} (RFC 9110 §13.1.2) — the opposite sense to
+     * {@link #PRECONDITION_IF_MATCH_FAILED}, and a separate entry precisely so it cannot be
+     * described with the wrong one: this failure means the resource <em>does</em> match, which
+     * for {@code *} means it already exists and the write would not have been a create.
+     */
+    PRECONDITION_IF_NONE_MATCH_FAILED(
+            "The %s precondition failed for <%s>: the resource has a current representation"
+                    + " matching %s (RFC 9110 §13.1.2), so this request would not have been"
+                    + " applied to the state the client assumed."),
+
+    /** A failed {@code If-Unmodified-Since} (RFC 9110 §13.1.4). */
+    PRECONDITION_MODIFICATION_DATE_FAILED(
+            "The %s precondition failed for <%s>: the resource was modified after the date"
+                    + " given (RFC 9110 §13.1.4). Re-read the resource before retrying."),
+
+    /**
+     * Fires only if the evaluator and the write path disagree about which methods are reads:
+     * RFC 9110 §13.2.2 step 3 reserves 304 for {@code GET} and {@code HEAD}.
+     */
+    NOT_MODIFIED_ON_UNSAFE_METHOD(
+            "Precondition evaluation yielded 304 for %s <%s>, but RFC 9110 §13.2.2 step 3"
+                    + " allows that outcome only for GET and HEAD"),
+
     // ---------------------------------------------------------------- configuration
 
     /** {@code cistern.base-url} must be usable as the base of every resource identifier. */

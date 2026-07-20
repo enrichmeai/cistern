@@ -46,8 +46,8 @@ final class HttpConstants {
     }
 
     /** An {@code Allow} field value (RFC 9110 §10.2.1) from typed methods, in the given order. */
-    static String allow(HttpMethod... methods) {
-        return List.of(methods).stream()
+    static String allow(List<HttpMethod> methods) {
+        return methods.stream()
                 .map(HttpMethod::name)
                 .collect(Collectors.joining(LIST_SEPARATOR));
     }

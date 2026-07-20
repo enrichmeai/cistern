@@ -1,6 +1,8 @@
 package com.enrichmeai.cistern.webflux;
 
 import com.enrichmeai.cistern.core.CisternException;
+import com.enrichmeai.cistern.core.ldp.ResourceView;
+import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 
@@ -86,6 +88,30 @@ public class ContentNegotiator {
                     WebfluxMessage.NON_RDF_SOURCE_NOT_ACCEPTABLE.format(stored, accept));
         }
         return stored;
+    }
+
+    /**
+     * The media type of a non-RDF source's single representation: its stored type, parsed.
+     *
+     * <p>Lives beside {@link #negotiateRdf} because between them they answer the whole of "what
+     * media type is this resource served as" — negotiation for an RDF source, this for a
+     * non-RDF one — and because the answer must be identical wherever it is asked. The read
+     * path uses it for {@code Content-Type} and for the {@code ETag} it emits, and T2.5's
+     * {@link TargetState} uses it for the validator an {@code If-Match} is compared against, so
+     * two copies of this would be two ways for those to disagree.
+     *
+     * <p>Stored types only reach storage through a validated write, so an unparseable one is
+     * server-side corruption — an {@link IllegalStateException} (→ 500), consistent with how
+     * core treats unparseable stored RDF, and never the requesting client's fault.
+     */
+    static MediaType storedMediaTypeOf(ResourceView.NonRdf binary) {
+        String contentType = binary.representation().contentType();
+        try {
+            return MediaType.parseMediaType(contentType);
+        } catch (InvalidMediaTypeException e) {
+            throw new IllegalStateException(WebfluxMessage.STORED_CONTENT_TYPE_INVALID
+                    .format(binary.identifier().uri(), contentType), e);
+        }
     }
 
     /**

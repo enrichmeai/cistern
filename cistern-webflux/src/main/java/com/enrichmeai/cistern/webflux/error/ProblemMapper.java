@@ -134,6 +134,21 @@ final class ProblemMapper {
      * that cannot over-advertise. {@code PATCH} is not served until T2.7, which is when this
      * needs to become exact; at that point the distinction is a fact only core holds, and the
      * exception will have to carry it.
+     *
+     * <p><b>One source of truth with T2.5's precondition gate.</b> This reads
+     * {@link ResourceKind#allow()}, which since T2.5 is <em>derived</em> from the same
+     * {@code List<HttpMethod>} that {@code ResourceKind.permits} answers from — and that is what
+     * {@code ConditionalRequests} consults to decide whether RFC 9110 §13.2.1 requires a
+     * request's preconditions to be ignored because the answer would be a 405 regardless. So the
+     * {@code Allow} on a refusal and the applicability of a precondition cannot disagree; they
+     * are one list. {@code ResourceKindTest} pins that invariant rather than leaving it to
+     * inspection.
+     *
+     * <p>What is still duplicated is narrower and deliberate: the container/document split is
+     * decided here from the raw path, while {@link ResourceKind#ofContainer} decides it from a
+     * {@link com.enrichmeai.cistern.core.ResourceIdentifier}. The mapper has no identifier —
+     * only an exchange — so unifying the two belongs with the interface-metadata consolidation
+     * tracked in #60, not with a ticket that would have to invent a base URL here to do it.
      */
     private static String allowedMethods(ServerWebExchange exchange) {
         boolean container = exchange.getRequest().getPath().value().endsWith(CONTAINER_SUFFIX);
