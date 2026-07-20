@@ -25,6 +25,23 @@ public record ResourceIdentifier(URI uri) {
         return uri.getPath() != null && uri.getPath().endsWith("/");
     }
 
+    /**
+     * True iff this identifier is the storage's root container — the one resource with no
+     * parent container, i.e. the URI path {@code /} (or an empty path, which names the same
+     * resource: RFC 3986 §6.2.3 makes {@code http://host} and {@code http://host/}
+     * equivalent).
+     *
+     * <p>Defined as "has no parent" rather than by comparing against a configured value, so
+     * the predicate cannot disagree with {@link #parent()} — the pair is what the containment
+     * hierarchy is built from, and {@code FileResourceStore} maps exactly this identifier onto
+     * its root directory. Solid Protocol §5.4 singles the root container out: {@code DELETE}
+     * on it MUST be refused with 405, and {@code DELETE} MUST be excluded from its
+     * {@code Allow}.
+     */
+    public boolean isStorageRoot() {
+        return parent().isEmpty();
+    }
+
     /** The parent container of this resource, or empty for the storage root. */
     public java.util.Optional<ResourceIdentifier> parent() {
         // Work on the RAW (percent-encoded) path. Feeding a decoded path back through

@@ -66,6 +66,9 @@ public enum WebfluxMessage {
     /** RFC 9110 §15.5.7 — nothing the server can produce matches the request's {@code Accept}. */
     TITLE_NOT_ACCEPTABLE("No acceptable representation"),
 
+    /** RFC 9110 §15.5.6 — the method is not supported on this resource; see {@code Allow}. */
+    TITLE_METHOD_NOT_ALLOWED("Method not allowed on this resource"),
+
     TITLE_CONFLICT("Request conflicts with the state of the resource"),
     TITLE_PRECONDITION_FAILED("Precondition failed"),
     TITLE_AUTHENTICATION_REQUIRED("Authentication required"),

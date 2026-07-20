@@ -61,6 +61,21 @@ public abstract class CisternException extends RuntimeException {
         public PreconditionFailed(String message) { super(message); }
     }
 
+    /**
+     * The target resource does not support the request method → 405 (RFC 9110 §15.5.6),
+     * whose response MUST carry an {@code Allow} header listing the methods it does support.
+     *
+     * <p>Raised today by {@code LdpService.delete} for the storage root container: Solid
+     * Protocol §5.4 — "When a {@code DELETE} request targets storage's root container or its
+     * associated ACL resource, the server MUST respond with the {@code 405} status code."
+     * The refusal is a domain rule about which resource is being addressed, not a routing
+     * fact, so it has to reach the single error mapper as a domain signal (ground rule 4)
+     * rather than being decided in a handler.
+     */
+    public static final class MethodNotAllowed extends CisternException {
+        public MethodNotAllowed(String message) { super(message); }
+    }
+
     /** Authenticated agent lacks the required access mode → 403 (or 401 if unauthenticated). */
     public static final class AccessDenied extends CisternException {
         public AccessDenied(String message) { super(message); }
