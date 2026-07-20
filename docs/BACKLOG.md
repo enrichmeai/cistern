@@ -114,7 +114,16 @@ regression.
   taken (§3.1). Generated names are 22 lower-case alphanumerics (~114 bits). **Refusals:**
   target with no representation → **404** (§5.3, explicit); target that exists but is not a
   container → **405** (§5.3 confines POST creation to paths ending `/`; §5.2 + RFC 9110
-  §15.5.6) — existence is checked first. **Validators ARE permitted on POST**: RFC 9110
+  §15.5.6) — existence is checked first. **Interaction models** (LDP §5.2.3.4, architect ruling
+  on PR #68): `ldp:BasicContainer`/`ldp:Container` → container; `ldp:Resource`/`ldp:RDFSource`/
+  `ldp:NonRDFSource` → document; `ldp:DirectContainer`/`ldp:IndirectContainer` → **400, the
+  request fails** rather than being silently downgraded ("If any requested interaction model
+  cannot be honored, the server MUST fail the request" — we have no membership machinery and
+  Solid §4.2 mandates Basic). A `rel="type"` IRI **outside the LDP namespace** still creates a
+  document: the same paragraph ends "This specification does not constrain the server's behavior
+  in other cases". 400 (not 501/422/409) because LDP §4.2.1.6 frames creation-constraint
+  violations as "4xx responses" and RFC 9110 §15.5.1 covers a request the server will not process
+  due to client error; no new `CisternException` subtype was needed. **Validators ARE permitted on POST**: RFC 9110
   §9.3.4's prohibition binds PUT only, and §15.3.2 says so ("Note that the PUT method ... has
   additional requirements"); they are sent for non-RDF creates and withheld for RDF ones,
   where the tag would be per-serialization and the 201 names no serialization. `Link` is

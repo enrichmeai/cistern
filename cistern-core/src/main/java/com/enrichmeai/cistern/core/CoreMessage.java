@@ -79,6 +79,16 @@ public enum CoreMessage {
     /** RFC 5023 §9.7.1: the field value is percent-encoded, so a broken escape is malformed. */
     SLUG_ESCAPE_MALFORMED("Malformed percent-escape in the Slug header: \"%s\""),
 
+    /**
+     * LDP §5.2.3.4: "If any requested interaction model cannot be honored, the server MUST fail
+     * the request." Raised for the LDP container types Cistern does not implement.
+     */
+    INTERACTION_MODEL_UNHONOURABLE(
+            "Cistern cannot honour the requested interaction model <%s> (LDP 1.0 §5.2.3.4 requires"
+                    + " the request to fail rather than be downgraded): Solid containers are LDP"
+                    + " Basic Containers (Solid Protocol §4.2), and membership-based containers are"
+                    + " not implemented"),
+
     /** A caller programming error: a Slug instance may only ever hold a sanitized name. */
     SLUG_NOT_A_NAME(
             "A Slug value must be a single non-empty path segment of unreserved characters"

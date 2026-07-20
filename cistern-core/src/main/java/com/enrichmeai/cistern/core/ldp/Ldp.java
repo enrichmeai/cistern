@@ -27,11 +27,33 @@ public final class Ldp {
     /** {@code ldp:Resource} — every HTTP resource an LDP server manages. */
     public static final Resource RESOURCE = ResourceFactory.createResource(NS + "Resource");
 
+    /** {@code ldp:RDFSource} — an LDPR whose state is a set of RDF triples. */
+    public static final Resource RDF_SOURCE = ResourceFactory.createResource(NS + "RDFSource");
+
+    /** {@code ldp:NonRDFSource} — an LDPR whose state is not RDF (a binary, say). */
+    public static final Resource NON_RDF_SOURCE = ResourceFactory.createResource(NS + "NonRDFSource");
+
     /** {@code ldp:Container} — an LDP resource that lists membership. */
     public static final Resource CONTAINER = ResourceFactory.createResource(NS + "Container");
 
     /** {@code ldp:BasicContainer} — the container kind Solid mandates (Solid Protocol §4.2). */
     public static final Resource BASIC_CONTAINER = ResourceFactory.createResource(NS + "BasicContainer");
+
+    /**
+     * {@code ldp:DirectContainer} — a container whose membership triples are computed from
+     * {@code ldp:membershipResource} and {@code ldp:hasMemberRelation}. Named here only so that a
+     * request for it can be refused by name rather than by an inline IRI: Solid Protocol §4.2
+     * mandates Basic Containers, and Cistern implements no membership machinery.
+     */
+    public static final Resource DIRECT_CONTAINER = ResourceFactory.createResource(NS + "DirectContainer");
+
+    /**
+     * {@code ldp:IndirectContainer} — a direct container that additionally indirects the member
+     * URI through {@code ldp:insertedContentRelation}. Refused for the same reason as
+     * {@link #DIRECT_CONTAINER}.
+     */
+    public static final Resource INDIRECT_CONTAINER =
+            ResourceFactory.createResource(NS + "IndirectContainer");
 
     /** {@code ldp:contains} — the server-managed containment predicate. */
     public static final Property CONTAINS = ResourceFactory.createProperty(NS, "contains");

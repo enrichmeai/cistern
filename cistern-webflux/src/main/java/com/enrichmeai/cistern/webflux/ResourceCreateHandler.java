@@ -32,7 +32,10 @@ import java.util.Optional;
  *   <li><b>{@code Link ... rel="type"}</b> (LDP §5.2.3.4, the "requested interaction model") —
  *       whether to create a document or a child container. Parsed as the structured field it is
  *       by {@link LinkHeader}; the IRIs it yields are mapped to an {@link InteractionModel} by
- *       core, so the vocabulary decision stays with the vocabulary.</li>
+ *       core, so the vocabulary decision stays with the vocabulary — including the decision to
+ *       refuse a model this server cannot honour, which §5.2.3.4 requires ("If any requested
+ *       interaction model cannot be honored, the server MUST fail the request") and which reaches
+ *       this class as a {@link CisternException.BadInput} like any other domain signal.</li>
  *   <li><b>{@code Content-Type}</b> — what the body is stored as, canonicalized by
  *       {@link RequestMediaType} exactly as {@code PUT} does. Solid Protocol §2.1 makes its
  *       absence a 400.</li>
@@ -89,8 +92,9 @@ import java.util.Optional;
  *
  * <h2>Errors</h2>
  * Nothing here maps a status code (ground rule 4) and there is no {@code onErrorResume}. An
- * unusable request-target, a missing or malformed {@code Content-Type}, a malformed {@code Slug}
- * and a malformed RDF body leave as {@link CisternException.BadInput}; a target with no
+ * unusable request-target, a missing or malformed {@code Content-Type}, a malformed {@code Slug},
+ * an unhonourable requested interaction model and a malformed RDF body leave as
+ * {@link CisternException.BadInput}; a target with no
  * representation as {@link CisternException.NotFound}; a target that is not a container as
  * {@link CisternException.MethodNotAllowed}; a non-RDF body for a child container as
  * {@link CisternException.Conflict}. The single error mapper (T2.6) renders all of them.

@@ -5,6 +5,8 @@ import com.enrichmeai.cistern.webflux.error.ProblemDocument;
 import com.enrichmeai.cistern.webflux.error.ProblemType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient;
@@ -362,6 +364,95 @@ class ResourceCreateHttpTest {
                 .exchange()
                 .expectStatus().isOk()
                 .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, LDP_BASIC_CONTAINER);
+    }
+
+    /**
+     * LDP §5.2.3.4's other half: "If any requested interaction model cannot be honored, the server
+     * MUST fail the request." Solid Protocol §4.2 gives Cistern Basic Containers only, and neither
+     * membership-based container has any machinery behind it — so creating a basic container and
+     * calling it done would be the silent downgrade the MUST forbids. 400 rather than 501 because
+     * LDP §4.2.1.6 frames creation-constraint violations as the server's "4xx responses", and RFC
+     * 9110 §15.5.1 covers a request the server "will not process ... due to something that is
+     * perceived to be a client error".
+     */
+    @ParameterizedTest(name = "[{index}] Link rel=type ldp:{0} must fail the request")
+    @ValueSource(strings = {"DirectContainer", "IndirectContainer"})
+    @DisplayName("an LDP interaction model Cistern cannot honour is refused, not downgraded")
+    void refusesAnUnhonourableInteractionModel(String localName) {
+        String container = container();
+
+        expectProblem(postTurtle(container)
+                        .header(HttpHeaders.LINK, HttpConstants.linkType(Ldp.NS + localName))
+                        .header(HttpConstants.SLUG, "wanted"),
+                ProblemType.BAD_INPUT, container);
+
+        client.get().uri(container + "wanted").exchange().expectStatus().isNotFound();
+        client.get().uri(container + "wanted/").exchange().expectStatus().isNotFound();
+    }
+
+    /** "If <b>any</b> requested model cannot be honored" — one bad link spoils an otherwise fine set. */
+    @Test
+    @DisplayName("an unhonourable model refuses the request even beside a BasicContainer request")
+    void refusesAMixedInteractionModelRequest() {
+        String container = container();
+
+        expectProblem(postTurtle(container)
+                        .header(HttpHeaders.LINK,
+                                LDP_BASIC_CONTAINER + ", " + HttpConstants.linkType(
+                                        Ldp.DIRECT_CONTAINER.getURI())),
+                ProblemType.BAD_INPUT, container);
+    }
+
+    /**
+     * The LDPR interaction model in its three spellings, each creating a document.
+     * {@code ldp:NonRDFSource} is honoured rather than refused: it is an LDPR, so a document
+     * handles later requests as §5.2.3.4 requires, and what the state actually is comes from
+     * {@code Content-Type} (§5.2.3.6) — which is why the binary case below round-trips verbatim.
+     */
+    @ParameterizedTest(name = "[{index}] Link rel=type ldp:{0} creates a document")
+    @ValueSource(strings = {"Resource", "RDFSource", "NonRDFSource"})
+    void honoursTheLdprInteractionModels(String localName) {
+        String container = container();
+
+        String created = createdPath(postTurtle(container)
+                .header(HttpHeaders.LINK, HttpConstants.linkType(Ldp.NS + localName))
+                .header(HttpConstants.SLUG, "ldpr-" + localName));
+
+        assertEquals(container + "ldpr-" + localName, created);
+        assertFalse(created.endsWith("/"), "an LDPR is not a container (Solid Protocol §3.1)");
+    }
+
+    /** A NonRDFSource link with a binary body is honoured in substance, not just in shape. */
+    @Test
+    @DisplayName("ldp:NonRDFSource with a binary body creates the LDP-NR the client asked for")
+    void honoursNonRdfSourceWithABinaryBody() {
+        String container = container();
+
+        String created = createdPath(post(container, OCTET_STREAM, ORIGINAL_BYTES)
+                .header(HttpHeaders.LINK, HttpConstants.linkType(Ldp.NON_RDF_SOURCE.getURI()))
+                .header(HttpConstants.SLUG, "nr.bin"));
+
+        client.get().uri(created).accept(MediaType.APPLICATION_OCTET_STREAM).exchange()
+                .expectStatus().isOk()
+                .expectHeader().contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .expectBody(byte[].class).isEqualTo(ORIGINAL_BYTES);
+    }
+
+    /**
+     * The asymmetry that keeps the refusal above from becoming "reject any Link I do not know":
+     * §5.2.3.4 ends "This specification does not constrain the server's behavior in other cases",
+     * and a domain vocabulary class is one of those cases. Clients type their own data routinely.
+     */
+    @Test
+    @DisplayName("a rel=type link outside the LDP namespace still creates a document")
+    void allowsNonLdpTypeLinks() {
+        String container = container();
+
+        String created = createdPath(postTurtle(container)
+                .header(HttpHeaders.LINK, HttpConstants.linkType("https://vocab.example/Note"))
+                .header(HttpConstants.SLUG, "domain-typed"));
+
+        assertEquals(container + "domain-typed", created);
     }
 
     @Test
