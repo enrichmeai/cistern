@@ -4,11 +4,7 @@ import com.enrichmeai.cistern.core.CisternException;
 import com.enrichmeai.cistern.core.ldp.LdpKind;
 import com.enrichmeai.cistern.core.rdf.N3Patch;
 import com.enrichmeai.cistern.webflux.ResourceKind;
-import com.enrichmeai.cistern.webflux.WebfluxMessage;
 import java.net.URI;
-import java.util.Map;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -24,30 +20,14 @@ import org.springframework.web.server.ServerWebExchange;
  * code</strong> (CLAUDE.md ground rule 4). Handlers signal {@link CisternException} subtypes
  * through the reactive chain and never speak HTTP.
  *
- * <p>The table itself is {@link #DOMAIN_PROBLEMS} plus {@link ProblemType} — a registry keyed
- * by exception class, not a chain of {@code instanceof} tests, so
- * {@code ProblemMapperCoverageTest} can assert that every {@code CisternException} subtype has
- * a row. {@code AccessDenied} is the one domain error whose status is not a function of its
- * class alone; see {@link RequestAuthentication}.
+ * <p>The table itself is the exhaustive switch in {@link #domain} over
+ * {@link CisternException}'s sealed {@code permits} list (#60). Because the hierarchy is
+ * closed, the compiler — not a reflection-based test — is what guarantees every subtype has a
+ * status: adding one in cistern-core without a row here fails the build.
+ * {@code AccessDenied} is the one domain error whose status is not a function of its class
+ * alone; see {@link RequestAuthentication}.
  */
 final class ProblemMapper {
-
-    private static final Logger log = LoggerFactory.getLogger(ProblemMapper.class);
-
-    /**
-     * Exception class → problem type, for every {@link CisternException} subtype whose status
-     * depends on nothing but its class. {@code AccessDenied} is deliberately absent:
-     * {@link #accessDenied} resolves it through the 401/403 seam.
-     */
-    static final Map<Class<? extends CisternException>, ProblemType> DOMAIN_PROBLEMS = Map.of(
-            CisternException.BadInput.class, ProblemType.BAD_INPUT,
-            CisternException.UnprocessableEntity.class, ProblemType.UNPROCESSABLE_ENTITY,
-            CisternException.NotFound.class, ProblemType.NOT_FOUND,
-            CisternException.NotAcceptable.class, ProblemType.NOT_ACCEPTABLE,
-            CisternException.MethodNotAllowed.class, ProblemType.METHOD_NOT_ALLOWED,
-            CisternException.UnsupportedMediaType.class, ProblemType.UNSUPPORTED_MEDIA_TYPE,
-            CisternException.Conflict.class, ProblemType.CONFLICT,
-            CisternException.PreconditionFailed.class, ProblemType.PRECONDITION_FAILED);
 
     private final RequestAuthentication requestAuthentication;
 
@@ -149,17 +129,31 @@ final class ProblemMapper {
         return HttpHeaders.EMPTY;
     }
 
+    /**
+     * The status a domain error carries, as an exhaustive switch over {@link CisternException}'s
+     * {@code permits} list — the completeness guarantee itself (#60).
+     *
+     * <p>No {@code default} branch, deliberately: a {@code default} would restore exactly the
+     * hole sealing closed, by giving a subtype nobody has thought about somewhere to land. With
+     * the switch exhaustive, adding a subtype in cistern-core without deciding its status is a
+     * compile error here, which is the moment the decision is cheapest to make. This replaces
+     * both the class-keyed registry and the reflection test that used to police it.
+     *
+     * <p>{@code AccessDenied} is the one row whose answer is not a function of the class alone;
+     * see {@link #accessDenied}.
+     */
     private ProblemDocument domain(CisternException error, URI instance, ServerWebExchange exchange) {
-        if (error instanceof CisternException.AccessDenied) {
-            return problem(accessDenied(exchange), error, instance);
-        }
-        ProblemType type = DOMAIN_PROBLEMS.get(error.getClass());
-        if (type == null) {
-            // A subtype nobody taught the registry about is a bug in Cistern, not in the
-            // request. ProblemMapperCoverageTest exists to make this unreachable.
-            log.error(WebfluxMessage.LOG_UNMAPPED_DOMAIN_ERROR.format(error.getClass().getName()), error);
-            return ProblemDocument.blank(HttpStatus.INTERNAL_SERVER_ERROR, null, instance);
-        }
+        ProblemType type = switch (error) {
+            case CisternException.AccessDenied ignored -> accessDenied(exchange);
+            case CisternException.BadInput ignored -> ProblemType.BAD_INPUT;
+            case CisternException.Conflict ignored -> ProblemType.CONFLICT;
+            case CisternException.MethodNotAllowed ignored -> ProblemType.METHOD_NOT_ALLOWED;
+            case CisternException.NotAcceptable ignored -> ProblemType.NOT_ACCEPTABLE;
+            case CisternException.NotFound ignored -> ProblemType.NOT_FOUND;
+            case CisternException.PreconditionFailed ignored -> ProblemType.PRECONDITION_FAILED;
+            case CisternException.UnprocessableEntity ignored -> ProblemType.UNPROCESSABLE_ENTITY;
+            case CisternException.UnsupportedMediaType ignored -> ProblemType.UNSUPPORTED_MEDIA_TYPE;
+        };
         return problem(type, error, instance);
     }
 
