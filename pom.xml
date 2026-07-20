@@ -40,13 +40,18 @@
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-    <!-- Versions audited against Maven Central on 2026-07-19 (T0.2).
-         Held lines: Spring Boot 3.5.x (4.x exists — architect decision; 3.5 OSS
-         support ended 2026-06-30), Jena 5.x (6.x exists — architect decision).
+    <!-- Versions audited against Maven Central on 2026-07-20 (#58). Latest stable of
+         each line; milestones and release candidates are never selected.
+         Spring Boot 4.1.0 (2026-06-10) — moved off the 3.5 line, whose OSS support
+         ended 2026-06-30 at 3.5.16. Ships Spring Framework 7; baseline Java 17.
+         Jena 6.1.0 (2026-05-03) — baseline Java 21, which is our compiler release.
+         titanium-json-ld stays 1.7.0: 2.0.0-M2 is a milestone, and 1.7.0 is the
+         version jena-arq 6.1.0 itself declares. nimbus-jose-jwt 10.9.1, mcp 2.0.0
+         and surefire 3.5.6 are already the latest stable releases.
          junit-jupiter and reactor-test versions come from the imported
          spring-boot-dependencies BOM. -->
-    <spring-boot.version>3.5.16</spring-boot.version>
-    <jena.version>5.6.0</jena.version>
+    <spring-boot.version>4.1.0</spring-boot.version>
+    <jena.version>6.1.0</jena.version>
     <nimbus-jose-jwt.version>10.9.1</nimbus-jose-jwt.version>
     <titanium-json-ld.version>1.7.0</titanium-json-ld.version>
     <mcp-sdk.version>2.0.0</mcp-sdk.version>
