@@ -91,7 +91,7 @@ regression.
   a fresh name (never overwrite); generated name is a UUID-ish short id; `Location` header
   on 201; POST with `Link: ...BasicContainer; rel="type"` creates a child container. POST
   to a non-container → 404/405 per spec. DoD: WebTestClient matrix incl. slug collision.
-- [ ] **T2.4 DELETE.** Document delete → 204 + parent containment updated; non-empty
+- [x] **T2.4 DELETE.** Document delete → 204 + parent containment updated; non-empty
   container → 409; storage root → 405. DoD: tests incl. root protection.
 - [ ] **T2.5 Conditional requests.** Honor `If-Match` (etag), `If-None-Match: *` (create-
   only PUT); mismatches → 412 before any store mutation; GET with `If-None-Match` matching
