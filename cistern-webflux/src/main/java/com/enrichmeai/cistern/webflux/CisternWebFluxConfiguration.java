@@ -8,6 +8,9 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.reactive.CorsWebFilter;
+import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 import org.springframework.web.reactive.function.server.RequestPredicates;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.RouterFunctions;
@@ -114,6 +117,88 @@ public class CisternWebFluxConfiguration {
         return RouterFunctions.route(
                 RequestPredicates.method(HttpMethod.PATCH).and(RequestPredicates.path(ALL_PATHS)),
                 handler::patch);
+    }
+
+    /**
+     * The {@code OPTIONS} route (T2.8).
+     *
+     * <p>The only route with no path predicate, and deliberately so. RFC 9110 §9.3.7 gives
+     * {@code OPTIONS} a second request-target form — {@code OPTIONS *}, which "applies to the
+     * server in general rather than to a specific resource" — and {@code *} is not a path, so a
+     * {@code /**} predicate would not match it and the asterisk-form would fall through to
+     * whatever the framework does with an unrouted request. Matching on the method alone routes
+     * both forms to the one handler, which tells them apart itself.
+     *
+     * <p>CORS preflights never arrive here: {@link #cisternCorsWebFilter} answers them ahead of
+     * routing. What this route serves is the plain {@code OPTIONS} of Solid Protocol §5.2.
+     */
+    @Bean
+    public RouterFunction<ServerResponse> cisternOptionsRoutes(ResourceOptionsHandler handler) {
+        return RouterFunctions.route(RequestPredicates.method(HttpMethod.OPTIONS), handler::options);
+    }
+
+    /**
+     * Cross-origin sharing (T2.8), wide open by default because a Solid app is cross-origin by
+     * nature — Solid Protocol §8.1: "A server MUST implement the CORS protocol [FETCH] such
+     * that, to the extent possible, the browser allows Solid apps to send any request and
+     * combination of request headers to the server."
+     *
+     * <p>A {@code CorsWebFilter} rather than hand-written headers: it implements the Fetch
+     * algorithm — preflight detection, {@code Vary}, the header and method checks — and it runs
+     * <em>before</em> routing, which is what makes preflight work for a resource that does not
+     * exist yet. A browser must preflight a {@code PUT} that creates a resource, and that
+     * preflight is addressed to a URI with nothing behind it; handled here, it is answered from
+     * configuration without a storage lookup, so it succeeds where a preflight routed to a
+     * resource handler would have 404'd and blocked the write. It also puts the
+     * {@code Access-Control-*} fields on error responses, so a browser app can read the CORS
+     * headers on a 404 or a 412 instead of seeing an opaque network failure.
+     *
+     * <h2>Origins are echoed, never {@code *}</h2>
+     * {@code setAllowedOriginPatterns} rather than {@code setAllowedOrigins}, even for the
+     * wide-open default. The two are equally permissive but they emit different responses, and
+     * §8.1 requires the specific one: "the server MUST set the
+     * {@code Access-Control-Allow-Origin} header field value to the valid {@code Origin} header
+     * field value from the request and list {@code Origin} in the {@code Vary} header field
+     * value." {@code setAllowedOrigins("*")} would emit the literal {@code *} and violate that;
+     * the pattern form echoes the request's own origin. Spring's CORS processor adds
+     * {@code Vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers} either
+     * way, satisfying the second half.
+     *
+     * <h2>Credentials are not allowed, and that is what makes wide-open origins safe</h2>
+     * Allowing credentials would tell the browser to attach cookies and HTTP-auth state to
+     * cross-origin pod requests — ambient authority any page on the web could then spend as the
+     * user. Solid-OIDC does not work that way: it authenticates with an explicit
+     * {@code Authorization} header and a {@code DPoP} proof, which a script must set on each
+     * request and a browser never adds by itself, so credentials mode would buy the protocol
+     * nothing. The Fetch standard also forbids the combination outright — a response to a
+     * credentialed request may not carry {@code Access-Control-Allow-Origin: *} — so "permissive
+     * origins" and "credentials" cannot both be had; this configuration keeps the one Solid
+     * needs and drops the one it does not. See {@link CisternProperties.Cors} for why there is
+     * no switch.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public CorsWebFilter cisternCorsWebFilter(CisternProperties properties) {
+        CisternProperties.Cors cors = properties.cors();
+        CorsConfiguration configuration = new CorsConfiguration();
+        // Patterns, not origins — see the class comment: the request's origin is echoed back.
+        cors.allowedOrigins().forEach(configuration::addAllowedOriginPattern);
+        // The union of ResourceKind's rows, so a method the server serves is a method a browser
+        // may preflight, with no second list to keep in step (the architect requirement on #19).
+        ResourceKind.supportedMethods()
+                .forEach(method -> configuration.addAllowedMethod(method.name()));
+        // Enumerated, never "*": Fetch excludes Authorization from the wildcard, and §8.1 asks
+        // for Accept by name. See AllowedRequestHeader.
+        AllowedRequestHeader.fieldNames().forEach(configuration::addAllowedHeader);
+        // §8.1: "The server MUST make all used response headers readable for the Solid app
+        // through Access-Control-Expose-Headers". See ExposedResponseHeader.
+        ExposedResponseHeader.fieldNames().forEach(configuration::addExposedHeader);
+        configuration.setAllowCredentials(false);
+        configuration.setMaxAge(cors.maxAge());
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration(ALL_PATHS, configuration);
+        return new CorsWebFilter(source);
     }
 
     /**
