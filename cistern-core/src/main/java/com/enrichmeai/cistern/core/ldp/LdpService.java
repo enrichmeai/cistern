@@ -20,9 +20,14 @@ import java.util.Objects;
 
 /**
  * LDP/Solid semantics over a {@link ResourceStore} — the single service the HTTP layer
- * (and the MCP front-end) call. This ticket's scope (T1.4) is the containment layer:
- * container reads and the write-validation guard for server-managed containment triples.
- * Write orchestration (put/delete/patch) arrives with Phase 2.
+ * (and the MCP front-end) call. It owns the containment layer (container reads and the
+ * write guard for server-managed containment triples, T1.4), the read path {@link #read}
+ * (T2.1), the {@code PUT} write path {@link #put} (T2.2) and {@link #delete} (T2.4). Patch
+ * orchestration joins them later in Phase 2.
+ *
+ * <p>Front-ends stay thin because the LDP decisions live here, not in a handler: what a
+ * resource contains, whether a body may be stored against it, and whether a write created or
+ * replaced are all answered before a status code is ever chosen.
  *
  * <h2>Containment is derived, never stored</h2>
  * Solid derives containment from the URI path hierarchy (Solid Protocol §4.2, Resource
@@ -184,6 +189,97 @@ public final class LdpService {
     }
 
     /**
+     * The write path every front-end uses (HTTP {@code PUT} in T2.2, MCP later): creates the
+     * target resource or replaces its representation, and reports which of the two happened
+     * together with the resource's post-write state.
+     *
+     * <h2>What this method decides, and what the store decides</h2>
+     * The split follows the storage-SPI seam. <b>Core</b> owns everything that requires
+     * knowing what RDF <em>means</em>; the <b>store</b> owns everything that is a fact about
+     * the resource hierarchy, and already enforces it (see {@link ResourceStore}):
+     *
+     * <ul>
+     *   <li><b>Store —</b> intermediate containers. Solid Protocol §5.3: "Servers MUST create
+     *       intermediate containers and include corresponding containment triples in container
+     *       representations derived from the URI path component of {@code PUT} and
+     *       {@code PATCH} requests." The containment triples half of that sentence needs no
+     *       write-time work here: {@link #getContainer} derives containment from
+     *       {@link ResourceStore#children} on every read, so a newly created intermediate
+     *       lists its members the moment it is read.</li>
+     *   <li><b>Store —</b> slash semantics. Solid Protocol §3.1: "Paths ending with a slash
+     *       denote a container resource", and if two URIs differ only in the trailing slash
+     *       and the server has associated a resource with one, "the other URI MUST NOT
+     *       correspond to another resource". A write that would flip a name's kind in either
+     *       direction, or that would need an intermediate container where a document already
+     *       sits, signals {@link CisternException.Conflict} from the store. This method must
+     *       not swallow it — it is propagated untouched, as 409 is exactly the right answer.</li>
+     *   <li><b>Core —</b> a container's body must be an RDF source (Solid Protocol §4.2:
+     *       Solid containers are LDP Basic Containers). A {@code PUT} to a container URI
+     *       offering a non-RDF media type is refused with {@link CisternException.Conflict}:
+     *       RFC 9110 §9.3.4 requires an origin server to "verify that the PUT representation
+     *       is consistent with its configured constraints for the target resource" and
+     *       suggests 409 or 415 when it is not, and the constraint being broken here is the
+     *       same container/document distinction §3.1 makes, so it is reported the same way a
+     *       kind flip is.</li>
+     *   <li><b>Core —</b> RDF bodies are parsed before they are stored, so malformed input is
+     *       the client's {@link CisternException.BadInput} at write time rather than a
+     *       server-side 500 at read time. This is what lets {@link #read} treat unparseable
+     *       stored bytes as corruption: nothing reaches storage unvalidated.</li>
+     *   <li><b>Core —</b> {@link #rejectServerManagedTriples} runs on every RDF body, which is
+     *       the §5.3 guard: "Servers MUST NOT allow HTTP {@code PUT} or {@code PATCH} on a
+     *       container to update its containment triples; if the server receives such a
+     *       request, it MUST respond with a {@code 409} status code."</li>
+     * </ul>
+     *
+     * <h2>The client's bytes are stored verbatim</h2>
+     * Parsing is <em>validation</em>, not a transformation: the representation handed to the
+     * store is the one that arrived, byte for byte. Only its media type is expected to be
+     * canonical (bare, lower-cased) so that {@link Representation#isRdf()} classifies it —
+     * the front-end normalizes that before calling. Re-serializing the parsed graph instead
+     * was rejected for three reasons: it would discard the client's prefixes, comments and
+     * layout for no protocol gain; Jena's JSON-LD writer is not byte-stable across calls, so
+     * an unchanged document would churn its stored etag on every write; and it would make the
+     * stored data differ from the received content, which is precisely the condition under
+     * which RFC 9110 §9.3.4 forbids returning a validator with the response.
+     *
+     * <h2>Created or replaced</h2>
+     * Determined by asking {@link ResourceStore#exists} immediately before the write, because
+     * {@link ResourceStore#put} creates and replaces through one signature and cannot report
+     * which it did. The two calls are not atomic, so a concurrent write to the same target
+     * can make a create report {@code REPLACED} or vice versa. That is benign here — both
+     * outcomes are successes and the stored state is identical either way — and it is not
+     * this ticket's to fix: a client that needs create-only or replace-only semantics states
+     * it with {@code If-None-Match: *} or {@code If-Match}, which T2.5 enforces against the
+     * store.
+     *
+     * <h2>The storage root</h2>
+     * {@code PUT} to the root container is allowed and behaves like any other container
+     * write: it replaces the root's client-authored triples, while its containment stays
+     * derived and therefore untouched. Solid Protocol §5.4 singles the root out only for
+     * {@code DELETE}; nothing in §5.3 or §3.1 exempts it from being written, and refusing it
+     * would leave a pod unable to describe its own root.
+     *
+     * @param target         the resource to create or replace; container or document
+     * @param representation the body to store, with an already-canonical media type
+     * @return the effect plus the post-write {@link ResourceView}. Signals
+     *         {@link CisternException.BadInput} for an unparseable RDF body,
+     *         {@link CisternException.Conflict} for a kind flip, a blocked intermediate
+     *         container, a non-RDF body for a container, or a body asserting the target's
+     *         containment. Never throws synchronously.
+     */
+    public Mono<WriteOutcome> put(ResourceIdentifier target, Representation representation) {
+        return Mono.defer(() -> {
+            Objects.requireNonNull(target, "target");
+            Objects.requireNonNull(representation, "representation");
+            validateBody(target, representation);
+            return store.exists(target)
+                    .flatMap(existed -> store.put(target, representation)
+                            .flatMap(stored -> viewOf(target, stored))
+                            .map(view -> new WriteOutcome(WriteEffect.of(existed), view)));
+        });
+    }
+
+    /**
      * Write-path guard for Solid Protocol §5.3: rejects a client body that tries to
      * update the target's containment triples ("Servers MUST NOT allow HTTP PUT or
      * PATCH on a container to update its containment triples; if the server receives
@@ -224,6 +320,28 @@ public final class LdpService {
     }
 
     // ---------------------------------------------------------------- internals
+
+    /**
+     * Everything {@link #put} must establish about a body before it may reach storage. Pure
+     * CPU-bound work that throws, called from inside {@code Mono.defer} so the throw becomes
+     * an error signal (the class never throws synchronously to a caller).
+     *
+     * <p>A non-RDF body is opaque: there is nothing to validate in it, and the only question
+     * is whether the target is allowed to hold it. An RDF body is parsed against the target's
+     * own URI as base (RFC 3986 §5.1.3 — the retrieval URI is the base, so {@code <>} in the
+     * document means the resource itself) and then checked for server-managed containment.
+     */
+    private void validateBody(ResourceIdentifier target, Representation representation) {
+        if (!representation.isRdf()) {
+            if (target.isContainer()) {
+                throw new CisternException.Conflict(CoreMessage.CONTAINER_REQUIRES_RDF_BODY
+                        .format(target.uri(), representation.contentType(),
+                                Representation.TURTLE, Representation.JSON_LD));
+            }
+            return;
+        }
+        rejectServerManagedTriples(RdfIo.parse(representation, target), target);
+    }
 
     /**
      * Classifies one stored resource into a {@link ResourceView}. Containers take the same
