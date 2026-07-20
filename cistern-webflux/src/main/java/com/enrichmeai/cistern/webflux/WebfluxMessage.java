@@ -150,9 +150,11 @@ public enum WebfluxMessage {
 
     LOG_SERVER_ERROR("%s %s failed with %s"),
     LOG_CLIENT_ERROR("%s %s rejected with %s: %s"),
-    /** Fires when a {@code CisternException} subtype exists that the registry has no row for. */
-    LOG_UNMAPPED_DOMAIN_ERROR(
-            "No problem type registered for %s — falling back to 500. Add a row to ProblemMapper.DOMAIN_PROBLEMS."),
+    // LOG_UNMAPPED_DOMAIN_ERROR was here (#60). It announced a CisternException subtype the
+    // mapper had no row for — a condition sealing made unreachable: the switch in ProblemMapper
+    // is exhaustive over the permits list, so an unmapped subtype cannot compile, let alone log.
+    // Removed rather than kept: a catalogue entry for a message that can never be emitted is
+    // exactly the drift this catalogue exists to prevent.
 
     // ---------------------------------------------------------------- programming errors
 

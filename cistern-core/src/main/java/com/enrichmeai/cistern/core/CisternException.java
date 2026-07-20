@@ -8,8 +8,33 @@ import java.util.Objects;
  * Root of Cistern's domain error hierarchy. The HTTP layer maps subtypes to status
  * codes in exactly one place (T2.6, GlobalErrorHandler) — services and stores signal
  * these through the reactive chain and never speak HTTP.
+ *
+ * <h2>Why it is sealed (#60)</h2>
+ * The hierarchy is a closed set: every member is declared here, and the single error mapper
+ * must have an answer for each. Sealing states that, and turns "the mapper handles every
+ * subtype" from something a test checked at runtime into something the compiler checks.
+ *
+ * <p>{@code ProblemMapper} switches exhaustively over this {@code permits} list, so it needs
+ * no {@code default} branch and no fallback to 500 for an unrecognized subtype — that branch
+ * is now unreachable by construction rather than by inspection. Adding a subtype below
+ * without giving it a status stops the build in cistern-webflux, which is where the decision
+ * has to be made anyway; previously it compiled cleanly and failed a reflection-based test,
+ * and if that test had ever been skipped it would have reached production as a 500.
+ *
+ * <p>The list is explicit rather than relying on the implicit permission Java grants
+ * same-file subclasses: it is the enumeration the mapper is checked against, so it is worth
+ * being able to read it in one place.
  */
-public abstract class CisternException extends RuntimeException {
+public abstract sealed class CisternException extends RuntimeException
+        permits CisternException.AccessDenied,
+                CisternException.BadInput,
+                CisternException.Conflict,
+                CisternException.MethodNotAllowed,
+                CisternException.NotAcceptable,
+                CisternException.NotFound,
+                CisternException.PreconditionFailed,
+                CisternException.UnprocessableEntity,
+                CisternException.UnsupportedMediaType {
 
     protected CisternException(String message) {
         super(message);

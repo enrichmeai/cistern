@@ -155,13 +155,7 @@ public class ResourceWriteHandler {
         ResourceKind kind = ResourceKind.of(view);
         return ServerResponse.status(statusOf(outcome))
                 .headers(headers -> {
-                    for (String linkValue : kind.linkTypeValues()) {
-                        headers.add(HttpHeaders.LINK, linkValue);
-                    }
-                    headers.set(HttpHeaders.ALLOW, kind.allow());
-                    setIfPresent(headers, HttpConstants.ACCEPT_PUT, kind.acceptPut());
-                    setIfPresent(headers, HttpConstants.ACCEPT_POST, kind.acceptPost());
-                    setIfPresent(headers, HttpHeaders.ACCEPT_PATCH, kind.acceptPatch());
+                    InterfaceMetadata.write(headers, kind);
                     writeValidators(headers, view, stored);
                 })
                 .build();
@@ -208,9 +202,4 @@ public class ResourceWriteHandler {
      * and {@code OPTIONS} land — T2.4's {@code DELETE} does not emit these headers, so there
      * are still only the two call sites today.
      */
-    private static void setIfPresent(HttpHeaders headers, String name, String value) {
-        if (value != null) {
-            headers.set(name, value);
-        }
-    }
 }

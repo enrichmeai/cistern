@@ -25,25 +25,33 @@ import java.util.Map;
  */
 record Sidecar(String contentType, String etag, Instant lastModified) {
 
+    /** The sidecar's JSON field names — written by {@link #toJson}, read by {@link #fromJson}. */
+    static final String FIELD_CONTENT_TYPE = "contentType";
+
+    static final String FIELD_ETAG = "etag";
+
+    static final String FIELD_LAST_MODIFIED = "lastModified";
+
     String toJson() {
-        return "{\"contentType\":" + quote(contentType)
-                + ",\"etag\":" + quote(etag)
-                + ",\"lastModified\":" + quote(lastModified.toString())
+        return "{" + quote(FIELD_CONTENT_TYPE) + ":" + quote(contentType)
+                + "," + quote(FIELD_ETAG) + ":" + quote(etag)
+                + "," + quote(FIELD_LAST_MODIFIED) + ":" + quote(lastModified.toString())
                 + "}";
     }
 
     static Sidecar fromJson(String json) {
         Map<String, String> fields = parseFlatStringObject(json);
-        String contentType = required(fields, "contentType", json);
-        String etag = required(fields, "etag", json);
-        String lastModified = required(fields, "lastModified", json);
+        String contentType = required(fields, FIELD_CONTENT_TYPE, json);
+        String etag = required(fields, FIELD_ETAG, json);
+        String lastModified = required(fields, FIELD_LAST_MODIFIED, json);
         return new Sidecar(contentType, etag, Instant.parse(lastModified));
     }
 
     private static String required(Map<String, String> fields, String key, String json) {
         String value = fields.get(key);
         if (value == null) {
-            throw new IllegalArgumentException("Sidecar missing '" + key + "': " + json);
+            throw new IllegalArgumentException(
+                    StorageFileMessage.SIDECAR_FIELD_MISSING.format(key, json));
         }
         return value;
     }
@@ -96,7 +104,8 @@ record Sidecar(String contentType, String etag, Instant lastModified) {
                 return fields;
             }
             if (c != ',') {
-                throw new IllegalArgumentException("Expected ',' or '}' in sidecar JSON: " + json);
+                throw new IllegalArgumentException(
+                        StorageFileMessage.SIDECAR_SEPARATOR_EXPECTED.format(json));
             }
         }
     }
@@ -111,7 +120,7 @@ record Sidecar(String contentType, String etag, Instant lastModified) {
 
         char peek() {
             if (pos >= text.length()) {
-                throw new IllegalArgumentException("Truncated sidecar JSON: " + text);
+                throw new IllegalArgumentException(StorageFileMessage.SIDECAR_TRUNCATED.format(text));
             }
             return text.charAt(pos);
         }
@@ -126,7 +135,7 @@ record Sidecar(String contentType, String etag, Instant lastModified) {
             char c = next();
             if (c != expected) {
                 throw new IllegalArgumentException(
-                        "Expected '" + expected + "' but found '" + c + "' in sidecar JSON: " + text);
+                        StorageFileMessage.SIDECAR_CHARACTER_EXPECTED.format(expected, c, text));
             }
         }
 
@@ -166,7 +175,7 @@ record Sidecar(String contentType, String etag, Instant lastModified) {
                         sb.append((char) code);
                     }
                     default -> throw new IllegalArgumentException(
-                            "Bad escape '\\" + escape + "' in sidecar JSON: " + text);
+                            StorageFileMessage.SIDECAR_ESCAPE_BAD.format(escape, text));
                 }
             }
         }
@@ -174,7 +183,8 @@ record Sidecar(String contentType, String etag, Instant lastModified) {
         private int hexDigit(char c) {
             int v = Character.digit(c, 16);
             if (v < 0) {
-                throw new IllegalArgumentException("Bad \\u escape in sidecar JSON: " + text);
+                throw new IllegalArgumentException(
+                        StorageFileMessage.SIDECAR_UNICODE_ESCAPE_BAD.format(text));
             }
             return v;
         }

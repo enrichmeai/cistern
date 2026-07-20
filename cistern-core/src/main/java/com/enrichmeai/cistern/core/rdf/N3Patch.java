@@ -1,6 +1,7 @@
 package com.enrichmeai.cistern.core.rdf;
 
 import com.enrichmeai.cistern.core.CisternException;
+import com.enrichmeai.cistern.core.CoreMessage;
 import com.enrichmeai.cistern.core.Representation;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import org.apache.jena.graph.Graph;
@@ -110,13 +111,13 @@ public record N3Patch(List<Triple> where, List<Triple> deletes, List<Triple> ins
      */
     public static N3Patch parse(Representation representation, ResourceIdentifier resource) {
         if (representation == null) {
-            throw new CisternException.BadInput("Cannot parse N3 Patch: no representation given");
+            throw new CisternException.BadInput(CoreMessage.N3_NO_REPRESENTATION.format());
         }
         if (representation.data() == null) {
-            throw new CisternException.BadInput("Cannot parse N3 Patch: representation has no data");
+            throw new CisternException.BadInput(CoreMessage.N3_NO_DATA.format());
         }
         if (resource == null) {
-            throw new CisternException.BadInput("Cannot parse N3 Patch: no resource identifier given as base");
+            throw new CisternException.BadInput(CoreMessage.N3_NO_BASE.format());
         }
         requireN3ContentType(representation.contentType());
         String document = decodeUtf8(representation.data());
@@ -126,8 +127,8 @@ public record N3Patch(List<Triple> where, List<Triple> deletes, List<Triple> ins
             throw e;
         } catch (RuntimeException e) {
             // Belt and braces: no parser-internal exception type escapes.
-            throw new CisternException.BadInput(
-                    "Malformed text/n3 patch document for <" + resource.uri() + ">: " + safeMessage(e));
+            throw new CisternException.BadInput(CoreMessage.N3_DOCUMENT_MALFORMED.format(
+                    MEDIA_TYPE, resource.uri(), safeMessage(e)));
         }
     }
 
@@ -168,14 +169,10 @@ public record N3Patch(List<Triple> where, List<Triple> deletes, List<Triple> ins
             List<Map<Node, Node>> solutions = new ArrayList<>(2);
             findMappings(graph, 0, new HashMap<>(), solutions);
             if (solutions.isEmpty()) {
-                throw new CisternException.Conflict(
-                        "Cannot apply N3 Patch: no variable mapping exists for which all "
-                                + "solid:where triples occur in the target graph");
+                throw new CisternException.Conflict(CoreMessage.N3_APPLY_NO_MAPPING.format());
             }
             if (solutions.size() > 1) {
-                throw new CisternException.Conflict(
-                        "Cannot apply N3 Patch: multiple variable mappings satisfy the "
-                                + "solid:where formula; the Solid Protocol requires exactly one");
+                throw new CisternException.Conflict(CoreMessage.N3_APPLY_AMBIGUOUS_MAPPING.format());
             }
             mapping = solutions.get(0);
         }
@@ -184,8 +181,7 @@ public record N3Patch(List<Triple> where, List<Triple> deletes, List<Triple> ins
         for (Triple deletion : deletions) {
             if (!graph.contains(deletion)) {
                 throw new CisternException.Conflict(
-                        "Cannot apply N3 Patch: solid:deletes triple is not present in the "
-                                + "target graph: " + deletion);
+                        CoreMessage.N3_APPLY_DELETION_ABSENT.format(deletion));
             }
         }
         Set<Triple> insertions = substituteAll(inserts, mapping);
@@ -265,7 +261,7 @@ public record N3Patch(List<Triple> where, List<Triple> deletes, List<Triple> ins
             if (s.isVariable() || p.isVariable() || o.isVariable()) {
                 // Unreachable: parsing guarantees deletes/inserts variables all occur in
                 // where, and the mapping is total over the where variables.
-                throw new IllegalStateException("Unbound variable after mapping propagation: " + pattern);
+                throw new IllegalStateException(CoreMessage.N3_UNBOUND_VARIABLE.format(pattern));
             }
             result.add(Triple.create(s, p, o));
         }
@@ -279,7 +275,7 @@ public record N3Patch(List<Triple> where, List<Triple> deletes, List<Triple> ins
     private static void requireN3ContentType(String contentType) {
         if (contentType == null) {
             throw new CisternException.BadInput(
-                    "No content type given; an N3 Patch document must be " + MEDIA_TYPE);
+                    CoreMessage.N3_CONTENT_TYPE_MISSING.format(MEDIA_TYPE));
         }
         int semicolon = contentType.indexOf(';');
         String bare = (semicolon >= 0 ? contentType.substring(0, semicolon) : contentType)
@@ -287,8 +283,7 @@ public record N3Patch(List<Triple> where, List<Triple> deletes, List<Triple> ins
                 .toLowerCase(Locale.ROOT);
         if (!MEDIA_TYPE.equals(bare)) {
             throw new CisternException.BadInput(
-                    "Unsupported content type \"" + contentType + "\" for an N3 Patch document; must be "
-                            + MEDIA_TYPE);
+                    CoreMessage.N3_CONTENT_TYPE_UNSUPPORTED.format(contentType, MEDIA_TYPE));
         }
     }
 
@@ -300,7 +295,7 @@ public record N3Patch(List<Triple> where, List<Triple> deletes, List<Triple> ins
                     .decode(ByteBuffer.wrap(data))
                     .toString();
         } catch (CharacterCodingException e) {
-            throw new CisternException.BadInput("N3 Patch document is not valid UTF-8");
+            throw new CisternException.BadInput(CoreMessage.N3_NOT_UTF8.format());
         }
     }
 
