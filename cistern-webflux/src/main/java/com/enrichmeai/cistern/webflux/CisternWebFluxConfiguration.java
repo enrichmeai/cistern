@@ -202,6 +202,17 @@ public class CisternWebFluxConfiguration {
     }
 
     /**
+     * Restores the {@code Vary: Origin} that Solid Protocol §8.1 requires and that a handler
+     * writing its own {@code Vary} would otherwise replace — see {@link OriginVaryFilter}, which
+     * explains why this is a filter rather than a line in each handler.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public OriginVaryFilter cisternOriginVaryFilter() {
+        return new OriginVaryFilter();
+    }
+
+    /**
      * The LDP/Solid semantics layer over whichever {@link ResourceStore} is configured.
      * Conditional so an embedder can supply its own.
      */

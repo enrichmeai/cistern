@@ -65,10 +65,22 @@ public class ResourceOptionsHandler {
 
     /**
      * RFC 9110 §9.3.7's asterisk-form request-target: "applies to the server in general rather
-     * than to a specific resource". Not a path, which is why it is compared before
+     * than to a specific resource". Not a path, which is why it is matched before
      * {@link RequestPaths} is asked to make an identifier of it.
      */
     private static final String ASTERISK_FORM = "*";
+
+    /**
+     * What the asterisk-form actually looks like by the time it reaches this handler.
+     *
+     * <p>{@code *} is a legal request-target but not a legal URI path, so Reactor Netty's
+     * request URI resolution yields an <em>empty</em> path rather than the literal asterisk —
+     * verified by curl {@code --request-target '*'} against the running server, which is why
+     * this constant exists rather than a lone {@code "*"} comparison that would never fire. No
+     * other request-target produces an empty path: origin-form always begins with {@code /} and
+     * absolute-form carries the path through, so empty is an unambiguous marker.
+     */
+    private static final String ASTERISK_FORM_PATH = "";
 
     private final LdpService ldp;
     private final RequestPaths requestPaths;
@@ -117,12 +129,13 @@ public class ResourceOptionsHandler {
     }
 
     /**
-     * Whether this is the asterisk-form of §9.3.7. Tested on the raw request-target rather than
-     * on a parsed path, because {@code *} is not one.
+     * Whether this is the asterisk-form of §9.3.7. Both spellings are accepted — the literal
+     * {@code *}, in case a server adapter passes it through untouched, and the empty path
+     * Reactor Netty actually produces (see {@link #ASTERISK_FORM_PATH}).
      */
     private static boolean isAsteriskForm(ServerRequest request) {
-        return ASTERISK_FORM.equals(request.uri().getRawPath())
-                || ASTERISK_FORM.equals(request.uri().toString());
+        String rawPath = request.uri().getRawPath();
+        return ASTERISK_FORM.equals(rawPath) || ASTERISK_FORM_PATH.equals(rawPath);
     }
 
     /** The whole-server answer: which methods exist here, and nothing about any resource. */
