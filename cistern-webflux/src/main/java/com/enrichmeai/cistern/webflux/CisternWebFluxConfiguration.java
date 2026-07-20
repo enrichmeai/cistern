@@ -52,6 +52,22 @@ public class CisternWebFluxConfiguration {
     }
 
     /**
+     * The delete route (T2.4). Its own bean rather than another predicate on the read route:
+     * {@code RouterFunction} beans compose, one method per handler keeps each handler's
+     * signature honest, and a route added per ticket is a route no other ticket has to edit.
+     *
+     * <p>{@code /**} for the same reason the read route uses it — whether a resource exists at
+     * a path, and whether it may be removed, are questions for
+     * {@code LdpService.delete}, not for routing.
+     */
+    @Bean
+    public RouterFunction<ServerResponse> cisternDeleteRoutes(ResourceDeleteHandler handler) {
+        return RouterFunctions.route(
+                RequestPredicates.method(HttpMethod.DELETE).and(RequestPredicates.path(ALL_PATHS)),
+                handler::delete);
+    }
+
+    /**
      * The LDP/Solid semantics layer over whichever {@link ResourceStore} is configured.
      * Conditional so an embedder can supply its own.
      */

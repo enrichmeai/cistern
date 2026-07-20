@@ -40,6 +40,14 @@ public enum ProblemType {
      */
     NOT_ACCEPTABLE("not-acceptable", HttpStatus.NOT_ACCEPTABLE, WebfluxMessage.TITLE_NOT_ACCEPTABLE),
 
+    /**
+     * RFC 9110 §15.5.6 — the method is not supported on the target resource. The response MUST
+     * carry an {@code Allow} header, which {@link ProblemMapper} attaches; the body only
+     * explains the refusal. Raised by {@code DELETE} on the storage root (Solid Protocol §5.4).
+     */
+    METHOD_NOT_ALLOWED("method-not-allowed", HttpStatus.METHOD_NOT_ALLOWED,
+            WebfluxMessage.TITLE_METHOD_NOT_ALLOWED),
+
     /** Solid Protocol §5.3 (containment-triple writes) and §5.4 (non-empty container delete). */
     CONFLICT("conflict", HttpStatus.CONFLICT, WebfluxMessage.TITLE_CONFLICT),
 

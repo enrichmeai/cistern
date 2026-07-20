@@ -44,15 +44,40 @@ import java.util.List;
  * appear before their own tickets land (T2.2 {@code PUT}, T2.3 {@code POST}, T2.4
  * {@code DELETE}, T2.7 {@code PATCH}, T2.8 {@code OPTIONS}). That is deliberate: {@code Allow}
  * describes the resource, and splitting the table across five tickets would guarantee it
- * drifts. Known nuance for T2.4: the storage root container refuses {@code DELETE} (405),
- * which this kind-level table cannot express.
+ * drifts.
+ *
+ * <p>T2.4 resolved the nuance T2.1 parked here — the storage root refuses {@code DELETE} — by
+ * making it a kind of its own ({@link #STORAGE_ROOT}) rather than a special case at one call
+ * site. Solid Protocol §5.4 requires both halves of that, and requiring them of every response
+ * is exactly what this table is for: "Server MUST exclude the {@code DELETE} method in the
+ * field value of the {@code Allow} header field, in response to requests to these resources."
  */
-enum ResourceKind {
+public enum ResourceKind {
 
     /** An LDP Basic Container (Solid Protocol §3.1: a path ending in a slash). */
     CONTAINER(
             HttpConstants.allow(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
                     HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE),
+            RdfSerialization.mediaTypeList(),
+            MediaType.ALL_VALUE,
+            HttpConstants.TEXT_N3,
+            List.of(Ldp.RESOURCE, Ldp.BASIC_CONTAINER)),
+
+    /**
+     * The storage's root container: a {@link #CONTAINER} in every respect except that it
+     * cannot be removed. Solid Protocol §5.4 — "When a {@code DELETE} request targets
+     * storage's root container or its associated ACL resource, the server MUST respond with
+     * the {@code 405} status code. Server MUST exclude the {@code DELETE} method in the field
+     * value of the {@code Allow} header field, in response to requests to these resources."
+     *
+     * <p>A row rather than a flag, so the 405's {@code Allow} (RFC 9110 §15.5.6 makes it
+     * mandatory) and the {@code Allow} on a successful {@code GET} of the root are one value
+     * and cannot contradict each other — which is the very inconsistency §5.4's second
+     * sentence exists to forbid.
+     */
+    STORAGE_ROOT(
+            HttpConstants.allow(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
+                    HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH),
             RdfSerialization.mediaTypeList(),
             MediaType.ALL_VALUE,
             HttpConstants.TEXT_N3,
@@ -95,12 +120,15 @@ enum ResourceKind {
 
     static ResourceKind of(ResourceView view) {
         if (view.container()) {
-            return CONTAINER;
+            // The root is a container whose method set is one method short (§5.4), so the
+            // distinction has to be drawn here rather than at each header-emitting site.
+            return view.identifier().isStorageRoot() ? STORAGE_ROOT : CONTAINER;
         }
         return view instanceof ResourceView.Rdf ? RDF_DOCUMENT : NON_RDF_DOCUMENT;
     }
 
-    String allow() {
+    /** The {@code Allow} field value (RFC 9110 §10.2.1) this kind advertises. */
+    public String allow() {
         return allow;
     }
 

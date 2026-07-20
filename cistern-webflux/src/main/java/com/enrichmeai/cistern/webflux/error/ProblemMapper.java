@@ -1,6 +1,7 @@
 package com.enrichmeai.cistern.webflux.error;
 
 import com.enrichmeai.cistern.core.CisternException;
+import com.enrichmeai.cistern.webflux.ResourceKind;
 import com.enrichmeai.cistern.webflux.WebfluxMessage;
 import java.net.URI;
 import java.util.Map;
@@ -40,6 +41,7 @@ final class ProblemMapper {
             CisternException.UnprocessableEntity.class, ProblemType.UNPROCESSABLE_ENTITY,
             CisternException.NotFound.class, ProblemType.NOT_FOUND,
             CisternException.NotAcceptable.class, ProblemType.NOT_ACCEPTABLE,
+            CisternException.MethodNotAllowed.class, ProblemType.METHOD_NOT_ALLOWED,
             CisternException.Conflict.class, ProblemType.CONFLICT,
             CisternException.PreconditionFailed.class, ProblemType.PRECONDITION_FAILED);
 
@@ -57,7 +59,7 @@ final class ProblemMapper {
         URI instance = URI.create(exchange.getRequest().getPath().value());
 
         if (error instanceof CisternException domainError) {
-            return new Problem(domain(domainError, instance, exchange), HttpHeaders.EMPTY);
+            return new Problem(domain(domainError, instance, exchange), domainHeaders(domainError));
         }
         // Every Spring web exception worth mapping (UnsupportedMediaTypeStatusException →
         // 415, MethodNotAllowedException → 405 + Allow, ServerWebInputException → 400,
@@ -80,6 +82,35 @@ final class ProblemMapper {
         // and everything unforeseen land here. ProblemDocument replaces the detail on any 5xx,
         // so nothing about the fault reaches the client; the cause goes to the log instead.
         return blank(HttpStatus.INTERNAL_SERVER_ERROR, null, instance);
+    }
+
+    /**
+     * The headers a domain error's status code makes mandatory. Spring's own exceptions carry
+     * theirs already (see {@link #map}); Cistern's do not, because a {@link CisternException}
+     * knows nothing about HTTP — so where a status has a required header, this is where it is
+     * supplied.
+     *
+     * <p>Only 405 has one: RFC 9110 §15.5.6 — "The origin server MUST generate an
+     * {@code Allow} header field in a 405 response containing a list of the target resource's
+     * currently supported methods." The value is {@link ResourceKind}'s, so a 405's
+     * {@code Allow} and the {@code Allow} on a successful read of the same resource are one
+     * table entry rather than two literals that can drift — which Solid Protocol §5.4 requires
+     * for the root ("Server MUST exclude the {@code DELETE} method in the field value of the
+     * {@code Allow} header field, in response to requests to these resources").
+     *
+     * <p>The storage root is currently the only resource in Cistern whose method set is
+     * restricted, so its kind is the right answer for every {@code MethodNotAllowed} there is.
+     * The day a second one appears — §5.4's other case, an ACL resource, is the likely first —
+     * the exception will have to carry the kind it was raised for, and this method becomes a
+     * lookup instead of a constant.
+     */
+    private static HttpHeaders domainHeaders(CisternException error) {
+        if (!(error instanceof CisternException.MethodNotAllowed)) {
+            return HttpHeaders.EMPTY;
+        }
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.ALLOW, ResourceKind.STORAGE_ROOT.allow());
+        return headers;
     }
 
     private ProblemDocument domain(CisternException error, URI instance, ServerWebExchange exchange) {
