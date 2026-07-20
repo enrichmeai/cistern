@@ -53,25 +53,16 @@ jobs:
       - name: Validate
         run: terraform validate
 
-  deploy:
+  # Plan is read-only, so it is NOT behind the environment gate — otherwise seeing
+  # what would change requires an approval, and the gate stops meaning anything.
+  plan:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    environment: test-pod   # add required reviewers here to gate apply on a human
     permissions:
       contents: read
       id-token: write       # required for keyless auth to GCP
     steps:
       - uses: actions/checkout@v4
-
-      # ADR 0001: an apply puts a pod with no authentication on a network. Manual
-      # dispatch alone is one mis-click; this makes the operator type the reason.
-      - name: Confirm intent
-        if: inputs.action == 'apply'
-        run: |
-          if [ "${{ inputs.confirm }}" != "no-authorization-layer-yet" ]; then
-            echo "::error::apply requires the confirmation phrase — see ADR 0001. Refusing."
-            exit 1
-          fi
 
       - name: Check WIF is configured
         run: |
@@ -95,6 +86,52 @@ jobs:
       - name: Plan
         run: terraform plan -input=false -var "project_id=${{ vars.GCP_PROJECT_ID }}" -out=tfplan
 
-      - name: Apply
+      - name: Keep the plan for apply
         if: inputs.action == 'apply'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: infra/terraform/tfplan
+          retention-days: 1
+
+  # Apply is gated three ways: the typed phrase, the protected environment (required
+  # reviewer), and applying the exact plan produced above rather than re-planning.
+  apply:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: test-pod
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # ADR 0001: an apply puts a pod with no authorization layer on a network.
+      # Manual dispatch alone is one mis-click; this makes the operator say why.
+      - name: Confirm intent
+        run: |
+          if [ "${{ inputs.confirm }}" != "no-authorization-layer-yet" ]; then
+            echo "::error::apply requires the confirmation phrase — see ADR 0001. Refusing."
+            exit 1
+          fi
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.8'
+
+      - name: Init
+        run: terraform init -input=false -backend-config="bucket=${{ vars.GCP_TF_STATE_BUCKET }}" -backend-config="prefix=test-pod"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: infra/terraform
+
+      - name: Apply
         run: terraform apply -input=false -auto-approve tfplan
