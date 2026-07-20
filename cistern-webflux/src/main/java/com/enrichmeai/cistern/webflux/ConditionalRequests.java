@@ -35,6 +35,12 @@ import reactor.core.publisher.Mono;
  * implemented here:
  *
  * <ul>
+ *   <li><b>A method the resource does not support outranks a precondition.</b> An unsupported
+ *       method is a 405 (RFC 9110 §15.5.6) whatever the request's {@code If-Match} says, so the
+ *       preconditions are ignored and the request proceeds to the handler that produces it.
+ *       Decided by {@link ResourceKind#permits} — the table {@code Allow} is rendered from — so
+ *       Solid Protocol §5.4's storage root is covered without this class ever asking whether a
+ *       resource <em>is</em> the root, and §5.4's other 405 will be covered for free.</li>
  *   <li><b>An absent target is method-dependent</b>, which is what {@link AbsentTarget}
  *       expresses. A {@code PUT} to a resource that is not there would be a 201, so its
  *       preconditions are still evaluated — that is exactly what makes {@code If-None-Match: *}
@@ -46,13 +52,8 @@ import reactor.core.publisher.Mono;
  *       {@code If-Match} said.</li>
  * </ul>
  *
- * <p><b>Known deviation, flagged for the architect.</b> A {@code DELETE} of the storage root
- * carrying a failing {@code If-Match} answers 412, where §13.2.1 argues for the 405 that Solid
- * Protocol §5.4 mandates unconditionally. The root refusal lives inside
- * {@link LdpService#delete}, ahead of the store and inseparable from it without changing core,
- * and this ticket does not touch core. Nothing is written either way — 405 and 412 are both
- * refusals — so the consequence is confined to which refusal a client sees on one exotic
- * combination. The fix belongs with whichever ticket gives core a precondition-aware delete.
+ * <p>"Ignored" throughout means the preconditions do not change the answer, never that the
+ * request succeeds: the method still runs and still produces its own 404, 405 or 400.
  */
 @Component
 public class ConditionalRequests {
@@ -98,8 +99,11 @@ public class ConditionalRequests {
                 // exactly what it cost before this ticket.
                 return Mono.empty();
             }
-            return currentState(target, absentTarget)
-                    .flatMap(state -> decide(conditions, request, target, state))
+            return ldp.find(target)
+                    .map(view -> resultFor(conditions, request, view))
+                    .switchIfEmpty(Mono.fromSupplier(
+                            () -> resultForAbsentTarget(conditions, request, absentTarget)))
+                    .flatMap(result -> apply(result, conditions, request, target))
                     .then();
         });
     }
@@ -118,7 +122,7 @@ public class ConditionalRequests {
     public PreconditionResult evaluateRead(ServerRequest request, ResourceView view,
                                            MediaType selected) {
         ConditionalRequest conditions = ConditionalRequest.of(request);
-        if (conditions.isEmpty()) {
+        if (conditions.isEmpty() || !supportsMethod(view, request)) {
             return PreconditionResult.proceed();
         }
         return evaluator.evaluate(conditions, request.method(),
@@ -154,11 +158,67 @@ public class ConditionalRequests {
 
     // ---------------------------------------------------------------- internals
 
-    private Mono<PreconditionResult> decide(ConditionalRequest conditions, ServerRequest request,
-                                            ResourceIdentifier target, TargetState state) {
-        PreconditionResult result = evaluator.evaluate(conditions, request.method(), state);
+    /**
+     * The decision for a target that exists.
+     *
+     * <p>Method applicability is checked first, because RFC 9110 §13.2.1 puts it first: a
+     * method the resource does not support answers 405 (§15.5.6) unconditionally, and 405 is
+     * "a status code other than a 2xx (Successful) or 412 (Precondition Failed)", so the
+     * preconditions "MUST" be ignored — "redirects and failures that can be detected before
+     * significant processing occurs take precedence over the evaluation of preconditions".
+     * Ignoring them means the request proceeds to the handler that produces the 405; it does
+     * not mean it succeeds.
+     *
+     * <p>Concretely this is Solid Protocol §5.4's storage root: a {@code DELETE} of it answers
+     * 405 whether its {@code If-Match} matches, is stale, or is absent.
+     */
+    private PreconditionResult resultFor(ConditionalRequest conditions, ServerRequest request,
+                                         ResourceView view) {
+        if (!supportsMethod(view, request)) {
+            return PreconditionResult.proceed();
+        }
+        return evaluator.evaluate(conditions, request.method(),
+                TargetState.acrossAllRepresentations(view));
+    }
+
+    /**
+     * The decision for a target that has no current representation, which §13.2.1 makes
+     * method-dependent — see {@link AbsentTarget}. There is no kind to consult here: a resource
+     * that does not exist advertises no method set, and the response the preconditions would
+     * have to defer to is core's 404 rather than a 405.
+     */
+    private PreconditionResult resultForAbsentTarget(ConditionalRequest conditions,
+                                                     ServerRequest request,
+                                                     AbsentTarget absentTarget) {
+        return switch (absentTarget) {
+            case IS_CREATED -> evaluator.evaluate(conditions, request.method(),
+                    new TargetState.Absent());
+            case IS_REJECTED -> PreconditionResult.proceed();
+        };
+    }
+
+    /**
+     * RFC 9110 §13.2.1's applicability test, in one place for every method and every kind.
+     *
+     * <p>Driven off {@link ResourceKind#permits} — the same table {@code Allow} is rendered
+     * from — rather than off a test like "is this the storage root". That is what makes it a
+     * general implementation of the rule instead of a special case: it already covers §5.4's
+     * other 405 and any future kind with a narrower method set, and there is no second place
+     * for "what this resource supports" to be decided.
+     *
+     * <p>It cannot fire for {@code GET} or {@code HEAD} today, since every kind supports them
+     * (Solid Protocol §5.2 requires it); the read path consults it anyway so the rule has one
+     * implementation rather than two that could drift.
+     */
+    private static boolean supportsMethod(ResourceView view, ServerRequest request) {
+        return ResourceKind.of(view).permits(request.method());
+    }
+
+    /** Turns a decision into the signal — or the silence — the caller composes with. */
+    private Mono<Void> apply(PreconditionResult result, ConditionalRequest conditions,
+                             ServerRequest request, ResourceIdentifier target) {
         return switch (result.outcome()) {
-            case PROCEED -> Mono.just(result);
+            case PROCEED -> Mono.empty();
             case PRECONDITION_FAILED -> Mono.error(new CisternException.PreconditionFailed(
                     detailFor(result, conditions, target)));
             // §13.2.2 step 3 reserves 304 for GET and HEAD, and this gate only ever runs for
@@ -169,29 +229,5 @@ public class ConditionalRequests {
                     WebfluxMessage.NOT_MODIFIED_ON_UNSAFE_METHOD
                             .format(request.method(), target.uri())));
         };
-    }
-
-    /**
-     * The target's current validators, or an empty {@code Mono} when §13.2.1 says the
-     * preconditions must be ignored entirely — in which case the method simply runs and
-     * produces whatever it would have produced unconditionally (for a {@code DELETE} of a
-     * missing resource, core's own 404).
-     *
-     * <p>{@link LdpService#find} rather than {@link LdpService#read}: absence is an
-     * <em>input</em> to §13.1.1/§13.1.2, which both branch on whether the server "has a current
-     * representation for the target resource", so it has to arrive as a value and not as a
-     * signal to be caught. There is deliberately no error operator anywhere in this class —
-     * ground rule 4 and the guard that enforces it hold here as they do in every handler.
-     *
-     * <p>It is core's own resolution of a resource either way, so the tags computed from it are
-     * exactly the tags a {@code GET} would emit.
-     */
-    private Mono<TargetState> currentState(ResourceIdentifier target, AbsentTarget absentTarget) {
-        return ldp.find(target)
-                .map(TargetState::acrossAllRepresentations)
-                .switchIfEmpty(Mono.defer(() -> switch (absentTarget) {
-                    case IS_CREATED -> Mono.<TargetState>just(new TargetState.Absent());
-                    case IS_REJECTED -> Mono.<TargetState>empty();
-                }));
     }
 }

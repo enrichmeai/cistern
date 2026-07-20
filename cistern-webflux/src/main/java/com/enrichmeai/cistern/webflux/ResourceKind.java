@@ -57,7 +57,7 @@ public enum ResourceKind {
 
     /** An LDP Basic Container (Solid Protocol §3.1: a path ending in a slash). */
     CONTAINER(
-            HttpConstants.allow(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
+            List.of(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
                     HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE),
             RdfSerialization.mediaTypeList(),
             MediaType.ALL_VALUE,
@@ -77,7 +77,7 @@ public enum ResourceKind {
      * sentence exists to forbid.
      */
     STORAGE_ROOT(
-            HttpConstants.allow(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
+            List.of(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
                     HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH),
             RdfSerialization.mediaTypeList(),
             MediaType.ALL_VALUE,
@@ -86,7 +86,7 @@ public enum ResourceKind {
 
     /** A document stored as one of the RDF media types: patchable, not postable to. */
     RDF_DOCUMENT(
-            HttpConstants.allow(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
+            List.of(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
                     HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE),
             MediaType.ALL_VALUE,
             null,
@@ -95,22 +95,24 @@ public enum ResourceKind {
 
     /** A binary document: replaceable and deletable, but there is no graph to patch. */
     NON_RDF_DOCUMENT(
-            HttpConstants.allow(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
+            List.of(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
                     HttpMethod.PUT, HttpMethod.DELETE),
             MediaType.ALL_VALUE,
             null,
             null,
             List.of(Ldp.RESOURCE));
 
+    private final List<HttpMethod> methods;
     private final String allow;
     private final String acceptPut;
     private final String acceptPost;
     private final String acceptPatch;
     private final List<String> linkTypeValues;
 
-    ResourceKind(String allow, String acceptPut, String acceptPost, String acceptPatch,
-                 List<Resource> types) {
-        this.allow = allow;
+    ResourceKind(List<HttpMethod> methods, String acceptPut, String acceptPost,
+                 String acceptPatch, List<Resource> types) {
+        this.methods = List.copyOf(methods);
+        this.allow = HttpConstants.allow(this.methods);
         this.acceptPut = acceptPut;
         this.acceptPost = acceptPost;
         this.acceptPatch = acceptPatch;
@@ -138,9 +140,32 @@ public enum ResourceKind {
         return container.isStorageRoot() ? STORAGE_ROOT : CONTAINER;
     }
 
-    /** The {@code Allow} field value (RFC 9110 §10.2.1) this kind advertises. */
+    /**
+     * The {@code Allow} field value (RFC 9110 §10.2.1) this kind advertises — derived from
+     * {@link #permits}, so what a resource says it supports and what it actually accepts are
+     * one fact and cannot contradict each other.
+     */
     public String allow() {
         return allow;
+    }
+
+    /**
+     * Whether this kind supports {@code method} at all — the same set {@link #allow()} is
+     * rendered from.
+     *
+     * <p>Used by T2.5 to implement RFC 9110 §13.2.1: "A server MUST ignore all received
+     * preconditions if its response to the same request without those conditions ... would have
+     * been a status code other than a 2xx (Successful) or 412 (Precondition Failed)." A method
+     * this kind does not support answers 405 (RFC 9110 §15.5.6) whatever the request's
+     * {@code If-Match} says, so its preconditions are never evaluated.
+     *
+     * <p>Driven off the table rather than off a test like "is this the storage root", so the
+     * rule is general: it already covers Solid Protocol §5.4's other 405 (the root's ACL
+     * resource, #64) and any future kind whose method set is narrower, with no further work and
+     * no second place for the two to disagree.
+     */
+    boolean permits(HttpMethod method) {
+        return methods.contains(method);
     }
 
     /** Null where the corresponding method is absent from {@link #allow()}. */

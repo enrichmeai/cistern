@@ -11,8 +11,13 @@ package com.enrichmeai.cistern.webflux;
 enum PreconditionOutcome {
 
     /**
-     * Every precondition held; perform the method (§13.2.2 step 6, "perform the requested
-     * method and respond according to its success or failure").
+     * Perform the method (§13.2.2 step 6, "perform the requested method and respond according
+     * to its success or failure") — either because every precondition held, or because §13.2.1
+     * required them all to be ignored.
+     *
+     * <p>The two are one outcome on purpose: in both cases the request gets whatever answer it
+     * would have had unconditionally, which may perfectly well be a 404 or a 405. This does not
+     * mean "succeed".
      */
     PROCEED,
 

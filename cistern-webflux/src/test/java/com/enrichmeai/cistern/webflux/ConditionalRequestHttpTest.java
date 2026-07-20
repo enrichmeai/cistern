@@ -396,6 +396,59 @@ class ConditionalRequestHttpTest {
                 .exchange().expectStatus().isNotFound();
     }
 
+    // ================================================================ §13.2.1 method applicability
+
+    /**
+     * Solid Protocol §5.4 refuses {@code DELETE} on the storage root unconditionally, and RFC
+     * 9110 §13.2.1 says a server "MUST ignore all received preconditions if its response to the
+     * same request without those conditions ... would have been a status code other than a 2xx
+     * (Successful) or 412 (Precondition Failed)". 405 is such a status, so the answer is 405
+     * whatever the {@code If-Match} says — matching, stale, or absent.
+     *
+     * <p>Both directions are asserted because they fail differently: a stale tag would give 412
+     * if applicability were not checked first, and a matching tag would let the delete through
+     * to core, which must still refuse it. Neither may touch the store.
+     */
+    @Test
+    void deleteOfTheStorageRootIsMethodNotAllowedWhateverItsIfMatchSays() {
+        putTurtle("/", "").exchange().expectStatus().is2xxSuccessful();
+        String rootEtag = etagOf("/");
+
+        for (String ifMatch : java.util.List.of(STALE_ETAG, rootEtag, "*")) {
+            expectNoStoreMutation(() -> client.delete().uri(URI.create("/"))
+                    .header(HttpHeaders.IF_MATCH, ifMatch)
+                    .exchange()
+                    .expectStatus().isEqualTo(HttpStatus.METHOD_NOT_ALLOWED)
+                    // RFC 9110 §15.5.6 makes Allow mandatory on a 405, and §5.4 requires DELETE
+                    // to be excluded from it — the same table that decided to skip the
+                    // preconditions renders this value, so the two cannot disagree.
+                    .expectHeader().valueEquals(HttpHeaders.ALLOW, ResourceKind.STORAGE_ROOT.allow()));
+        }
+
+        get("/").exchange().expectStatus().isOk();
+    }
+
+    @Test
+    void anUnconditionalDeleteOfTheStorageRootIsUnchanged() {
+        // The applicability check must not alter the behaviour T2.4 established.
+        putTurtle("/", "").exchange().expectStatus().is2xxSuccessful();
+
+        client.delete().uri(URI.create("/"))
+                .exchange().expectStatus().isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+    }
+
+    @Test
+    void aPutToTheStorageRootStillHonoursItsPreconditions() {
+        // The rule is per-method, not per-resource: PUT IS in the root's method set (§5.4
+        // singles out DELETE only), so a stale If-Match on a root PUT is still a 412. An
+        // implementation that skipped preconditions for the whole resource would answer 204.
+        putTurtle("/", "").exchange().expectStatus().is2xxSuccessful();
+
+        expectNoStoreMutation(() -> expectPreconditionFailed(
+                putTurtle("/", "").header(HttpHeaders.IF_MATCH, STALE_ETAG),
+                "/", HttpHeaders.IF_MATCH));
+    }
+
     // ================================================================ 304 on GET / HEAD
 
     @Test
