@@ -79,7 +79,7 @@ regression.
 
 ## Phase 2 — HTTP layer (cistern-webflux)
 
-- [ ] **T2.1 GET/HEAD.** Functional endpoints (RouterFunction, not annotated controllers):
+- [x] **T2.1 GET/HEAD.** Functional endpoints (RouterFunction, not annotated controllers):
   content negotiation between Turtle and JSON-LD driven by Accept (default Turtle);
   `Link: <...ldp#Resource>; rel="type"` (+BasicContainer for containers); ETag,
   Last-Modified, Allow, Accept-Put/Post/Patch headers; HEAD = GET minus body. Non-RDF
