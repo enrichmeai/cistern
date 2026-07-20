@@ -134,6 +134,56 @@ public final class LdpService {
     }
 
     /**
+     * Removes one resource (T2.4). The front-end-facing delete operation, so — like
+     * {@link #read} — every outcome is a domain signal the single error mapper can render.
+     *
+     * <h2>What this adds over {@link ResourceStore#delete}</h2>
+     * Exactly one rule, and it is the one the storage SPI cannot express: <b>the storage's
+     * root container is undeletable</b>. Solid Protocol §5.4 — "When a {@code DELETE} request
+     * targets storage's root container or its associated ACL resource, the server MUST respond
+     * with the {@code 405} status code" — so the root is refused with
+     * {@link CisternException.MethodNotAllowed} <em>before</em> the store is touched, and a
+     * backend can never be asked to remove its own root. "Storage's root container" is
+     * {@link ResourceIdentifier#isStorageRoot()}: the resource with no parent container.
+     *
+     * <p>The rest of §5.4 is already the storage contract, and is deliberately not restated
+     * here — one rule, one place:
+     * <ul>
+     *   <li>"When a {@code DELETE} request targets a container, the server MUST delete the
+     *       container if it contains no resources. If the container contains resources, the
+     *       server MUST respond with the {@code 409} status code" → the store signals
+     *       {@link CisternException.Conflict} for a non-empty container.</li>
+     *   <li>A resource that is not there → {@link CisternException.NotFound} (404), because
+     *       {@code Mono<Void>} cannot distinguish absence from success by emptiness.</li>
+     *   <li>"When a contained resource is deleted, the server MUST also remove the
+     *       corresponding containment triple" → free by construction: containment is derived
+     *       from {@link ResourceStore#children(ResourceIdentifier)} at read time and never
+     *       stored (see the class javadoc), so the parent's next read cannot list a resource
+     *       the store no longer has. {@code LdpServiceDeleteTest} pins that rather than
+     *       assuming it.</li>
+     * </ul>
+     *
+     * <p>Auxiliary resources ("the server MUST also delete the associated auxiliary
+     * resources") are out of scope until ACLs exist (Phase 4) — there is no auxiliary
+     * resource to cascade to yet.
+     *
+     * @param target the resource to remove; container or document
+     * @return an empty Mono on success. Signals {@link CisternException.MethodNotAllowed} for
+     *         the storage root, {@link CisternException.NotFound} if no such resource exists,
+     *         and {@link CisternException.Conflict} for a non-empty container. Never throws
+     *         synchronously.
+     */
+    public Mono<Void> delete(ResourceIdentifier target) {
+        return Mono.defer(() -> {
+            if (target.isStorageRoot()) {
+                return Mono.error(new CisternException.MethodNotAllowed(
+                        CoreMessage.STORAGE_ROOT_NOT_DELETABLE.format(target.uri())));
+            }
+            return store.delete(target);
+        });
+    }
+
+    /**
      * Write-path guard for Solid Protocol §5.3: rejects a client body that tries to
      * update the target's containment triples ("Servers MUST NOT allow HTTP PUT or
      * PATCH on a container to update its containment triples; if the server receives

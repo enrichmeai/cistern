@@ -26,6 +26,10 @@ public enum CoreMessage {
             "Containment triples are server-managed (Solid Protocol §5.3): the request body"
                     + " must not assert ldp:contains for <%s>"),
 
+    /** Solid Protocol §5.4: DELETE targeting the storage's root container is refused (405). */
+    STORAGE_ROOT_NOT_DELETABLE(
+            "The storage's root container cannot be deleted (Solid Protocol §5.4): <%s>"),
+
     /** Stored bytes that will not parse: server-side corruption, never a client fault. */
     STORED_REPRESENTATION_CORRUPT("Stored representation for <%s> is corrupt: %s");
 
