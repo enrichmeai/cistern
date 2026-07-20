@@ -257,6 +257,16 @@ regression.
   enrichmeai.com product page, Medium article ("building a Solid server agent-first,
   with the conformance harness as fitness function"). Gate: Milestones 1–3 all met,
   `local` demo T6.3 re-verified same-day. Owner: Joseph, not agents.
+- [x] **T7.5 Infrastructure as code.** `infra/terraform/` — COS instance + persistent
+  disk + IAP-only firewall for a GCP test pod, and `.github/workflows/terraform.yml`
+  splitting `validate` (no credentials, every PR) from `plan`/`apply` (Workload Identity
+  Federation, manual dispatch). Added outside the original plan at the owner's request
+  2026-07-20; **no corresponding GitHub issue** (the mirror runs T0.1=#1 … T7.4=#44), so
+  open one if the issue mirror is being kept exact. DoD: `terraform validate` green in
+  CI with no cloud setup; the `0.0.0.0/0` guard demonstrated in both directions.
+  *Authored, not applied — **apply is blocked by ADR 0001** until Phase 5 gives the pod
+  an authorization layer. The one-time WIF/state-bucket bootstrap is deliberately
+  manual and documented in `infra/terraform/README.md`.*
 
 ## Parked (post-milestone-3 candidates — do not start without architect approval)
 
