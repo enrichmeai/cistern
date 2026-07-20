@@ -1,0 +1,16 @@
+# Keep the build context small and the image reproducible: everything below is
+# either rebuilt inside the image or has no business in it.
+target/
+*/target/
+.git/
+.github/
+.claude/
+data/
+cth/reports/
+docs/
+*.iml
+.idea/
+.vscode/
+.DS_Store
+*.log
+.env

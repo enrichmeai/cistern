@@ -247,7 +247,7 @@ regression.
 - [ ] **T7.1 Starter.** cistern-spring-boot-starter: `@AutoConfiguration` wiring core+
   file-storage+webflux+auth+wac from `cistern.*` properties; a consumer app with only the
   starter dep + 3 lines of yaml serves a pod. DoD: sample in `docs/embedding.md` verified.
-- [ ] **T7.2 Docker.** Multi-stage Dockerfile + `docker-compose.yml` (server + volume);
+- [x] **T7.2 Docker.** Multi-stage Dockerfile + `docker-compose.yml` (server + volume);
   `ghcr.io/enrichmeai/cistern` build in CI (publish gated on tag). DoD: `docker compose up`
   → CTH runs against the container.
 - [ ] **T7.3 README + site.** Conformance badge (real numbers from cth/BASELINE.md),
