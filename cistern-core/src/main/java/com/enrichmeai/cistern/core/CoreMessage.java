@@ -89,6 +89,27 @@ public enum CoreMessage {
                     + " Basic Containers (Solid Protocol §4.2), and membership-based containers are"
                     + " not implemented"),
 
+    // ---------------------------------------------------------------- PATCH (T2.7)
+
+    /**
+     * Solid Protocol §5.3.1 scopes the {@code PATCH} requirement to RDF documents ("Servers
+     * MUST accept a {@code PATCH} request with an N3 Patch body when the target of the request
+     * is an <em>RDF document</em>"), and there is no graph in a byte stream to apply a patch to.
+     * The refusal is RFC 9110 §15.5.6's 405 — the method is known but not supported by this
+     * target — which is also what §5.2's {@code Allow} for a binary resource already advertises.
+     */
+    PATCH_TARGET_NOT_AN_RDF_SOURCE(
+            "<%s> is a non-RDF source stored as \"%s\": an N3 Patch applies to the graph of an RDF"
+                    + " document (Solid Protocol §5.3.1), and this resource has none"),
+
+    /**
+     * A caller programming error: {@link com.enrichmeai.cistern.core.ldp.LdpKind#ofContainer}
+     * needs a container identifier.
+     */
+    KIND_REQUIRES_CONTAINER_IDENTIFIER(
+            "The kind of a document cannot be known from its URI alone; ofContainer() requires a"
+                    + " container identifier (trailing slash): <%s>"),
+
     /** A caller programming error: a Slug instance may only ever hold a sanitized name. */
     SLUG_NOT_A_NAME(
             "A Slug value must be a single non-empty path segment of unreserved characters"

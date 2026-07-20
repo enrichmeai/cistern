@@ -1,5 +1,9 @@
 package com.enrichmeai.cistern.core;
 
+import com.enrichmeai.cistern.core.ldp.LdpKind;
+
+import java.util.Objects;
+
 /**
  * Root of Cistern's domain error hierarchy. The HTTP layer maps subtypes to status
  * codes in exactly one place (T2.6, GlobalErrorHandler) — services and stores signal
@@ -65,15 +69,71 @@ public abstract class CisternException extends RuntimeException {
      * The target resource does not support the request method → 405 (RFC 9110 §15.5.6),
      * whose response MUST carry an {@code Allow} header listing the methods it does support.
      *
-     * <p>Raised today by {@code LdpService.delete} for the storage root container: Solid
-     * Protocol §5.4 — "When a {@code DELETE} request targets storage's root container or its
-     * associated ACL resource, the server MUST respond with the {@code 405} status code."
-     * The refusal is a domain rule about which resource is being addressed, not a routing
-     * fact, so it has to reach the single error mapper as a domain signal (ground rule 4)
-     * rather than being decided in a handler.
+     * <p>Raised by {@code LdpService.delete} for the storage root container (Solid Protocol
+     * §5.4 — "When a {@code DELETE} request targets storage's root container or its associated
+     * ACL resource, the server MUST respond with the {@code 405} status code"), by
+     * {@code LdpService.createIn} for a {@code POST} to a document (§5.3 confines creation by
+     * {@code POST} to paths ending in {@code /}), and by {@code LdpService.patch} for a
+     * {@code PATCH} of a non-RDF source (§5.3.1 scopes N3 Patch to RDF documents). Each is a
+     * domain rule about which resource is being addressed, not a routing fact, so it reaches
+     * the single error mapper as a domain signal (ground rule 4) rather than being decided in
+     * a handler.
+     *
+     * <h2>Why it carries the kind (T2.7)</h2>
+     * RFC 9110 §15.5.6 makes {@code Allow} mandatory on a 405, and the value must be true of
+     * the resource that refused. Until {@code PATCH} existed the HTTP layer could infer that
+     * from the request path, because every distinction it needed was the container/document
+     * split Solid Protocol §3.1 puts in the trailing slash. It no longer can: an RDF document
+     * allows {@code PATCH} and a binary document does not, and the URI does not say which a
+     * path names — only the stored media type does, which is core's fact and not the edge's.
+     *
+     * <p>So the exception carries {@link LdpKind}, the semantic kind, rather than a list of
+     * methods: methods are HTTP, and a {@code CisternException} never speaks HTTP. The mapper
+     * turns one kind into one {@code Allow} through cistern-webflux's {@code ResourceKind}
+     * table, so a refusal and a successful read of the same resource advertise the same
+     * interface by construction — which is what Solid Protocol §5.2 requires.
      */
     public static final class MethodNotAllowed extends CisternException {
-        public MethodNotAllowed(String message) { super(message); }
+
+        private final transient LdpKind kind;
+
+        /**
+         * @param message the refusal, for the problem document's detail
+         * @param kind    what the refusing resource is, so the mapper can render an
+         *                {@code Allow} that is exactly true of it
+         */
+        public MethodNotAllowed(String message, LdpKind kind) {
+            super(message);
+            this.kind = Objects.requireNonNull(kind, "kind");
+        }
+
+        /** The kind of the resource that refused — the input to its {@code Allow}. */
+        public LdpKind kind() {
+            return kind;
+        }
+    }
+
+    /**
+     * The request content is in a media type the target resource does not accept for this
+     * method → 415 (RFC 9110 §15.5.16).
+     *
+     * <p>Raised for a {@code PATCH} whose body is not {@code text/n3} (T2.7). Solid Protocol
+     * §5.3.1 identifies an N3 Patch by that media type and by no other, and RFC 5789 §2.2 names
+     * the status: "Unsupported patch document: Can be specified using a 415 (Unsupported Media
+     * Type) response when the client sends a patch document format that the server does not
+     * support for the resource identified by the Request-URI."
+     *
+     * <p>A domain signal rather than Spring's {@code UnsupportedMediaTypeStatusException}
+     * (which the mapper would also render, as an {@code ErrorResponse}) for one substantive
+     * reason: RFC 5789 §2.2 continues "Such a response SHOULD include an {@code Accept-Patch}
+     * response header ... to notify the client what patch document media types are supported",
+     * and Spring's exception carries {@code Accept} instead — the wrong field, and one RFC 9110
+     * does not define as a response header. Going through the domain path lets the single error
+     * mapper attach the field the PATCH specification actually asks for, and gives the refusal
+     * a Cistern problem type instead of {@code about:blank}.
+     */
+    public static final class UnsupportedMediaType extends CisternException {
+        public UnsupportedMediaType(String message) { super(message); }
     }
 
     /** Authenticated agent lacks the required access mode → 403 (or 401 if unauthenticated). */
