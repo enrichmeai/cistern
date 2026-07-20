@@ -1,5 +1,9 @@
 # Cistern architecture
 
+> This document is the *what*. `docs/STRATEGY.md` is the *why* — why Cistern is an
+> authority layer for agents over user-owned data rather than a Solid server that speaks
+> MCP, and why we are not building a framework. `docs/BACKLOG.md` is the *when*.
+
 ## The shape
 
 ```
@@ -52,3 +56,7 @@
 
 - `docs/ideas/privacy-fuzzing.md` — pluggable "controlled distortion" policy at the pod
   boundary (the trick Inrupt's Charlie markets), as an open, auditable filter.
+- `docs/ideas/agent-scoped-delegation.md` — letting a pod owner give an agent *less*
+  access than they have themselves, via ACP's `acp:client` plus an intersection cap and
+  expiry. **Needs a decision before T4.3 freezes the authenticated principal**, and if
+  accepted it changes the reasoning behind parking ACP as a v1 non-goal above.

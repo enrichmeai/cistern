@@ -1,6 +1,7 @@
 target/
 data/
 cth/reports/
+.claude/worktrees/
 *.iml
 .idea/
 .vscode/

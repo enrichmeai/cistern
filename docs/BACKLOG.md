@@ -179,6 +179,10 @@ regression.
   `webid` claim. Fixtures captured from a REAL IdP (run CSS locally once, record its
   tokens/JWKS into `src/test/resources/fixtures/` — real-first rule). DoD: valid/expired/
   wrong-key/wrong-issuer matrix against captured fixtures.
+  *See `docs/ideas/agent-scoped-delegation.md`: while capturing, record whether the
+  **access** token carries a `client_id`/`azp` claim. Solid-OIDC only mandates `azp` on the
+  ID token, yet CSS reads client identity off the access token — confirm what a real IdP
+  actually emits before anything depends on it.*
 - [ ] **T4.2 DPoP proofs.** Validate the `DPoP` header JWT: htm/htu match, iat window, jti
   replay cache, `cnf.jkt` thumbprint binding to the access token. DoD: matrix incl.
   replayed jti and mismatched thumbprint; fixtures real-captured.
@@ -186,6 +190,10 @@ regression.
   cache); confirm `solid:oidcIssuer` lists the token's issuer; result = authenticated
   `Agent(webId)` in Reactor context — single population point, downstream reads context
   only. DoD: issuer-mismatch → 401; WebID fetch failure → 401 not 500.
+  **Decision required before starting** — see `docs/ideas/agent-scoped-delegation.md`:
+  should the principal be `Agent(webId, Optional<URI> client)` from day one? One extra
+  field now; a cross-cutting refactor against a frozen CTH baseline later. This ticket is
+  the last cheap moment to choose.
 - [ ] **T4.4 Security wiring.** WebFilter chain: anonymous requests proceed as
   `Agent.ANONYMOUS` (WAC decides), invalid credentials → 401 + `WWW-Authenticate`. No
   Spring Security session state; stateless only. DoD: WebTestClient auth matrix; no filter
