@@ -5,6 +5,7 @@ import com.enrichmeai.cistern.core.rdf.RdfIo;
 import org.apache.jena.rdf.model.Model;
 import org.springframework.http.MediaType;
 
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -45,6 +46,24 @@ enum RdfSerialization {
     /** The serialization used when the client expresses no preference, and on a tie. */
     static RdfSerialization preferred() {
         return TURTLE;
+    }
+
+    /**
+     * The serialization a client declared, if it named one — the write-side counterpart of
+     * negotiation, and the single answer in this module to "is this media type RDF?".
+     *
+     * <p>Matched on type and subtype only, so parameters are ignored:
+     * {@code text/turtle;charset=utf-8} is Turtle. That is what lets {@link RequestMediaType}
+     * canonicalize a declared type to the bare spelling {@code Representation.isRdf()} compares
+     * against, without a second table of RDF media types existing anywhere.
+     *
+     * @param declared the media type as the client wrote it
+     * @return the matching serialization, or empty if the type is not an RDF one
+     */
+    static Optional<RdfSerialization> forMediaType(MediaType declared) {
+        return Stream.of(values())
+                .filter(serialization -> serialization.mediaType.equalsTypeAndSubtype(declared))
+                .findFirst();
     }
 
     /** {@code "text/turtle, application/ld+json"} — for {@code Accept-Put} on containers. */

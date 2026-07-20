@@ -68,6 +68,22 @@ public class CisternWebFluxConfiguration {
     }
 
     /**
+     * The write route (T2.2), one bean per method for the reason T2.4 gives above: a read
+     * negotiates a representation out while a write validates one in, so they are genuinely
+     * different handlers, and a route added per ticket is a route no other ticket has to edit.
+     *
+     * <p>{@code /**} for the same reason the read route uses it: every path in a pod names a
+     * resource, and whether one already exists there is a storage question answered by
+     * {@code LdpService.put} (which reports create versus replace), not a routing question.
+     */
+    @Bean
+    public RouterFunction<ServerResponse> cisternWriteRoutes(ResourceWriteHandler handler) {
+        return RouterFunctions.route(
+                RequestPredicates.method(HttpMethod.PUT).and(RequestPredicates.path(ALL_PATHS)),
+                handler::put);
+    }
+
+    /**
      * The LDP/Solid semantics layer over whichever {@link ResourceStore} is configured.
      * Conditional so an embedder can supply its own.
      */
