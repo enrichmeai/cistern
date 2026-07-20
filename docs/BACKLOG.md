@@ -97,10 +97,28 @@ regression.
   `text/turtle`); non-RDF types keep their parameters, so `text/plain;charset=utf-16`
   round-trips intact. Known: the create-vs-replace `exists`-then-`put` check is not atomic —
   the fix belongs in the storage SPI and is tracked separately.
-- [ ] **T2.3 POST to container.** Slug header honored (sanitized), collision → server picks
+- [x] **T2.3 POST to container.** Slug header honored (sanitized), collision → server picks
   a fresh name (never overwrite); generated name is a UUID-ish short id; `Location` header
   on 201; POST with `Link: ...BasicContainer; rel="type"` creates a child container. POST
   to a non-container → 404/405 per spec. DoD: WebTestClient matrix incl. slug collision.
+  Create orchestration is `LdpService.createIn(container, Optional<Slug>, InteractionModel,
+  Representation)` → `ResourceView` (a POST never replaces, so there is no `WriteEffect` to
+  report); it reuses `put` to store the body, so RDF validation, the container-needs-RDF rule
+  and §5.3's containment guard are inherited rather than restated. **`Slug` is a value type**
+  (RFC 5023 §9.7, LDP §5.2.3.10): decoded once, allowlisted to RFC 3986 unreserved characters,
+  runs collapsed, edges trimmed, capped at 128 — so `../`, `%2F` and dot segments cannot
+  survive. A slug that sanitizes to **nothing is an ignored hint** (server generates instead);
+  a control character or a broken escape is a **400**. **Collisions fall back to a generated
+  name, never a numeric suffix** — numbering would disclose that a resource exists, which
+  becomes a WAC leak in Phase 4 — and both spellings of a name (`/c/n`, `/c/n/`) count as
+  taken (§3.1). Generated names are 22 lower-case alphanumerics (~114 bits). **Refusals:**
+  target with no representation → **404** (§5.3, explicit); target that exists but is not a
+  container → **405** (§5.3 confines POST creation to paths ending `/`; §5.2 + RFC 9110
+  §15.5.6) — existence is checked first. **Validators ARE permitted on POST**: RFC 9110
+  §9.3.4's prohibition binds PUT only, and §15.3.2 says so ("Note that the PUT method ... has
+  additional requirements"); they are sent for non-RDF creates and withheld for RDF ones,
+  where the tag would be per-serialization and the 201 names no serialization. `Link` is
+  parsed as the RFC 8288 structured field it is (`LinkHeader`), not substring-matched.
 - [x] **T2.4 DELETE.** Document delete → 204 + parent containment updated; non-empty
   container → 409; storage root → 405. DoD: tests incl. root protection.
 - [ ] **T2.5 Conditional requests.** Honor `If-Match` (etag), `If-None-Match: *` (create-

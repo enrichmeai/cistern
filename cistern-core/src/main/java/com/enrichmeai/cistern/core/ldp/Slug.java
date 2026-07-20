@@ -157,7 +157,8 @@ public record Slug(String value) {
         for (int i = 0; i < fieldValue.length(); i++) {
             char c = fieldValue.charAt(i);
             if ((c < FIRST_PRINTABLE && c != TAB) || c == DELETE) {
-                throw new CisternException.BadInput(CoreMessage.SLUG_MALFORMED.format((int) c));
+                throw new CisternException.BadInput(
+                        CoreMessage.SLUG_MALFORMED.format(Integer.toHexString(c)));
             }
         }
         return fieldValue;
@@ -208,11 +209,15 @@ public record Slug(String value) {
         StringBuilder name = new StringBuilder(Math.min(decoded.length(), MAX_LENGTH));
         for (int i = 0; i < decoded.length() && name.length() < MAX_LENGTH; i++) {
             char c = decoded.charAt(i);
-            if (isUnreserved(c)) {
-                name.append(c);
-            } else if (name.length() > 0 && name.charAt(name.length() - 1) != REPLACEMENT) {
-                name.append(REPLACEMENT);
+            char mapped = isUnreserved(c) ? c : REPLACEMENT;
+            // One rule collapses both a run the client sent and a run substitution produced,
+            // so "a---b" and "a???b" cannot sanitize to different shapes of the same name.
+            boolean afterAReplacement = name.isEmpty()
+                    || name.charAt(name.length() - 1) == REPLACEMENT;
+            if (mapped == REPLACEMENT && afterAReplacement) {
+                continue;
             }
+            name.append(mapped);
         }
         return trimEdges(name);
     }

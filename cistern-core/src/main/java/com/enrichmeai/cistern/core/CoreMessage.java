@@ -60,13 +60,20 @@ public enum CoreMessage {
             "POST creates resources in containers, and <%s> is not one (Solid Protocol §5.3:"
                     + " creation by POST is to a URI path ending with \"/\")"),
 
-    /** Every candidate name drawn for a new child was already taken — see LdpService. */
+    /**
+     * Every candidate name drawn for a new child was already taken — see LdpService.
+     *
+     * <p>Every placeholder in this catalogue is {@code %s}, including the ones that carry a
+     * number: {@code CoreMessageTest} formats each template with string arguments to prove that
+     * building a 4xx message can never throw and turn a client error into a 500, and a
+     * {@code %d} would fail that guard.
+     */
     CHILD_NAME_UNAVAILABLE(
-            "Could not mint an unused name for a new child of <%s> after %d attempts"),
+            "Could not mint an unused name for a new child of <%s> after %s attempts"),
 
     /** RFC 5023 §9.7.1 admits printable ASCII and tab; a control character is a malformed header. */
     SLUG_MALFORMED(
-            "Slug header contains a control character (0x%02X); RFC 5023 §9.7.1 admits only"
+            "Slug header contains a control character (0x%s); RFC 5023 §9.7.1 admits only"
                     + " printable characters and horizontal tab"),
 
     /** RFC 5023 §9.7.1: the field value is percent-encoded, so a broken escape is malformed. */
