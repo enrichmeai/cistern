@@ -4,6 +4,7 @@ import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.ldp.Ldp;
 import com.enrichmeai.cistern.core.ldp.LdpKind;
 import com.enrichmeai.cistern.core.ldp.ResourceView;
+import com.enrichmeai.cistern.core.vocab.Pim;
 import org.apache.jena.rdf.model.Resource;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -35,7 +36,9 @@ import java.util.stream.Collectors;
  *       {@code type}", and §5.2.1.4 adds the container's own type. Solid Protocol §4.2 fixes
  *       which container type that is: Solid containers correspond to LDP Basic Container.
  *       Advertised on every kind, binary resources included — an LDPR need not be an RDF
- *       source. The IRIs come from the {@link Ldp} vocabulary class, never from literals.</li>
+ *       source. Solid Protocol §4.1 adds one more type to one row: {@code pim:Storage} on
+ *       {@link #STORAGE_ROOT}. The IRIs come from the {@link Ldp} and {@link Pim} vocabulary
+ *       classes, never from literals.</li>
  *   <li><b>Accept-Put</b> — a container's stored representation is a graph, so only the
  *       {@link RdfSerialization} media types of Solid Protocol §5.5 may replace it. A
  *       document may hold anything, so any media type is accepted.</li>
@@ -93,6 +96,18 @@ public enum ResourceKind {
      * mandatory) and the {@code Allow} on a successful {@code GET} of the root are one value
      * and cannot contradict each other — which is the very inconsistency §5.4's second
      * sentence exists to forbid.
+     *
+     * <p>T2.9 gave the row its third type link. Solid Protocol §4.1: "Servers MUST advertise the
+     * storage resource by including the HTTP {@code Link} header field with {@code rel="type"}
+     * targeting {@code http://www.w3.org/ns/pim/space#Storage} when responding to storage's
+     * request URI." It belongs on this row and no other, because §4.1 also defines what the row
+     * is — "The storage resource ({@code pim:Storage}) is the root container for all of its
+     * contained resources" — so the kind that refuses {@code DELETE} and the kind that is a
+     * {@code pim:Storage} are necessarily the same one. That is what makes the client-side
+     * algorithm §4.1 describes work: "Clients can determine the storage of a resource by moving
+     * up the URI path hierarchy until the response includes a {@code Link} header field with
+     * {@code rel="type"} targeting {@code http://www.w3.org/ns/pim/space#Storage}" — the walk
+     * terminates because exactly one ancestor carries it.
      */
     STORAGE_ROOT(
             LdpKind.STORAGE_ROOT,
@@ -101,7 +116,7 @@ public enum ResourceKind {
             RdfSerialization.mediaTypeList(),
             MediaType.ALL_VALUE,
             HttpConstants.TEXT_N3,
-            List.of(Ldp.RESOURCE, Ldp.BASIC_CONTAINER)),
+            List.of(Ldp.RESOURCE, Ldp.BASIC_CONTAINER, Pim.STORAGE)),
 
     /** A document stored as one of the RDF media types: patchable, not postable to. */
     RDF_DOCUMENT(

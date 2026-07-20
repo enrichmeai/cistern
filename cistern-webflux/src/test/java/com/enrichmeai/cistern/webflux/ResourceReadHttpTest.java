@@ -5,6 +5,7 @@ import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.ResourceStore;
 import com.enrichmeai.cistern.core.StoredResource;
 import com.enrichmeai.cistern.core.ldp.Ldp;
+import com.enrichmeai.cistern.core.vocab.Pim;
 import com.enrichmeai.cistern.webflux.error.ProblemDocument;
 import com.enrichmeai.cistern.webflux.error.ProblemType;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,6 +76,16 @@ class ResourceReadHttpTest {
     private static final String LDP_BASIC_CONTAINER =
             HttpConstants.linkType(Ldp.BASIC_CONTAINER.getURI());
     private static final String BASIC_CONTAINER_IRI = Ldp.BASIC_CONTAINER.getURI();
+
+    /**
+     * Solid Protocol §4.1's storage-description link (T2.9), which every {@code GET} and
+     * {@code HEAD} in the storage MUST carry. Read from the production {@link StorageDescription}
+     * bean rather than spelled out, so this file asserts that the link <em>is emitted</em>
+     * without becoming a second opinion about what it should say — {@code StorageDescriptionTest}
+     * owns that.
+     */
+    @Autowired
+    private StorageDescription storageDescription;
 
     private static final Path STORAGE_ROOT = createTempRoot();
 
@@ -290,21 +301,69 @@ class ResourceReadHttpTest {
     void everyResourceAdvertisesLdpResource() {
         get("/notes/a.ttl").exchange()
                 .expectStatus().isOk()
-                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE);
+                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, storageDescriptionLink());
     }
 
     @Test
     void binaryResourceAlsoAdvertisesLdpResource() {
         get("/logo.png").exchange()
                 .expectStatus().isOk()
-                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE);
+                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, storageDescriptionLink());
     }
 
     @Test
     void containerAdditionallyAdvertisesBasicContainer() {
         get("/notes/").exchange()
                 .expectStatus().isOk()
-                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, LDP_BASIC_CONTAINER);
+                .expectHeader().valueEquals(HttpHeaders.LINK,
+                        LDP_RESOURCE, LDP_BASIC_CONTAINER, storageDescriptionLink());
+    }
+
+    /**
+     * Solid Protocol §4.1 (T2.9): the storage root additionally carries
+     * {@code Link: <http://www.w3.org/ns/pim/space#Storage>; rel="type"} — the header a client
+     * walking up the path hierarchy stops at, and the one the conformance harness reads to
+     * decide a pod is a valid storage at all.
+     */
+    @Test
+    void theStorageRootAdvertisesItselfAsAStorage() {
+        get("/").exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, LDP_BASIC_CONTAINER,
+                        HttpConstants.linkType(Pim.STORAGE.getURI()), storageDescriptionLink());
+    }
+
+    /** §4.1 puts {@code pim:Storage} on the storage's request URI and on no other resource. */
+    @Test
+    void noOtherResourceClaimsToBeTheStorage() {
+        for (String path : List.of("/notes/", "/notes/a.ttl", "/logo.png")) {
+            List<String> links = get(path).exchange().expectBody().returnResult()
+                    .getResponseHeaders().getOrEmpty(HttpHeaders.LINK);
+
+            assertTrue(links.stream().noneMatch(link -> link.contains(Pim.STORAGE.getURI())),
+                    path + " is not the storage root, so the walk up the hierarchy must not stop"
+                            + " there: " + links);
+        }
+    }
+
+    /**
+     * §4.1 requires the storage-description link on {@code GET} and {@code HEAD} responses
+     * "targeting a resource in a storage" — every resource, not merely the root, which is what
+     * makes it usable as the entry point from wherever a client happens to be.
+     */
+    @Test
+    void everyResourceLinksToTheStorageDescription() {
+        for (String path : List.of("/", "/notes/", "/notes/a.ttl", "/logo.png")) {
+            List<String> links = get(path).exchange().expectBody().returnResult()
+                    .getResponseHeaders().getOrEmpty(HttpHeaders.LINK);
+
+            assertTrue(links.contains(storageDescriptionLink()),
+                    path + " must carry the §4.1 storage-description link; got " + links);
+        }
+    }
+
+    private String storageDescriptionLink() {
+        return storageDescription.linkValue();
     }
 
     @Test
@@ -608,7 +667,8 @@ class ResourceReadHttpTest {
         client.head().uri(URI.create("/notes/"))
                 .exchange()
                 .expectStatus().isOk()
-                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, LDP_BASIC_CONTAINER)
+                .expectHeader().valueEquals(HttpHeaders.LINK,
+                        LDP_RESOURCE, LDP_BASIC_CONTAINER, storageDescriptionLink())
                 .expectHeader().valueEquals(HttpHeaders.ALLOW,
                         "GET, HEAD, OPTIONS, POST, PUT, PATCH, DELETE");
     }

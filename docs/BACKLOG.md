@@ -147,9 +147,16 @@ regression.
   wide-open by default (Solid apps are cross-origin by nature) with
   `Access-Control-Expose-Headers` covering ETag/Link/Location/WAC-Allow. DoD: preflight
   tests from a fake origin.
-- [ ] **T2.9 Discovery surface.** `/.well-known/solid` storage description; `Link:
-  rel="http://www.w3.org/ns/pim/space#storage"` from resources to the storage root;
-  advertise root container. DoD: CTH discovery assertions targeted; curl transcript.
+- [x] **T2.9 Discovery surface.** `/.well-known/solid` storage description; `Link:
+  rel="http://www.w3.org/ns/solid/terms#storageDescription"` from every resource to it
+  (GET/HEAD/OPTIONS); `Link: <http://www.w3.org/ns/pim/space#Storage>; rel="type"` on the
+  root container. DoD: CTH discovery assertions targeted; curl transcript.
+  <br>*Ticket text corrected on completion: the sketch said `rel="http://www.w3.org/ns/pim/space#storage"`
+  (lower case) as the relation from a resource to the storage root. Solid Protocol §4.1
+  defines no such link relation. Lower-case `pim:storage` is an RDF **predicate** for a WebID
+  profile (T5.4); the storage root is advertised with the registered `type` relation targeting
+  the upper-case **class** `pim:Storage`, and the resource→storage traversal §4.1 actually
+  specifies is `solid:storageDescription`. Implemented per the spec text.*
 
 ## Phase 3 — Conformance ratchet (CTH)
 

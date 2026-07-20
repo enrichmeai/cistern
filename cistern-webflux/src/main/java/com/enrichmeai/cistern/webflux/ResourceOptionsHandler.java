@@ -84,10 +84,13 @@ public class ResourceOptionsHandler {
 
     private final LdpService ldp;
     private final RequestPaths requestPaths;
+    private final StorageDescription storageDescription;
 
-    public ResourceOptionsHandler(LdpService ldp, RequestPaths requestPaths) {
+    public ResourceOptionsHandler(LdpService ldp, RequestPaths requestPaths,
+                                  StorageDescription storageDescription) {
         this.ldp = ldp;
         this.requestPaths = requestPaths;
+        this.storageDescription = storageDescription;
     }
 
     /**
@@ -129,6 +132,15 @@ public class ResourceOptionsHandler {
     }
 
     /**
+     * The per-resource answer, with the discovery links §4.1 requires on an {@code OPTIONS}.
+     * An instance method rather than a static one only because the storage-description link is a
+     * property of the storage, so it is injected rather than looked up in {@link ResourceKind}.
+     */
+    private Mono<ServerResponse> resourceOptions(ResourceKind kind) {
+        return options(kind, storageDescription.linkValue());
+    }
+
+    /**
      * Whether this is the asterisk-form of §9.3.7. Both spellings are accepted — the literal
      * {@code *}, in case a server adapter passes it through untouched, and the empty path
      * Reactor Netty actually produces (see {@link #ASTERISK_FORM_PATH}).
@@ -138,7 +150,15 @@ public class ResourceOptionsHandler {
         return ASTERISK_FORM.equals(rawPath) || ASTERISK_FORM_PATH.equals(rawPath);
     }
 
-    /** The whole-server answer: which methods exist here, and nothing about any resource. */
+    /**
+     * The whole-server answer: which methods exist here, and nothing about any resource.
+     *
+     * <p>That includes T2.9's discovery links. Solid Protocol §4.1 scopes the
+     * storage-description link to requests "targeting a resource in a storage", and RFC 9110
+     * §9.3.7 defines the asterisk-form as targeting no resource — a server may host several
+     * storages (§4.1: "When a server supports multiple storages ..."), so naming one here would
+     * be an arbitrary choice presented as a fact.
+     */
     private static Mono<ServerResponse> serverOptions() {
         return ServerResponse.noContent()
                 .headers(headers -> headers.set(HttpHeaders.ALLOW,
@@ -151,8 +171,11 @@ public class ResourceOptionsHandler {
      * {@code Accept-*} fields together — the {@code Accept-*} values "correspond to acceptable
      * HTTP methods listed in {@code Allow} header field value" — which is one table lookup here
      * precisely so that they cannot disagree.
+     *
+     * @param storageDescriptionLink the {@code Link} of Solid Protocol §4.1, which names
+     *                               {@code OPTIONS} among the three methods that MUST carry it
      */
-    private static Mono<ServerResponse> resourceOptions(ResourceKind kind) {
+    private static Mono<ServerResponse> options(ResourceKind kind, String storageDescriptionLink) {
         return ServerResponse.noContent()
                 .headers(headers -> {
                     headers.set(HttpHeaders.ALLOW, kind.allow());
@@ -160,10 +183,13 @@ public class ResourceOptionsHandler {
                     setIfPresent(headers, HttpConstants.ACCEPT_POST, kind.acceptPost());
                     setIfPresent(headers, HttpHeaders.ACCEPT_PATCH, kind.acceptPatch());
                     // LDP §4.2.1.4 — the interaction model is discoverable from any response,
-                    // and OPTIONS is the response a client asks discovery questions of.
+                    // and OPTIONS is the response a client asks discovery questions of. On the
+                    // storage root this is also where §4.1's pim:Storage type link appears, so
+                    // an OPTIONS answers "is this the storage?" as well as a HEAD does.
                     for (String linkValue : kind.linkTypeValues()) {
                         headers.add(HttpHeaders.LINK, linkValue);
                     }
+                    headers.add(HttpHeaders.LINK, storageDescriptionLink);
                 })
                 .build();
     }

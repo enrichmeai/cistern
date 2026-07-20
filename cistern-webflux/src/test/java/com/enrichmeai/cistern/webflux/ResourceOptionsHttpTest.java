@@ -26,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -64,6 +65,15 @@ class ResourceOptionsHttpTest {
 
     @Autowired
     private ResourceStore store;
+
+    /**
+     * Solid Protocol §4.1 names {@code OPTIONS} among the three methods whose response MUST carry
+     * the storage-description link (T2.9). Read from the production bean for the same reason
+     * every other expectation here is read off {@link ResourceKind}: this file asserts that
+     * {@code OPTIONS} reports what the server holds, not what a second copy of the value says.
+     */
+    @Autowired
+    private StorageDescription storageDescription;
 
     @DynamicPropertySource
     static void storageRoot(DynamicPropertyRegistry registry) {
@@ -128,7 +138,15 @@ class ResourceOptionsHttpTest {
         assertEquals(expected.acceptPut(), headers.getFirst(HttpConstants.ACCEPT_PUT));
         assertEquals(expected.acceptPost(), headers.getFirst(HttpConstants.ACCEPT_POST));
         assertEquals(expected.acceptPatch(), headers.getFirst(HttpHeaders.ACCEPT_PATCH));
-        assertEquals(expected.linkTypeValues(), headers.get(HttpHeaders.LINK));
+
+        // The kind's rel="type" links, then Solid Protocol §4.1's storage-description link:
+        // "in the response of HTTP GET, HEAD and OPTIONS requests targeting a resource in a
+        // storage". The type links come from the table and the last one does not, because it
+        // describes the storage rather than this resource — asserted together so that neither
+        // can quietly displace the other (Link is a list field, RFC 8288 §3).
+        List<String> expectedLinks = Stream.concat(expected.linkTypeValues().stream(),
+                Stream.of(storageDescription.linkValue())).toList();
+        assertEquals(expectedLinks, headers.get(HttpHeaders.LINK));
 
         // No representation was selected, so there is no validator this response could be
         // describing (RFC 9110 §13.2.1 — OPTIONS does not involve representation selection).

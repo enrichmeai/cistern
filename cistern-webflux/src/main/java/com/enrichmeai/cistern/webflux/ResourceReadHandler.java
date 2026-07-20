@@ -64,14 +64,17 @@ public class ResourceReadHandler {
     private final RequestPaths requestPaths;
     private final ContentNegotiator negotiator;
     private final ConditionalRequests conditionalRequests;
+    private final StorageDescription storageDescription;
 
     public ResourceReadHandler(LdpService ldp, RequestPaths requestPaths,
                                ContentNegotiator negotiator,
-                               ConditionalRequests conditionalRequests) {
+                               ConditionalRequests conditionalRequests,
+                               StorageDescription storageDescription) {
         this.ldp = ldp;
         this.requestPaths = requestPaths;
         this.negotiator = negotiator;
         this.conditionalRequests = conditionalRequests;
+        this.storageDescription = storageDescription;
     }
 
     /** The one handler behind both {@code GET} and {@code HEAD}. */
@@ -165,6 +168,12 @@ public class ResourceReadHandler {
         }
     }
 
+    /**
+     * Writes the 200. Every field is either a property of the selected representation or a
+     * lookup in {@link ResourceKind} — with one exception, the storage-description link, which is
+     * a property of the storage rather than of this resource and therefore comes from
+     * {@link StorageDescription}.
+     */
     private Mono<ServerResponse> write(Selected selected, byte[] body) {
         ResourceKind kind = selected.kind();
         return ServerResponse.ok()
@@ -179,6 +188,13 @@ public class ResourceReadHandler {
                     for (String linkValue : kind.linkTypeValues()) {
                         headers.add(HttpHeaders.LINK, linkValue);
                     }
+                    // Solid Protocol §4.1 (T2.9): "Servers MUST include the Link header field
+                    // with rel="http://www.w3.org/ns/solid/terms#storageDescription" targeting
+                    // the URI of the storage description resource in the response of HTTP GET,
+                    // HEAD and OPTIONS requests targeting a resource in a storage." Added, not
+                    // set: the rel="type" links above are equally mandatory (LDP §4.2.1.4), and
+                    // Link is a list field (RFC 8288 §3).
+                    headers.add(HttpHeaders.LINK, storageDescription.linkValue());
                     if (selected.negotiated()) {
                         // RFC 9110 §12.5.5: without this a shared cache may hand a Turtle
                         // body to a client that asked for JSON-LD. A non-RDF resource has one
@@ -213,6 +229,17 @@ public class ResourceReadHandler {
      * field)" — this response always has an {@code ETag}, so {@code Last-Modified} would be
      * redundant weight. No body and no {@code Content-Type}/{@code Content-Length} either: "a
      * 304 response is terminated by the end of the header section; it cannot contain content".
+     *
+     * <p>T2.9's discovery links are therefore absent here too, and that is the reading this
+     * class takes of Solid Protocol §4.1 rather than an oversight. §4.1 requires the
+     * storage-description link "in the response of HTTP {@code GET}, {@code HEAD} and
+     * {@code OPTIONS} requests", and a 304 is such a response; but §15.4.5 is explicit that a
+     * 304 sends the listed fields and, beyond them, only metadata "for the purpose of guiding
+     * cache updates". A 304 is by definition sent to a client that already holds this
+     * representation and the full header set of the 200 that produced it, so the link is
+     * information it has. Every response that hands a client a representation carries it. If the
+     * architect prefers the literal reading, the change is one {@code headers.add} — flagged on
+     * the T2.9 PR rather than decided quietly here.
      */
     private static Mono<ServerResponse> notModified(Selected selected) {
         return ServerResponse.status(HttpStatus.NOT_MODIFIED)
