@@ -56,16 +56,27 @@ final class HttpConstants {
     static final String DPOP = "DPoP";
 
     /**
-     * A {@code Link} field value typing the resource (RFC 8288 §3): {@code <IRI>; rel="type"}.
-     * The IRI always comes from a vocabulary constant class, never from a literal, and the
-     * relation from {@link LinkRelation} — the same constant the request-side parser matches
-     * against, so what Cistern emits and what it reads cannot drift.
+     * One {@code Link} field value (RFC 8288 §3): {@code <target>; rel="relation"}. The target
+     * always comes from a vocabulary constant class or a resolved resource URI, never from a
+     * literal, and the relation from {@link LinkRelation} — the same constants the request-side
+     * parser matches against, so what Cistern emits and what it reads cannot drift.
+     *
+     * <p>The relation is quoted even where it is a bare token, which RFC 8288's ABNF permits
+     * either way ({@code link-param = token BWS [ "=" BWS ( token / quoted-string ) ]}). An
+     * extension relation type is a URI containing {@code :} and {@code /}, neither of which is a
+     * {@code tchar}, so it <em>must</em> be quoted; quoting uniformly means the one form is
+     * always correct rather than depending on which row is being rendered.
      */
-    static final String LINK_TYPE_TEMPLATE = "<%s>; rel=\"%s\"";
+    static final String LINK_TEMPLATE = "<%s>; rel=\"%s\"";
+
+    /** {@code Link: <target>; rel="relation"} — the general form. */
+    static String link(String target, LinkRelation relation) {
+        return LINK_TEMPLATE.formatted(target, relation.value());
+    }
 
     /** {@code Link: <IRI>; rel="type"} for one vocabulary IRI. */
     static String linkType(String iri) {
-        return LINK_TYPE_TEMPLATE.formatted(iri, LinkRelation.TYPE.value());
+        return link(iri, LinkRelation.TYPE);
     }
 
     /** An {@code Allow} field value (RFC 9110 §10.2.1) from typed methods, in the given order. */

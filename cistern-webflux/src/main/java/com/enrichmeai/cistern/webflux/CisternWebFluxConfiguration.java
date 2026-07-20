@@ -7,10 +7,13 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsWebFilter;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
+import org.springframework.web.reactive.function.server.RequestPredicate;
 import org.springframework.web.reactive.function.server.RequestPredicates;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.RouterFunctions;
@@ -34,6 +37,41 @@ public class CisternWebFluxConfiguration {
      * whether a resource exists there is a storage question, not a routing one.
      */
     private static final String ALL_PATHS = "/**";
+
+    /**
+     * The storage description resource (T2.9), Solid Protocol §4.1 — the one route that is not
+     * about the stored resource space.
+     *
+     * <h2>Why it needs precedence</h2>
+     * Every other route matches {@code /**}, and {@value StorageDescription#WELL_KNOWN_PATH} is a
+     * path like any other, so without an explicit order this route and the catch-alls would be
+     * combined in whatever order the container happened to supply the beans. {@code @Order} makes
+     * it deterministic: {@code RouterFunctionMapping} sorts {@code RouterFunction} beans with
+     * {@code AnnotationAwareOrderComparator}, an unannotated bean sorts at
+     * {@code LOWEST_PRECEDENCE}, and the first route whose predicate matches wins. So this one is
+     * consulted first and the rest are unaffected.
+     *
+     * <h2>Only the methods it serves</h2>
+     * The predicate is {@link StorageDescriptionHandler#METHODS}, not every method: a request
+     * this resource does not serve falls through to the ordinary handlers rather than being
+     * captured and refused here. That is a deliberate limitation of T2.9 rather than an
+     * oversight — reserving a server-managed URI space from client writes is the same mechanism
+     * WAC's {@code .acl} and the auxiliary description resources of §4.3 will need, and building
+     * a one-off for this path would be a design decision made in the wrong ticket. Until it
+     * lands, a {@code PUT} to {@value StorageDescription#WELL_KNOWN_PATH} creates an ordinary pod
+     * resource that this route then shadows on read.
+     */
+    @Bean
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    public RouterFunction<ServerResponse> cisternStorageDescriptionRoutes(
+            StorageDescriptionHandler handler) {
+        RequestPredicate path = RequestPredicates.path(StorageDescription.WELL_KNOWN_PATH);
+        return RouterFunctions
+                .route(RequestPredicates.method(HttpMethod.GET)
+                        .or(RequestPredicates.method(HttpMethod.HEAD))
+                        .and(path), handler::read)
+                .andRoute(RequestPredicates.method(HttpMethod.OPTIONS).and(path), handler::options);
+    }
 
     /**
      * The read route. {@code GET} and {@code HEAD} are one route to one handler method, so
