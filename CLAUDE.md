@@ -30,6 +30,21 @@ data over MCP, with Solid WAC enforcing the consent.
 6. **Real-first testing.** Any fixture (JWKS, DPoP proofs, MCP frames) is captured from a
    real implementation, never invented. A mock built from a guess will happily confirm
    the guess.
+7. **No stringly-typed code, no inline literals — build it properly the first time.**
+   Half measures are rejected at review, not tidied up later.
+   - **Closed sets are `enum`s**, never bare strings or `int`s: media types, resource
+     kinds, access modes, patch operations, problem types, emitted header names.
+   - **Domain concepts are records/value classes**, not `String`/`Map`/tuple pairs. If a
+     value has rules (a slug, an etag, a WebID), it gets a type that enforces them.
+   - **RDF vocabulary IRIs live in per-namespace constant classes** (`Ldp`, `Solid`,
+     `Acl`, …) — never an inline IRI string.
+   - **Message text is never inlined at a throw/log site.** Each module owns a message
+     catalogue: an `enum` whose constants carry a `String.format` template plus a
+     `format(Object...)` method — e.g. `CoreMessage.CONTAINMENT_SERVER_MANAGED.format(uri)`.
+     Exceptions and logs reference catalogue entries; no `"text " + var + " text"` at the
+     call site. Naming: `CoreMessage`, `WebfluxMessage`, `StorageFileMessage`, one per
+     module (plain Java — `cistern-core` still takes no Spring dependency).
+   - **Magic numbers and repeated literals become named constants.**
 
 ## Build & run
 
