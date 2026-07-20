@@ -160,10 +160,18 @@ regression.
 
 ## Phase 3 — Conformance ratchet (CTH)
 
-- [ ] **T3.1 CTH in CI.** GitHub Actions job: boot cistern-app (test profile, tmp storage),
+- [x] **T3.1 CTH in CI.** GitHub Actions job: boot cistern-app (test profile, tmp storage),
   run the CTH docker image with `cth/subject-cistern.ttl`, upload the report artifact,
   write pass/fail counts to the job summary. Must not fail the build yet (report-only).
   DoD: artifact + summary visible on a PR.
+  *Two things the ticket did not anticipate. (1) A full run emits **no results report at
+  all** pre-T5.4 — it dies in setup — so the summary is built from the harness log, and
+  `cth/summarize.sh` reports counts it cannot parse as unknown rather than as 0; a
+  green-looking "0 failed" from a run that tested nothing would be the exact dishonesty
+  ground rule 2 forbids. Coverage mode is run as well, since it is the only mode that
+  yields a real artifact today. (2) The server must be booted with
+  `CISTERN_BASE_URL=http://host.docker.internal:3000` — the origin the harness calls —
+  or `Location` headers and the storage description name an origin it never contacted.*
 - [ ] **T3.2 Ratchet gate.** Persist the best-known pass-count in `cth/BASELINE.md`; CI
   fails a PR whose pass-count drops below baseline; merging a PR that raises it updates
   the file (same PR). DoD: demonstrated both directions on a test branch.

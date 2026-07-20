@@ -7,6 +7,12 @@ raise it in the same PR that improves it. Honest numbers only.
 |------|-------|--------|--------|----------|-------|
 | 2026-07-19 | Solid Protocol + WAC (specification-tests 0.0.19, 41 test cases discovered) | 0 | 0 | 41 | Harness wired end-to-end (T0.4). Test phase unreachable: the CTH mandates authenticated alice/bob clients before running any feature (`registerClients` → `prepareServer`, no skip-auth mode exists), and Cistern has no HTTP layer or Solid-OIDC yet — the run stops at REGISTER CLIENTS with an honest 404 on the alice/bob WebID documents, so no results report is emitted. `--coverage` mode runs to completion (exit 0) and writes `reports/coverage.html`. First real pass/fail numbers arrive once resource routes exist and T5.4 provisions test accounts. |
 
+Re-verified 2026-07-20 under T3.1, against the full HTTP layer (Phase 2 complete) with
+`CISTERN_BASE_URL=http://host.docker.internal:3000`: unchanged at 0 / 0 / 41. The blocker
+is unchanged and is not about the HTTP layer — the harness still stops in REGISTER CLIENTS
+on a 404 for alice's WebID document, before executing any feature. CI now runs this on
+every PR (report-only) and publishes the same numbers to the job summary.
+
 Baseline run details (2026-07-19, `solidproject/conformance-test-harness:latest`,
 digest `sha256:4a38077d…`, test suite version 0.0.19 2024-03-21):
 

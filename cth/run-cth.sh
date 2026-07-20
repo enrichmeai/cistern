@@ -23,6 +23,32 @@ mkdir -p reports
 # Desktop on macOS/Windows provides it natively).
 SERVER_ROOT="http://host.docker.internal:3000"
 
+# Coverage mode never contacts the server; every other mode does.
+coverage_only=false
+for arg in "$@"; do
+  [ "$arg" = "--coverage" ] && coverage_only=true
+done
+
+if [ "$coverage_only" = false ]; then
+  # Boot the server with CISTERN_BASE_URL=${SERVER_ROOT}. The harness addresses the
+  # host by that name from inside its container, and cistern.base-url is what mints
+  # Location headers and the storage description — leave it at the localhost default
+  # and every URI handed to the harness names an origin the harness never called.
+  #
+  # Readiness: any HTTP response means up. Deliberately NOT `curl -f`; the storage
+  # root honestly 404s until T5.4 provisions it, and -f would report a live server
+  # as dead.
+  # On a connection failure curl BOTH prints 000 and exits non-zero, so piping a
+  # fallback through `|| echo 000` yields "000000" and the guard below never matches.
+  # Let the assignment carry curl's status instead.
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:3000/ 2>/dev/null) || code=000
+  if [ "$code" = "000" ]; then
+    echo "error: nothing answering on http://localhost:3000/ — start the server first:" >&2
+    echo "  CISTERN_BASE_URL=${SERVER_ROOT} mvn -q -pl cistern-app spring-boot:run" >&2
+    exit 2
+  fi
+fi
+
 # The harness hard-requires alice/bob WebIDs at startup (SmallRye config).
 # Cistern provisions no accounts or pods yet (T5.4): these WebIDs point at
 # where the test pods WILL live, so today each deref honestly 404s and a test
