@@ -2,6 +2,14 @@ target/
 data/
 cth/reports/
 .claude/worktrees/
+# Terraform. .terraform.lock.hcl is deliberately NOT ignored — the provider
+# versions it pins are what make a plan reproducible.
+.terraform/
+*.tfstate
+*.tfstate.*
+# Real values, which may name your own addresses. Commit the .example instead.
+terraform.tfvars
+
 *.iml
 .idea/
 .vscode/

@@ -1,0 +1,100 @@
+name: terraform
+
+# Two paths, deliberately separated:
+#
+#   validate — runs on every PR touching infra, needs NO cloud credentials at all
+#              (`init -backend=false` installs providers without touching the state
+#              bucket). A contributor with no GCP access still gets a useful check.
+#   plan/apply — manual only, needs Workload Identity Federation, and apply carries
+#              an explicit typed confirmation. See ADR 0001: there is no
+#              authorization layer yet, so deploying is not a routine action.
+
+on:
+  pull_request:
+    paths:
+      - 'infra/terraform/**'
+      - '.github/workflows/terraform.yml'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'plan or apply'
+        required: true
+        default: 'plan'
+        type: choice
+        options: [plan, apply]
+      confirm:
+        description: "For apply only: type 'no-authorization-layer-yet' to confirm you accept deploying a pod anyone who reaches it can read and delete."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: infra/terraform
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.8'
+
+      - name: Format
+        run: terraform fmt -check -recursive -diff
+
+      # -backend=false: no state bucket, no credentials, no chicken-and-egg.
+      - name: Init (no backend)
+        run: terraform init -backend=false -input=false
+
+      - name: Validate
+        run: terraform validate
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: test-pod   # add required reviewers here to gate apply on a human
+    permissions:
+      contents: read
+      id-token: write       # required for keyless auth to GCP
+    steps:
+      - uses: actions/checkout@v4
+
+      # ADR 0001: an apply puts a pod with no authentication on a network. Manual
+      # dispatch alone is one mis-click; this makes the operator type the reason.
+      - name: Confirm intent
+        if: inputs.action == 'apply'
+        run: |
+          if [ "${{ inputs.confirm }}" != "no-authorization-layer-yet" ]; then
+            echo "::error::apply requires the confirmation phrase — see ADR 0001. Refusing."
+            exit 1
+          fi
+
+      - name: Check WIF is configured
+        run: |
+          if [ -z "${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}" ]; then
+            echo "::error::GCP_WORKLOAD_IDENTITY_PROVIDER / GCP_SERVICE_ACCOUNT / GCP_TF_STATE_BUCKET are not set. See infra/terraform/README.md for the one-time bootstrap."
+            exit 1
+          fi
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.8'
+
+      - name: Init
+        run: terraform init -input=false -backend-config="bucket=${{ vars.GCP_TF_STATE_BUCKET }}" -backend-config="prefix=test-pod"
+
+      - name: Plan
+        run: terraform plan -input=false -var "project_id=${{ vars.GCP_PROJECT_ID }}" -out=tfplan
+
+      - name: Apply
+        if: inputs.action == 'apply'
+        run: terraform apply -input=false -auto-approve tfplan
