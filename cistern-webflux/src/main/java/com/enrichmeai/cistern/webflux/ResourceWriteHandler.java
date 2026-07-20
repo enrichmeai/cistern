@@ -50,21 +50,41 @@ import java.util.Optional;
  *       succeeded and there is no additional content to send.</li>
  * </ul>
  *
- * <h2>Validators</h2>
+ * <h2>Validators: non-RDF writes only</h2>
  * RFC 9110 §9.3.4 is a prohibition, not an encouragement: "An origin server MUST NOT send a
  * validator field (Section 8.8), such as an ETag or Last-Modified field, in a successful
  * response to PUT unless the request's representation data was saved without any transformation
- * applied to the content ... and the validator field value reflects the new representation."
+ * applied to the content (i.e., the resource's new representation data is identical to the
+ * content received in the PUT request) and the validator field value reflects the new
+ * representation."
  *
- * <p>For a <b>document</b> both conditions hold — core stores the client's bytes verbatim, and
- * the tag is computed by T2.1's {@link EntityTag} for the media type as stored, so it is
- * literally the validator a {@code GET} for that representation would return. For a
- * <b>container</b> the first condition fails and cannot be made to hold: what a container
- * serves includes {@code ldp:contains} triples derived from its live children (Solid Protocol
- * §4.2) and the server-asserted LDP types, none of which are in the content received. The
- * representation the client holds is therefore not the resource's new representation, which is
- * the exact situation the MUST NOT exists to prevent — so a container write returns no
- * validator, and a client that wants one issues a {@code HEAD}.
+ * <p><b>This looks like an omission bug and is not</b> (architect ruling, PR #66). The decisive
+ * fact is in T2.1's read path: {@link LdpService#read} hands back a parsed Jena model and
+ * {@link ResourceReadHandler} re-serializes it through {@code RdfIo} on the way out. So for
+ * <em>every</em> RDF source — documents as much as containers — the representation Cistern
+ * would serve is a re-serialization and is never byte-identical to what the client sent. A
+ * container adds a second, larger failure of the same condition: what it serves includes
+ * {@code ldp:contains} triples derived from its live children (Solid Protocol §4.2) and the
+ * server-asserted LDP types, which were in no part of the request content.
+ *
+ * <p>The rationale sentence the RFC attaches settles the intent — the validator exists so a
+ * user agent knows "the representation it sent (and retains in memory) is the result of the
+ * PUT, and thus it doesn't need to be retrieved again". For an RDF source that is simply false.
+ * So:
+ *
+ * <ul>
+ *   <li><b>RDF source (document or container) → no {@code ETag}, no {@code Last-Modified}.</b>
+ *       Both are validator fields and §9.3.4 names them together. The client pays one
+ *       round-trip and gets its validators from a {@code GET} or {@code HEAD}, which is what
+ *       T2.5's conditional requests expect.</li>
+ *   <li><b>Non-RDF source → both sent.</b> The bytes are stored and served verbatim, so the
+ *       condition genuinely holds, and the tag is computed by T2.1's {@link EntityTag} for the
+ *       media type as stored — literally the validator a {@code GET} returns for it.</li>
+ * </ul>
+ *
+ * <p>{@link ResourceView.NonRdf} is the test rather than a media-type check, because it is the
+ * read path's own classification of "served back verbatim" — the exact property §9.3.4 asks
+ * about, so the two cannot drift apart.
  *
  * <h2>Interface metadata</h2>
  * Solid Protocol §5.2 requires the {@code Allow} header "in successful responses", and LDP 1.0
@@ -122,8 +142,7 @@ public class ResourceWriteHandler {
                     setIfPresent(headers, HttpConstants.ACCEPT_PUT, kind.acceptPut());
                     setIfPresent(headers, HttpConstants.ACCEPT_POST, kind.acceptPost());
                     setIfPresent(headers, HttpHeaders.ACCEPT_PATCH, kind.acceptPatch());
-                    validatorFor(view, stored)
-                            .ifPresent(tag -> headers.set(HttpHeaders.ETAG, tag.headerValue()));
+                    writeValidators(headers, view, stored);
                 })
                 .build();
     }
@@ -140,15 +159,24 @@ public class ResourceWriteHandler {
     }
 
     /**
-     * The validator to return with a successful write, if RFC 9110 §9.3.4 permits one at all.
-     * Withheld for a container, whose served representation carries derived containment that
-     * was never in the request content; sent for a document, whose bytes were stored untouched.
+     * Emits {@code ETag} and {@code Last-Modified} only where RFC 9110 §9.3.4 permits a
+     * validator at all — see the class javadoc for why every RDF source is excluded, and why
+     * their absence here is deliberate rather than an oversight.
+     *
+     * <p>Both fields or neither: they are both validator fields under §8.8, the prohibition
+     * names them together, and splitting them would leave a client able to make a conditional
+     * request on the weaker one against a representation it does not actually hold.
      */
-    private static Optional<EntityTag> validatorFor(ResourceView view, RequestMediaType stored) {
-        if (view.container()) {
-            return Optional.empty();
+    private static void writeValidators(HttpHeaders headers, ResourceView view,
+                                        RequestMediaType stored) {
+        if (!(view instanceof ResourceView.NonRdf)) {
+            return;
         }
-        return Optional.of(EntityTag.forRepresentation(view, stored.mediaType()));
+        headers.set(HttpHeaders.ETAG,
+                EntityTag.forRepresentation(view, stored.mediaType()).headerValue());
+        // IMF-fixdate, one-second resolution (RFC 9110 §5.6.7, §8.8.2); the store already
+        // truncates to seconds, so nothing is rounded here.
+        headers.setLastModified(view.lastModified());
     }
 
     /**

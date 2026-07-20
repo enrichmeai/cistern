@@ -140,7 +140,6 @@ class ResourceWriteHttpTest {
 
         putTurtle(path, TURTLE_BODY).exchange()
                 .expectStatus().isCreated()
-                .expectHeader().exists(HttpHeaders.ETAG)
                 .expectBody().isEmpty();
     }
 
@@ -188,8 +187,7 @@ class ResourceWriteHttpTest {
         String path = unique("/t%d-logo.png");
 
         put(path, MediaType.IMAGE_PNG_VALUE, PNG_BYTES).exchange()
-                .expectStatus().isCreated()
-                .expectHeader().exists(HttpHeaders.ETAG);
+                .expectStatus().isCreated();
 
         EntityExchangeResult<byte[]> read = client.get().uri(path)
                 .exchange().expectStatus().isOk().expectBody().returnResult();
@@ -230,32 +228,30 @@ class ResourceWriteHttpTest {
     // ---------------------------------------------------------------- validators
 
     /**
-     * RFC 9110 §9.3.4: a validator may accompany a successful PUT only when the stored data is
-     * the content received. A document qualifies, and the tag must be the one a GET for that
-     * same representation returns — otherwise PUT and GET disagree about the resource.
+     * RFC 9110 §9.3.4: "An origin server MUST NOT send a validator field ... such as an ETag or
+     * Last-Modified field, in a successful response to PUT unless the request's representation
+     * data was saved without any transformation applied to the content."
+     *
+     * <p>An <b>RDF document</b> fails that condition even though its bytes are stored verbatim,
+     * because the read path re-serializes from a parsed graph — what a GET returns is never
+     * byte-identical to what was PUT, so the client cannot treat the bytes it still holds as
+     * the result. Both validator fields are therefore withheld (architect ruling, PR #66).
      */
     @Test
-    void documentWriteReturnsTheSameEtagAGetWould() {
-        String path = unique("/t%d-etag.ttl");
+    void rdfDocumentWriteReturnsNoValidator() {
+        String path = unique("/t%d-novalidator.ttl");
 
         EntityExchangeResult<byte[]> written = putTurtle(path, TURTLE_BODY).exchange()
                 .expectStatus().isCreated()
                 .expectBody().returnResult();
-        String writeEtag = written.getResponseHeaders().getFirst(HttpHeaders.ETAG);
-        assertNotNull(writeEtag, "a document write must carry a validator");
 
-        EntityExchangeResult<byte[]> read = client.get().uri(path)
-                .accept(MediaType.parseMediaType(RdfSerialization.TURTLE.contentType()))
-                .exchange().expectStatus().isOk().expectBody().returnResult();
-        assertEquals(writeEtag, read.getResponseHeaders().getFirst(HttpHeaders.ETAG),
-                "PUT and GET must not disagree about a representation's validator");
+        assertNoValidators(written, "an RDF document write");
     }
 
     /**
-     * A container's served representation includes {@code ldp:contains} triples derived from
-     * its live children (Solid Protocol §4.2) — data that was never in the request content — so
-     * RFC 9110 §9.3.4's "MUST NOT send a validator ... unless the request's representation data
-     * was saved without any transformation" forbids returning one.
+     * A container fails the same condition twice over: its served representation additionally
+     * includes {@code ldp:contains} triples derived from its live children (Solid Protocol
+     * §4.2), which were in no part of the request content.
      */
     @Test
     void containerWriteReturnsNoValidator() {
@@ -264,8 +260,58 @@ class ResourceWriteHttpTest {
         EntityExchangeResult<byte[]> written = putTurtle(path, "").exchange()
                 .expectStatus().isCreated()
                 .expectBody().returnResult();
-        assertNull(written.getResponseHeaders().getFirst(HttpHeaders.ETAG),
-                "a container write must not claim the client holds the new representation");
+
+        assertNoValidators(written, "a container write");
+    }
+
+    /** The same rule on the 204 branch — a replace is a successful PUT too. */
+    @Test
+    void rdfReplaceReturnsNoValidator() {
+        String path = unique("/t%d-novalidator-replace.ttl");
+        seed(path, TURTLE_BODY);
+
+        EntityExchangeResult<byte[]> written = putTurtle(path, "<> <https://vocab.example/k> \"2\" .")
+                .exchange()
+                .expectStatus().isNoContent()
+                .expectBody().returnResult();
+
+        assertNoValidators(written, "an RDF replace");
+    }
+
+    /**
+     * The other side of the ruling: a non-RDF resource IS stored and served back verbatim, so
+     * the §9.3.4 condition genuinely holds and both validators are sent — and the ETag must be
+     * the one a GET returns, or PUT and GET disagree about the resource.
+     */
+    @Test
+    void nonRdfWriteReturnsValidatorsMatchingAGet() {
+        String path = unique("/t%d-validators.png");
+
+        EntityExchangeResult<byte[]> written = put(path, MediaType.IMAGE_PNG_VALUE, PNG_BYTES)
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody().returnResult();
+        String writeEtag = written.getResponseHeaders().getFirst(HttpHeaders.ETAG);
+        assertNotNull(writeEtag, "a non-RDF write must carry an ETag");
+        assertTrue(written.getResponseHeaders().getLastModified() > 0,
+                "a non-RDF write must carry a Last-Modified");
+
+        EntityExchangeResult<byte[]> read = client.get().uri(path)
+                .exchange().expectStatus().isOk().expectBody().returnResult();
+        assertEquals(writeEtag, read.getResponseHeaders().getFirst(HttpHeaders.ETAG),
+                "PUT and GET must not disagree about a representation's validator");
+        assertEquals(written.getResponseHeaders().getLastModified(),
+                read.getResponseHeaders().getLastModified(),
+                "PUT and GET must not disagree about Last-Modified either");
+    }
+
+    /** Both validator fields or neither — §9.3.4 names them together. */
+    private static void assertNoValidators(EntityExchangeResult<byte[]> result, String what) {
+        HttpHeaders headers = result.getResponseHeaders();
+        assertNull(headers.getFirst(HttpHeaders.ETAG),
+                what + " must not claim the client holds the new representation (ETag)");
+        assertNull(headers.getFirst(HttpHeaders.LAST_MODIFIED),
+                what + " must not send Last-Modified either — it is a validator field too");
     }
 
     /** Solid Protocol §5.2: Allow (and its Accept-* companions) in successful responses. */
@@ -422,6 +468,32 @@ class ResourceWriteHttpTest {
                 .exchange()
                 .expectStatus().isOk()
                 .expectHeader().contentTypeCompatibleWith(RdfSerialization.JSON_LD.mediaType());
+    }
+
+    /**
+     * The other half of the canonicalization ruling (PR #66): canonicalization applies ONLY to
+     * recognised RDF types. A non-RDF type keeps its parameters, because dropping them is data
+     * loss with a visible consequence — bytes sent as {@code text/plain;charset=utf-16} would
+     * later be served labelled {@code text/plain} and a client would decode them wrongly.
+     */
+    @Test
+    void nonRdfMediaTypeParametersRoundTrip() {
+        String path = unique("/t%d-utf16.txt");
+        String declared = "text/plain;charset=utf-16";
+        byte[] utf16Bytes = "Hello, UTF-16".getBytes(java.nio.charset.StandardCharsets.UTF_16);
+
+        put(path, declared, utf16Bytes).exchange().expectStatus().isCreated();
+
+        EntityExchangeResult<byte[]> read = client.get().uri(path)
+                .exchange().expectStatus().isOk().expectBody().returnResult();
+        MediaType served = read.getResponseHeaders().getContentType();
+        assertNotNull(served, "the stored media type must come back");
+        assertEquals(MediaType.parseMediaType(declared), served,
+                "a non-RDF type must round-trip with its parameters intact");
+        assertEquals(java.nio.charset.StandardCharsets.UTF_16, served.getCharset(),
+                "the declared charset is what makes these bytes decodable");
+        assertArrayEquals(utf16Bytes, read.getResponseBodyContent(),
+                "and the bytes themselves are served verbatim");
     }
 
     /** Canonicalization is case-insensitive too — media types are not case-sensitive. */

@@ -27,24 +27,27 @@ import java.util.Objects;
  * question on the read side — so there is exactly one notion of "which media types are RDF" in
  * the module.
  *
- * <h2>Known consequence: parameters are dropped for non-RDF types too</h2>
- * {@code text/plain;charset=iso-8859-1} is stored as {@code text/plain}, so a later {@code GET}
- * serves the bytes back without the charset the client declared. The bytes are unchanged and no
- * RDF behaviour is affected, but the fidelity loss is real and deliberate: the rule is uniform,
- * which keeps one code path and makes stored types predictable. Preserving parameters for
- * non-RDF types alone is a live question for the architect and belongs with issue #60, which
- * already tracks giving {@code Representation} a proper media-type value type instead of string
- * equality.
+ * <h2>Non-RDF types keep their parameters (architect ruling, PR #66)</h2>
+ * Canonicalization exists to decide RDF-ness and to normalize the RDF types, so it is applied
+ * <em>only</em> when the declared type is a recognised {@link RdfSerialization}. Anything else
+ * is stored exactly as received, parameters intact.
  *
- * @param mediaType the canonical type: no parameters, lower-cased, never a wildcard
+ * <p>Stripping them would be data loss with a visible consequence: bytes sent as
+ * {@code text/plain;charset=utf-16} would later be served labelled {@code text/plain}, and a
+ * client would decode them wrongly. Nothing is gained by dropping the parameter either —
+ * {@link Representation#isRdf()} answers correctly on the stored value regardless, because a
+ * parameterized {@code text/plain} is genuinely not an RDF type.
+ *
+ * @param mediaType what the body is stored as: the bare canonical form for an RDF type, the
+ *                  declared type verbatim for anything else. Never a wildcard.
  */
 record RequestMediaType(MediaType mediaType) {
 
     RequestMediaType {
         Objects.requireNonNull(mediaType, "mediaType");
-        if (!mediaType.getParameters().isEmpty()) {
+        if (mediaType.isWildcardType() || mediaType.isWildcardSubtype()) {
             throw new IllegalArgumentException(
-                    "A canonical request media type carries no parameters: " + mediaType);
+                    "A stored media type must be concrete, not a range: " + mediaType);
         }
     }
 
@@ -53,13 +56,18 @@ record RequestMediaType(MediaType mediaType) {
      *
      * <p>Solid Protocol §2.1: "Server MUST reject {@code PUT}, {@code POST}, and {@code PATCH}
      * requests that contain content but lack the {@code Content-Type} header field, with a
-     * status code of {@code 400}." Cistern rejects an absent {@code Content-Type} on a write
-     * whether or not content accompanies it: with no declared type there is no basis on which
-     * to choose what a body — even an empty one — would be stored as, and guessing would decide
-     * RDF-source-ness by accident. A malformed one is refused for the same reason.
+     * status code of {@code 400}."
+     *
+     * <p><b>Cistern is deliberately stricter than that sentence</b> (architect ruling, PR #66):
+     * §2.1 mandates the 400 only for a request that <em>contains content</em>, but an absent
+     * {@code Content-Type} is refused here whether or not a body accompanies it. With no
+     * declared type there is no basis on which to choose what a body — even an empty one —
+     * would be stored as, and any default would decide RDF-source-ness by accident, which is
+     * the one property of a stored resource that cannot be recovered afterwards. Refusing is
+     * safer than guessing. A malformed or non-concrete type is refused for the same reason.
      *
      * @param request the write request
-     * @return the canonical media type to store the body under
+     * @return the media type to store the body under
      * @throws CisternException.BadInput if {@code Content-Type} is absent, unparseable, or not
      *                                   a concrete media type (→ 400 via the single error mapper)
      */
@@ -81,6 +89,10 @@ record RequestMediaType(MediaType mediaType) {
      * Package-visible seam so the canonicalization rules can be unit-tested without an HTTP
      * stack (the same arrangement {@link RequestPaths} uses).
      *
+     * <p>An RDF type collapses to the {@link RdfSerialization} constant's own spelling, which is
+     * what {@link Representation#isRdf()} compares against. Everything else is passed through
+     * untouched — see the class javadoc for why the parameters must survive.
+     *
      * @param declared the media type as the client wrote it
      * @throws CisternException.BadInput if it is a range rather than a concrete type
      */
@@ -94,7 +106,7 @@ record RequestMediaType(MediaType mediaType) {
         }
         return new RequestMediaType(RdfSerialization.forMediaType(declared)
                 .map(RdfSerialization::mediaType)
-                .orElseGet(() -> new MediaType(declared.getType(), declared.getSubtype())));
+                .orElse(declared));
     }
 
     /**

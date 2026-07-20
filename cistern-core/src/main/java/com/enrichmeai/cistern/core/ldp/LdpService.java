@@ -242,15 +242,23 @@ public final class LdpService {
      * stored data differ from the received content, which is precisely the condition under
      * which RFC 9110 §9.3.4 forbids returning a validator with the response.
      *
-     * <h2>Created or replaced</h2>
+     * <h2>Created or replaced — a known, tracked race</h2>
      * Determined by asking {@link ResourceStore#exists} immediately before the write, because
      * {@link ResourceStore#put} creates and replaces through one signature and cannot report
-     * which it did. The two calls are not atomic, so a concurrent write to the same target
-     * can make a create report {@code REPLACED} or vice versa. That is benign here — both
-     * outcomes are successes and the stored state is identical either way — and it is not
-     * this ticket's to fix: a client that needs create-only or replace-only semantics states
-     * it with {@code If-None-Match: *} or {@code If-Match}, which T2.5 enforces against the
-     * store.
+     * which it did.
+     *
+     * <p><b>The two calls are not atomic.</b> Two writers racing on the same absent target can
+     * both observe "absent" and both report {@code CREATED}, and a writer racing a deleter can
+     * report {@code REPLACED} for what became a create. The consequence is confined to the
+     * status code a client sees (201 versus 204): the write itself is serialized by the store,
+     * both outcomes are successes, and the resulting stored state is identical either way.
+     *
+     * <p>Known and deliberately not fixed here (architect ruling, PR #66): the real fix is for
+     * the storage SPI to report the effect atomically as part of {@code put}, which changes
+     * {@link ResourceStore}, the shared contract-test kit and every backend, and so is tracked
+     * as its own ticket. A client that needs create-only or replace-only semantics does not
+     * depend on this in the meantime — it states the precondition with {@code If-None-Match: *}
+     * or {@code If-Match}, which T2.5 enforces against the store.
      *
      * <h2>The storage root</h2>
      * {@code PUT} to the root container is allowed and behaves like any other container

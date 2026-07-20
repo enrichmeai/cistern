@@ -9,19 +9,25 @@ import org.springframework.http.MediaType;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The write path's media-type canonicalization, tested at its package-visible seam so the rules
- * are pinned without an HTTP stack (the arrangement {@link RequestPathsTest} uses).
+ * The write path's media-type handling, tested at its package-visible seam so the rules are
+ * pinned without an HTTP stack (the arrangement {@link RequestPathsTest} uses).
  *
- * <p>What makes these worth their own class rather than only end-to-end coverage: the whole
- * point of canonicalization is that {@link Representation#isRdf()} compares media-type strings
- * with {@code equals}, so a resource stored under a type that differs by so much as a charset
- * parameter is permanently misclassified as opaque binary. That is a silent, unrecoverable
- * failure — the resource simply stops being an RDF source — so the exact stored spelling is
- * asserted here, not merely the observable behaviour.
+ * <p>What makes these worth their own class rather than only end-to-end coverage is that both
+ * halves of the rule fail silently and unrecoverably if they regress:
+ * <ul>
+ *   <li><b>RDF types are canonicalized.</b> {@link Representation#isRdf()} compares media-type
+ *       strings with {@code equals}, so a Turtle body stored under a type carrying a charset
+ *       parameter is permanently misclassified as opaque binary — the resource simply stops
+ *       being an RDF source.</li>
+ *   <li><b>Non-RDF types are not touched.</b> Stripping a parameter loses the charset the bytes
+ *       were declared with, so they are later served labelled without it and decoded wrongly.</li>
+ * </ul>
+ * Both are asserted on the exact stored spelling, not merely on observable behaviour.
  */
 class RequestMediaTypeTest {
 
@@ -82,17 +88,40 @@ class RequestMediaTypeTest {
         RequestMediaType canonical = canonical("image/png");
 
         assertEquals(MediaType.IMAGE_PNG_VALUE, canonical.contentType());
-        assertTrue(!canonical.representationOf(new byte[0]).isRdf());
+        assertFalse(canonical.representationOf(new byte[0]).isRdf());
     }
 
     /**
-     * Parameters are dropped for non-RDF types too — a uniform rule, and a deliberate,
-     * documented fidelity loss (the declared charset does not survive). See the class javadoc
-     * of {@link RequestMediaType} and issue #60.
+     * Non-RDF types keep their parameters (architect ruling, PR #66). Canonicalization exists
+     * only to decide RDF-ness and to normalize the RDF types; dropping a charset here would be
+     * data loss, because the bytes would later be served labelled without it and a client would
+     * decode them wrongly.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "text/plain;charset=iso-8859-1",
+            "text/plain;charset=utf-16",
+            "application/octet-stream",
+            "image/svg+xml;charset=utf-8"})
+    void preservesNonRdfTypesExactly(String declared) {
+        RequestMediaType stored = canonical(declared);
+
+        assertEquals(MediaType.parseMediaType(declared), stored.mediaType(),
+                declared + " must be stored as declared, parameters intact");
+        assertFalse(stored.representationOf(new byte[0]).isRdf(),
+                declared + " is not an RDF type, parameters or not");
+    }
+
+    /**
+     * The property that makes preserving parameters safe: {@code isRdf()} still answers
+     * correctly on the stored value, because a parameterized non-RDF type is genuinely not RDF.
      */
     @Test
-    void dropsParametersFromNonRdfTypesToo() {
-        assertEquals("text/plain", canonical("text/plain;charset=iso-8859-1").contentType());
+    void parametersDoNotConfuseRdfClassification() {
+        assertTrue(canonical("text/turtle;charset=utf-8").representationOf(new byte[0]).isRdf(),
+                "an RDF type is canonicalized, so it stays recognisable");
+        assertFalse(canonical("text/plain;charset=utf-8").representationOf(new byte[0]).isRdf(),
+                "a non-RDF type keeps its parameter and is still classified as non-RDF");
     }
 
     // ---------------------------------------------------------------- rejections
@@ -106,11 +135,13 @@ class RequestMediaTypeTest {
 
     // ---------------------------------------------------------------- invariants
 
-    /** The record refuses to hold a non-canonical value, so no such instance can exist. */
+    /** The record refuses to hold a media range, so no such instance can reach storage. */
     @Test
-    void refusesToHoldAParameterizedType() {
+    void refusesToHoldAMediaRange() {
         assertThrows(IllegalArgumentException.class,
-                () -> new RequestMediaType(MediaType.parseMediaType("text/turtle;charset=utf-8")));
+                () -> new RequestMediaType(MediaType.ALL));
+        assertThrows(IllegalArgumentException.class,
+                () -> new RequestMediaType(MediaType.parseMediaType("text/*")));
     }
 
     /** The body is handed to core untouched; only the media type is normalized. */
