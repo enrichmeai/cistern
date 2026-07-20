@@ -39,26 +39,58 @@ The long-term answer is an object-native storage backend written against the exi
 storage SPI, where per-object atomic writes remove the need for rename entirely. That is a
 clean ticket, not a workaround.
 
-## One-time bootstrap (not automated on purpose)
+## Bootstrap — done 2026-07-20
 
-Creating a keyless trust relationship between a GitHub repo and a GCP project is
-security-significant, so it is done deliberately by a human, once:
+This exists now. It is CI plumbing only: **no pod, no VM, no disk**. Cistern's compute
+spend remains zero, and ADR 0001 still forbids an apply until Phase 5.
 
-1. **State bucket** — `gcloud storage buckets create gs://<bucket> --project=cistern-503016
-   --location=europe-west2 --uniform-bucket-level-access`, with versioning enabled.
-2. **Service account** for Terraform, granted `roles/compute.admin`,
-   `roles/iam.serviceAccountAdmin`, `roles/iam.serviceAccountUser` and
-   `roles/storage.admin` on the state bucket.
-3. **Workload Identity Federation** pool and provider for GitHub OIDC, with the principal
-   restricted to this repository — never a downloaded service-account key.
-4. Enable `compute.googleapis.com` and `iap.googleapis.com`.
-5. Set repository **variables**: `GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`,
-   `GCP_SERVICE_ACCOUNT`, `GCP_TF_STATE_BUCKET`.
-6. Create the `test-pod` environment and add required reviewers, so an apply needs a
-   second pair of eyes.
+| Thing | Value |
+|---|---|
+| State bucket | `gs://cistern-503016-tfstate` — europe-west2, versioned, uniform bucket-level access, public access prevention *enforced* |
+| Deployer SA | `cistern-deploy@cistern-503016.iam.gserviceaccount.com` |
+| Project roles | `compute.admin`, `iam.serviceAccountAdmin`, `iam.serviceAccountUser` |
+| Bucket role | `storage.admin` **on the state bucket only**, not project-wide |
+| WIF pool / provider | `github` / `github-oidc` (issuer `token.actions.githubusercontent.com`) |
+| Repo variables | `GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `GCP_TF_STATE_BUCKET` |
+| Environment | `test-pod`, required reviewer `josepharuja` |
 
-Until step 5 is done, the `deploy` job fails fast with that instruction. The `validate`
-job needs none of it and runs on every PR.
+**No service-account key was ever created or downloaded.** Authentication is keyless via
+GitHub's OIDC token, so there is no long-lived credential to leak or rotate.
+
+### The two independent restrictions on who can use it
+
+Either would technically suffice; both are set, because the second is the one that is
+commonly got wrong and getting it wrong means any repository the pool admits can mint
+deploy credentials.
+
+1. **Provider attribute condition** — `assertion.repository=='enrichmeai/cistern'`, so the
+   pool only ever exchanges tokens issued to this repository.
+2. **Impersonation binding scope** — `roles/iam.workloadIdentityUser` is granted to
+   `principalSet://…/workloadIdentityPools/github/attribute.repository/enrichmeai/cistern`,
+   **not** to `…/workloadIdentityPools/github/*`.
+
+To verify either at any time:
+
+```bash
+gcloud iam workload-identity-pools providers describe github-oidc \
+  --project=cistern-503016 --location=global --workload-identity-pool=github \
+  --format='value(attributeCondition)'
+
+gcloud iam service-accounts get-iam-policy \
+  cistern-deploy@cistern-503016.iam.gserviceaccount.com --project=cistern-503016
+```
+
+### Rolling it back
+
+If you ever want this gone, it is four deletions — and nothing depends on them while no
+pod is deployed:
+
+```bash
+gcloud iam service-accounts delete cistern-deploy@cistern-503016.iam.gserviceaccount.com --project=cistern-503016
+gcloud iam workload-identity-pools providers delete github-oidc --workload-identity-pool=github --location=global --project=cistern-503016
+gcloud iam workload-identity-pools delete github --location=global --project=cistern-503016
+gcloud storage rm -r gs://cistern-503016-tfstate
+```
 
 ## Local use
 
