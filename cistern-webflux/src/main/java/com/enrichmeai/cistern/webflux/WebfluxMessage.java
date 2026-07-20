@@ -62,6 +62,31 @@ public enum WebfluxMessage {
     CONTENT_TYPE_NOT_CONCRETE(
             "Content-Type must name a concrete media type, not a range: %s"),
 
+    // ---------------------------------------------------------------- conditional requests
+
+    /**
+     * A failed {@code If-Match} or {@code If-None-Match} (RFC 9110 §13.1.1, §13.1.2). Names the
+     * field so a client that sent both knows which one to fix, and quotes the tags back so it
+     * can see that the server read them as it meant them.
+     */
+    PRECONDITION_ENTITY_TAG_FAILED(
+            "The %s precondition failed for <%s>: no current representation of the resource"
+                    + " matches %s (RFC 9110 §13.2.2). Re-read the resource to obtain its"
+                    + " current ETag before retrying."),
+
+    /** A failed {@code If-Unmodified-Since} (RFC 9110 §13.1.4). */
+    PRECONDITION_MODIFICATION_DATE_FAILED(
+            "The %s precondition failed for <%s>: the resource was modified after the date"
+                    + " given (RFC 9110 §13.2.2). Re-read the resource before retrying."),
+
+    /**
+     * Fires only if the evaluator and the write path disagree about which methods are reads:
+     * RFC 9110 §13.2.2 step 3 reserves 304 for {@code GET} and {@code HEAD}.
+     */
+    NOT_MODIFIED_ON_UNSAFE_METHOD(
+            "Precondition evaluation yielded 304 for %s <%s>, but RFC 9110 §13.2.2 step 3"
+                    + " allows that outcome only for GET and HEAD"),
+
     // ---------------------------------------------------------------- configuration
 
     /** {@code cistern.base-url} must be usable as the base of every resource identifier. */

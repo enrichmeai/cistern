@@ -109,22 +109,42 @@ public class ResourceWriteHandler {
 
     private final LdpService ldp;
     private final RequestPaths requestPaths;
+    private final ConditionalRequests conditionalRequests;
 
-    public ResourceWriteHandler(LdpService ldp, RequestPaths requestPaths) {
+    public ResourceWriteHandler(LdpService ldp, RequestPaths requestPaths,
+                                ConditionalRequests conditionalRequests) {
         this.ldp = ldp;
         this.requestPaths = requestPaths;
+        this.conditionalRequests = conditionalRequests;
     }
 
-    /** Creates or replaces the resource named by the request-target. */
+    /**
+     * Creates or replaces the resource named by the request-target.
+     *
+     * <p>The three steps are in RFC 9110 §13.2.1's order and that order is the ticket's whole
+     * point. Preconditions are evaluated "after it has successfully performed its normal request
+     * checks" — hence after {@link RequestMediaType#required}, so a {@code PUT} with no
+     * {@code Content-Type} is the 400 Solid Protocol §2.1 mandates whatever its
+     * {@code If-Match} said — and "just before it would process the request content (if any)",
+     * hence before {@code bodyToMono}. Nothing subscribes to {@link LdpService#put} until the
+     * gate has completed, so a failed precondition never reaches the store.
+     *
+     * <p>{@link ConditionalRequests.AbsentTarget#IS_CREATED} because a {@code PUT} to a target
+     * that is not there is a 201: §13.2.1 has preconditions ignored only where the
+     * unconditional response would be neither 2xx nor 412, which is not the case here. That is
+     * what makes {@code If-None-Match: *} a create-only guard rather than a no-op.
+     */
     public Mono<ServerResponse> put(ServerRequest request) {
         return Mono.defer(() -> {
             ResourceIdentifier target = requestPaths.identifierFor(request);
             RequestMediaType mediaType = RequestMediaType.required(request);
-            return request.bodyToMono(byte[].class)
-                    .defaultIfEmpty(NO_CONTENT)
-                    .map(mediaType::representationOf)
-                    .flatMap(representation -> ldp.put(target, representation))
-                    .flatMap(outcome -> respond(outcome, mediaType));
+            return conditionalRequests
+                    .requireMayProceed(request, target, ConditionalRequests.AbsentTarget.IS_CREATED)
+                    .then(request.bodyToMono(byte[].class)
+                            .defaultIfEmpty(NO_CONTENT)
+                            .map(mediaType::representationOf)
+                            .flatMap(representation -> ldp.put(target, representation))
+                            .flatMap(outcome -> respond(outcome, mediaType)));
         });
     }
 

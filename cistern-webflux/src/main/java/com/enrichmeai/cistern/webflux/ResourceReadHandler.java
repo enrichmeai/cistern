@@ -5,6 +5,7 @@ import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.ldp.LdpService;
 import com.enrichmeai.cistern.core.ldp.ResourceView;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -31,6 +32,23 @@ import java.util.List;
  * response is built in full, {@code Content-Length} included, and WebFlux's
  * {@code HttpHeadResponseDecorator} discards the body on the way out.
  *
+ * <h2>Conditional requests (T2.5)</h2>
+ * A representation is <em>selected</em> first and only then serialized, because a conditional
+ * read that turns into a 304 must not pay for a body it will not send — and because the
+ * validator a precondition is compared against has to be the one this response would have
+ * carried, which is knowable from the selection alone. {@link ConditionalRequests} makes the
+ * decision (RFC 9110 §13.2.2) and this class writes it:
+ *
+ * <ul>
+ *   <li><b>304</b> is written here, not signalled. It is a successful outcome of a conditional
+ *       {@code GET} (RFC 9110 §15.4.5), not an error, so routing it through the error mapper
+ *       would be wrong twice over — it would attach an RFC 9457 problem document to a response
+ *       that "cannot contain content".</li>
+ *   <li><b>412</b> leaves as {@link CisternException.PreconditionFailed} like every other
+ *       domain refusal. A client may make a {@code GET} conditional on {@code If-Match}
+ *       (§13.1.1) and gets the same answer a write would.</li>
+ * </ul>
+ *
  * <h2>Errors</h2>
  * Nothing here maps a status code (ground rule 4). Absence arrives as
  * {@link CisternException.NotFound} from core, negotiation failure leaves as
@@ -45,12 +63,15 @@ public class ResourceReadHandler {
     private final LdpService ldp;
     private final RequestPaths requestPaths;
     private final ContentNegotiator negotiator;
+    private final ConditionalRequests conditionalRequests;
 
     public ResourceReadHandler(LdpService ldp, RequestPaths requestPaths,
-                               ContentNegotiator negotiator) {
+                               ContentNegotiator negotiator,
+                               ConditionalRequests conditionalRequests) {
         this.ldp = ldp;
         this.requestPaths = requestPaths;
         this.negotiator = negotiator;
+        this.conditionalRequests = conditionalRequests;
     }
 
     /** The one handler behind both {@code GET} and {@code HEAD}. */
@@ -58,49 +79,72 @@ public class ResourceReadHandler {
         return Mono.defer(() -> {
             ResourceIdentifier target = requestPaths.identifierFor(request);
             List<MediaType> accept = acceptOf(request);
-            return ldp.read(target).flatMap(view -> respond(view, accept));
+            return ldp.read(target).flatMap(view -> respond(request, view, accept));
         });
     }
 
     // ---------------------------------------------------------------- representation
 
-    private Mono<ServerResponse> respond(ResourceView view, List<MediaType> accept) {
-        return Mono.fromCallable(() -> switch (view) {
+    /**
+     * Selects the representation, applies RFC 9110 §13.2.2, and only then produces a body.
+     * Inside {@code Mono.defer} so that a negotiation refusal — thrown by
+     * {@link ContentNegotiator} — becomes an error signal.
+     */
+    private Mono<ServerResponse> respond(ServerRequest request, ResourceView view,
+                                         List<MediaType> accept) {
+        return Mono.defer(() -> {
+            Selected selected = select(view, accept);
+            PreconditionResult precondition =
+                    conditionalRequests.evaluateRead(request, view, selected.contentType());
+            return switch (precondition.outcome()) {
+                case PROCEED -> Mono.fromCallable(selected::body)
+                        .flatMap(body -> write(selected, body));
+                case NOT_MODIFIED -> notModified(selected);
+                case PRECONDITION_FAILED -> Mono.error(new CisternException.PreconditionFailed(
+                        conditionalRequests.detailFor(precondition,
+                                ConditionalRequest.of(request), view.identifier())));
+            };
+        });
+    }
+
+    /**
+     * Which representation this request gets — the whole of proactive negotiation, and no
+     * serialization. Splitting it out is what lets a 304 be decided without building a body.
+     */
+    private Selected select(ResourceView view, List<MediaType> accept) {
+        return switch (view) {
             // An RDF source is always serialized from the graph, never echoed from storage.
             // That is what makes Solid Protocol §5.5 hold unconditionally — either media type
             // is available for any RDF source — and it is the only option for a container,
             // whose containment triples exist in no stored byte (§4.2).
-            case ResourceView.Rdf rdf -> {
-                RdfSerialization serialization = negotiator.negotiateRdf(accept);
-                yield Rendered.negotiated(view, serialization.mediaType(),
-                        serialization.serialize(rdf.graph()).data());
-            }
+            case ResourceView.Rdf rdf -> Selected.negotiated(rdf, negotiator.negotiateRdf(accept));
             // A non-RDF source has exactly one representation and is copied out untouched.
-            case ResourceView.NonRdf binary -> {
-                MediaType stored = negotiator.requireAcceptable(accept, storedTypeOf(binary));
-                yield Rendered.unnegotiated(view, stored, binary.representation().data());
-            }
-        }).flatMap(this::write);
+            case ResourceView.NonRdf binary -> Selected.unnegotiated(binary,
+                    negotiator.requireAcceptable(accept, ContentNegotiator.storedMediaTypeOf(binary)));
+        };
     }
 
     /**
-     * The response body and the resource it describes, before it becomes a response.
+     * The representation this response will describe, before any bytes exist for it. Carries
+     * enough to write every header — including the validator — so that the 200 and the 304
+     * paths cannot describe the same representation differently.
      *
-     * @param negotiated whether {@code Accept} selected among several possible
-     *                   representations — true for an RDF source (Turtle or JSON-LD), false
-     *                   for a non-RDF source, which has only the one. Drives {@code Vary}.
+     * @param serialization the RDF form chosen, or null for a non-RDF source, which has none
+     * @param negotiated    whether {@code Accept} selected among several possible
+     *                      representations — true for an RDF source (Turtle or JSON-LD), false
+     *                      for a non-RDF source, which has only the one. Drives {@code Vary}.
      */
-    private record Rendered(ResourceView view, MediaType contentType, byte[] body,
-                            boolean negotiated) {
+    private record Selected(ResourceView view, MediaType contentType,
+                            RdfSerialization serialization, boolean negotiated) {
 
         /** An RDF source: {@code Accept} chose this serialization out of several. */
-        static Rendered negotiated(ResourceView view, MediaType contentType, byte[] body) {
-            return new Rendered(view, contentType, body, true);
+        static Selected negotiated(ResourceView.Rdf view, RdfSerialization serialization) {
+            return new Selected(view, serialization.mediaType(), serialization, true);
         }
 
         /** A non-RDF source: one representation, so {@code Accept} selected nothing. */
-        static Rendered unnegotiated(ResourceView view, MediaType contentType, byte[] body) {
-            return new Rendered(view, contentType, body, false);
+        static Selected unnegotiated(ResourceView.NonRdf view, MediaType stored) {
+            return new Selected(view, stored, null, false);
         }
 
         ResourceKind kind() {
@@ -111,23 +155,31 @@ public class ResourceReadHandler {
         EntityTag entityTag() {
             return EntityTag.forRepresentation(view, contentType);
         }
+
+        /** The response body. CPU-bound for an RDF source, so callers keep it off the fast path. */
+        byte[] body() {
+            return switch (view) {
+                case ResourceView.Rdf rdf -> serialization.serialize(rdf.graph()).data();
+                case ResourceView.NonRdf binary -> binary.representation().data();
+            };
+        }
     }
 
-    private Mono<ServerResponse> write(Rendered rendered) {
-        ResourceKind kind = rendered.kind();
+    private Mono<ServerResponse> write(Selected selected, byte[] body) {
+        ResourceKind kind = selected.kind();
         return ServerResponse.ok()
                 .headers(headers -> {
                     // Strong validator for the representation being served, not for the
                     // stored bytes (RFC 9110 §8.8.1, §8.8.3) — see EntityTag for why those
                     // differ for a container and across the two RDF serializations.
-                    headers.set(HttpHeaders.ETAG, rendered.entityTag().headerValue());
+                    headers.set(HttpHeaders.ETAG, selected.entityTag().headerValue());
                     // IMF-fixdate, one-second resolution (RFC 9110 §5.6.7, §8.8.2); the
                     // store already truncates to seconds, so nothing is rounded here.
-                    headers.setLastModified(rendered.view().lastModified());
+                    headers.setLastModified(selected.view().lastModified());
                     for (String linkValue : kind.linkTypeValues()) {
                         headers.add(HttpHeaders.LINK, linkValue);
                     }
-                    if (rendered.negotiated()) {
+                    if (selected.negotiated()) {
                         // RFC 9110 §12.5.5: without this a shared cache may hand a Turtle
                         // body to a client that asked for JSON-LD. A non-RDF resource has one
                         // representation, so its response does not vary by Accept.
@@ -139,10 +191,38 @@ public class ResourceReadHandler {
                     setIfPresent(headers, HttpHeaders.ACCEPT_PATCH, kind.acceptPatch());
                     // Set explicitly rather than left to the codec, so a HEAD reports the
                     // same length a GET would have written (RFC 9110 §9.3.2).
-                    headers.setContentLength(rendered.body().length);
+                    headers.setContentLength(body.length);
                 })
-                .contentType(rendered.contentType())
-                .bodyValue(rendered.body());
+                .contentType(selected.contentType())
+                .bodyValue(body);
+    }
+
+    /**
+     * The 304 response (RFC 9110 §15.4.5).
+     *
+     * <p>The section prescribes both what must be sent and what must not. Required: "any of the
+     * following header fields that would have been sent in a 200 (OK) response to the same
+     * request: Content-Location, Date, ETag, and Vary" — {@code Date} comes from the server,
+     * Cistern sends no {@code Content-Location}, and the other two are written here from the
+     * same {@link Selected} a 200 would have used, so the tag on a 304 is by construction the
+     * tag on the 200 it replaces.
+     *
+     * <p>Withheld: everything else. "A sender SHOULD NOT generate representation metadata other
+     * than the above listed fields unless said metadata exists for the purpose of guiding cache
+     * updates (e.g., Last-Modified might be useful if the response does not have an ETag
+     * field)" — this response always has an {@code ETag}, so {@code Last-Modified} would be
+     * redundant weight. No body and no {@code Content-Type}/{@code Content-Length} either: "a
+     * 304 response is terminated by the end of the header section; it cannot contain content".
+     */
+    private static Mono<ServerResponse> notModified(Selected selected) {
+        return ServerResponse.status(HttpStatus.NOT_MODIFIED)
+                .headers(headers -> {
+                    headers.set(HttpHeaders.ETAG, selected.entityTag().headerValue());
+                    if (selected.negotiated()) {
+                        headers.set(HttpHeaders.VARY, HttpHeaders.ACCEPT);
+                    }
+                })
+                .build();
     }
 
     private static void setIfPresent(HttpHeaders headers, String name, String value) {
@@ -168,19 +248,4 @@ public class ResourceReadHandler {
         }
     }
 
-    /**
-     * The stored media type of a non-RDF resource. Stored types only get there through a
-     * validated write, so an unparseable one is server-side corruption — an
-     * {@link IllegalStateException} (→ 500), consistent with how core treats unparseable
-     * stored RDF, and never the reading client's fault.
-     */
-    private static MediaType storedTypeOf(ResourceView.NonRdf binary) {
-        String contentType = binary.representation().contentType();
-        try {
-            return MediaType.parseMediaType(contentType);
-        } catch (InvalidMediaTypeException e) {
-            throw new IllegalStateException(WebfluxMessage.STORED_CONTENT_TYPE_INVALID
-                    .format(binary.identifier().uri(), contentType), e);
-        }
-    }
 }
