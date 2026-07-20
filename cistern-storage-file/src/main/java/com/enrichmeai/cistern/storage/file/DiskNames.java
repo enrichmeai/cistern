@@ -68,7 +68,8 @@ final class DiskNames {
             char c = diskName.charAt(i);
             if (c == '%') {
                 if (i + 2 >= diskName.length()) {
-                    throw new IllegalArgumentException("Truncated escape in disk name: " + diskName);
+                    throw new IllegalArgumentException(
+                            StorageFileMessage.DISK_NAME_ESCAPE_TRUNCATED.format(diskName));
                 }
                 out.write(hex(diskName.charAt(i + 1)) << 4 | hex(diskName.charAt(i + 2)));
                 i += 2;
@@ -82,7 +83,7 @@ final class DiskNames {
     private static int hex(char c) {
         int v = Character.digit(c, 16);
         if (v < 0) {
-            throw new IllegalArgumentException("Bad hex digit in disk name escape: " + c);
+            throw new IllegalArgumentException(StorageFileMessage.DISK_NAME_HEX_DIGIT_BAD.format(c));
         }
         return v;
     }

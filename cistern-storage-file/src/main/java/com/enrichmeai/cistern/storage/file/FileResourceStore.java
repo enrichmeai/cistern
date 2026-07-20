@@ -216,24 +216,24 @@ public final class FileResourceStore implements ResourceStore {
                 }
                 if (!ancestor.equals(root) && committedDocument(ancestor)) {
                     throw new CisternException.Conflict(
-                            "Cannot create intermediate container: a document already occupies "
-                                    + ancestor.getFileName() + " (Solid Protocol §3.1)");
+                            StorageFileMessage.INTERMEDIATE_CONTAINER_BLOCKED.format(
+                                    ancestor.getFileName()));
                 }
                 missingAncestors.add(ancestor);
             }
             Sidecar previous;
             if (identifier.isContainer()) {
                 if (!target.equals(root) && committedDocument(target)) {
-                    throw new CisternException.Conflict(identifier.uri()
-                            + " conflicts with the same-name document: one name cannot be both"
-                            + " a container and a document (Solid Protocol §3.1)");
+                    throw new CisternException.Conflict(
+                            StorageFileMessage.CONTAINER_NAME_TAKEN_BY_DOCUMENT.format(
+                                    identifier.uri()));
                 }
                 previous = committedContainer(target) ? readSidecar(selfJson(target)) : null;
             } else {
                 if (committedContainer(target)) {
-                    throw new CisternException.Conflict(identifier.uri()
-                            + " conflicts with the same-name container: one name cannot be both"
-                            + " a container and a document (Solid Protocol §3.1)");
+                    throw new CisternException.Conflict(
+                            StorageFileMessage.DOCUMENT_NAME_TAKEN_BY_CONTAINER.format(
+                                    identifier.uri()));
                 }
                 previous = committedDocument(target) ? readSidecar(documentSidecar(target)) : null;
             }
@@ -288,11 +288,12 @@ public final class FileResourceStore implements ResourceStore {
             Path target = diskPath(rawSegments(identifier));
             if (identifier.isContainer()) {
                 if (!committedContainer(target)) {
-                    throw new CisternException.NotFound("No such container: " + identifier.uri());
+                    throw new CisternException.NotFound(
+                            StorageFileMessage.CONTAINER_NOT_FOUND.format(identifier.uri()));
                 }
                 if (hasCommittedChildren(target)) {
                     throw new CisternException.Conflict(
-                            "Container is not empty: " + identifier.uri() + " (Solid Protocol §5.4)");
+                            StorageFileMessage.CONTAINER_NOT_EMPTY.format(identifier.uri()));
                 }
                 Files.delete(selfJson(target));            // decommit — resource ceases to exist
                 if (target.equals(root)) {
@@ -302,7 +303,8 @@ public final class FileResourceStore implements ResourceStore {
                 }
             } else {
                 if (!committedDocument(target)) {
-                    throw new CisternException.NotFound("No such resource: " + identifier.uri());
+                    throw new CisternException.NotFound(
+                            StorageFileMessage.RESOURCE_NOT_FOUND.format(identifier.uri()));
                 }
                 Files.delete(documentSidecar(target));     // decommit first…
                 Files.deleteIfExists(target);              // …then the content bytes
@@ -315,7 +317,7 @@ public final class FileResourceStore implements ResourceStore {
     private List<ResourceIdentifier> doChildren(ResourceIdentifier container) throws IOException {
         if (!container.isContainer()) {
             throw new IllegalArgumentException(
-                    "children() requires a container identifier (trailing slash): " + container.uri());
+                    StorageFileMessage.CHILDREN_REQUIRES_CONTAINER.format(container.uri()));
         }
         synchronized (lock) {
             Path dir = diskPath(rawSegments(container));
@@ -385,8 +387,8 @@ public final class FileResourceStore implements ResourceStore {
     private static List<String> rawSegments(ResourceIdentifier identifier) {
         String raw = identifier.uri().getRawPath();
         if (raw == null || !raw.startsWith("/")) {
-            throw new IllegalArgumentException("Resource URI must have an absolute path: "
-                    + identifier.uri());
+            throw new IllegalArgumentException(
+                    StorageFileMessage.PATH_NOT_ABSOLUTE.format(identifier.uri()));
         }
         String body = raw.substring(1);
         if (body.isEmpty()) {
@@ -395,22 +397,23 @@ public final class FileResourceStore implements ResourceStore {
         if (identifier.isContainer()) {
             if (!body.endsWith("/")) {
                 throw new IllegalArgumentException(
-                        "Container raw path must end with '/' (encoded slashes are unsupported): "
-                                + identifier.uri());
+                        StorageFileMessage.CONTAINER_PATH_UNTERMINATED.format(identifier.uri()));
             }
             body = body.substring(0, body.length() - 1);
             if (body.isEmpty()) {
-                throw new IllegalArgumentException("Empty path segment: " + identifier.uri());
+                throw new IllegalArgumentException(
+                        StorageFileMessage.PATH_SEGMENT_EMPTY.format(identifier.uri()));
             }
         }
         String[] parts = body.split("/", -1);
         for (String part : parts) {
             if (part.isEmpty()) {
-                throw new IllegalArgumentException("Empty path segment: " + identifier.uri());
+                throw new IllegalArgumentException(
+                        StorageFileMessage.PATH_SEGMENT_EMPTY.format(identifier.uri()));
             }
             if (part.toUpperCase(java.util.Locale.ROOT).contains("%2F")) {
                 throw new IllegalArgumentException(
-                        "Encoded slash in path segment is unsupported: " + identifier.uri());
+                        StorageFileMessage.PATH_SEGMENT_ENCODED_SLASH.format(identifier.uri()));
             }
         }
         return List.of(parts);
@@ -423,7 +426,7 @@ public final class FileResourceStore implements ResourceStore {
         }
         Path normalized = path.normalize();
         if (!normalized.startsWith(root)) {                // structurally impossible; belt & braces
-            throw new IllegalStateException("Path escaped the storage root: " + path);
+            throw new IllegalStateException(StorageFileMessage.PATH_ESCAPED_ROOT.format(path));
         }
         return normalized;
     }
@@ -495,7 +498,7 @@ public final class FileResourceStore implements ResourceStore {
             digest.update(bytes);
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("JVM without SHA-256", e);
+            throw new IllegalStateException(StorageFileMessage.DIGEST_ALGORITHM_MISSING.format(), e);
         }
     }
 }
