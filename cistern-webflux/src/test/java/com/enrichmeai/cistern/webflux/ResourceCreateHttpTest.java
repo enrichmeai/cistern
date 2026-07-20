@@ -90,6 +90,10 @@ class ResourceCreateHttpTest {
     @Autowired
     private WebTestClient client;
 
+    /** Solid Protocol §4.1's storage-description link, read from the bean that emits it (T2.9). */
+    @Autowired
+    private StorageDescription storageDescription;
+
     @DynamicPropertySource
     static void storageRoot(DynamicPropertyRegistry registry) {
         registry.add("cistern.storage.root", STORAGE_ROOT::toString);
@@ -363,7 +367,11 @@ class ResourceCreateHttpTest {
                 .accept(MediaType.parseMediaType(RdfSerialization.TURTLE.contentType()))
                 .exchange()
                 .expectStatus().isOk()
-                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, LDP_BASIC_CONTAINER);
+                // The third value is Solid Protocol §4.1's storage-description link (T2.9),
+                // which every GET in the storage carries; the two rel="type" links are what
+                // this test is actually about.
+                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, LDP_BASIC_CONTAINER,
+                        storageDescription.linkValue());
     }
 
     /**
