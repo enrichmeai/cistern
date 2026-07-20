@@ -554,7 +554,12 @@ class ConditionalRequestHttpTest {
                 .exchange().expectStatus().isNotModified()
                 .expectBody().returnResult();
 
-        assertNull(result.getResponseHeaders().getFirst(HttpHeaders.VARY),
+        // Asked of the Accept entry rather than of the whole field: since T2.8 the CORS layer
+        // adds Vary: Origin to every response (Solid Protocol §8.1, see OriginVaryFilter), and
+        // what this test is about is that a single-representation resource does not vary by
+        // content negotiation.
+        assertTrue(result.getResponseHeaders().getVary().stream()
+                        .noneMatch(HttpHeaders.ACCEPT::equalsIgnoreCase),
                 "one representation, so nothing varies by Accept");
     }
 

@@ -128,6 +128,26 @@ public enum ResourceKind {
             Arrays.stream(values()).collect(Collectors.toUnmodifiableMap(
                     ResourceKind::ldpKind, kind -> kind));
 
+    /**
+     * The union of every row's method set — what the <em>server</em> supports, as distinct from
+     * what any one resource supports.
+     *
+     * <p>Two T2.8 consumers need exactly this and nothing narrower: the
+     * {@code Access-Control-Allow-Methods} of a CORS preflight, which is answered before any
+     * resource has been resolved, and the {@code Allow} of {@code OPTIONS *}, which RFC 9110
+     * §9.3.7 defines as applying "to the server in general rather than to a specific resource".
+     *
+     * <p>Computed from {@link #values()} rather than written out, so it stays the same one fact
+     * as {@link #allow()} and {@link #permits}: a method added to any row joins the CORS
+     * preflight automatically, and there is no second list to forget. T2.7's split of the
+     * document rows by {@link LdpKind} is exactly why it must be computed — {@code PATCH} now
+     * appears on some document rows and not others, and the server still supports it.
+     */
+    private static final List<HttpMethod> SUPPORTED_METHODS = Arrays.stream(values())
+            .flatMap(kind -> kind.methods.stream())
+            .distinct()
+            .toList();
+
     private final LdpKind ldpKind;
     private final List<HttpMethod> methods;
     private final String allow;
@@ -208,6 +228,24 @@ public enum ResourceKind {
      */
     boolean permits(HttpMethod method) {
         return methods.contains(method);
+    }
+
+    /**
+     * Every method the server supports on some kind of resource — see {@link #SUPPORTED_METHODS}
+     * for why the union, rather than any single row, is what CORS preflight and {@code OPTIONS *}
+     * need.
+     */
+    static List<HttpMethod> supportedMethods() {
+        return SUPPORTED_METHODS;
+    }
+
+    /**
+     * The server-wide {@code Allow} field value: {@link #supportedMethods()} rendered by the
+     * same helper every per-resource {@link #allow()} goes through, so the two cannot be
+     * formatted differently.
+     */
+    static String supportedMethodsAllow() {
+        return HttpConstants.allow(SUPPORTED_METHODS);
     }
 
     /** Null where the corresponding method is absent from {@link #allow()}. */

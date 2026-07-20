@@ -39,6 +39,23 @@ final class HttpConstants {
     static final String SLUG = "Slug";
 
     /**
+     * WAC §5 — the access modes the current agent holds on the target resource. Emitted by
+     * cistern-wac from T3.x; named here already because T2.8 must list it under
+     * {@code Access-Control-Expose-Headers}, and a browser app that cannot read it cannot tell
+     * a user what they may do. Declared once so the CORS list and the eventual emitter cannot
+     * spell it differently.
+     */
+    static final String WAC_ALLOW = "WAC-Allow";
+
+    /**
+     * RFC 9449 §7.1 — the DPoP proof JWT a Solid-OIDC client sends alongside its bound access
+     * token. Read by cistern-auth from T4.x; named here for the same reason as
+     * {@link #WAC_ALLOW}: T2.8 must allow it through CORS preflight or no browser-based Solid
+     * client can authenticate at all.
+     */
+    static final String DPOP = "DPoP";
+
+    /**
      * A {@code Link} field value typing the resource (RFC 8288 §3): {@code <IRI>; rel="type"}.
      * The IRI always comes from a vocabulary constant class, never from a literal, and the
      * relation from {@link LinkRelation} — the same constant the request-side parser matches

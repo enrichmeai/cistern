@@ -23,8 +23,9 @@ class RequestPathsTest {
 
     private static final String BASE = "https://pod.example";
 
-    private final RequestPaths paths = new RequestPaths(
-            new CisternProperties(BASE, new CisternProperties.Storage(Path.of("./data"))));
+    /** CORS settings are irrelevant to path resolution, so the record's defaults stand in. */
+    private final RequestPaths paths = new RequestPaths(new CisternProperties(
+            BASE, new CisternProperties.Storage(Path.of("./data")), null));
 
     private ResourceIdentifier resolve(String rawPath) {
         return paths.identifierFor(rawPath);

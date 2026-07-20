@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -451,23 +452,45 @@ class ResourceReadHttpTest {
 
     // ---------------------------------------------------------------- Vary
 
+    /**
+     * The {@code Vary} entries of a response, parsed rather than compared as one string.
+     *
+     * <p>These assertions were written as {@code valueEquals(VARY, ACCEPT)} when negotiation was
+     * the only thing contributing to the field. Since T2.8 the CORS layer adds {@code Origin} to
+     * every response (Solid Protocol §8.1, see {@code OriginVaryFilter}), so an exact-value
+     * comparison would now be asserting that CORS is switched off. What each of these tests is
+     * actually about is {@code Accept} — whether <em>this</em> response varies by content
+     * negotiation — so that is what they ask, and the two contributions stay independent.
+     */
+    private static List<String> varyOf(EntityExchangeResult<byte[]> result) {
+        return result.getResponseHeaders().getVary();
+    }
+
+    private static boolean variesByAccept(EntityExchangeResult<byte[]> result) {
+        return varyOf(result).stream().anyMatch(HttpHeaders.ACCEPT::equalsIgnoreCase);
+    }
+
     @Test
     void negotiatedResponsesVaryOnAccept() {
         // RFC 9110 §12.5.5 — without this a shared cache may hand a Turtle body to a client
         // that asked for JSON-LD.
-        get("/notes/a.ttl").exchange()
-                .expectStatus().isOk()
-                .expectHeader().valueEquals(HttpHeaders.VARY, HttpHeaders.ACCEPT);
-        get("/notes/").exchange()
-                .expectStatus().isOk()
-                .expectHeader().valueEquals(HttpHeaders.VARY, HttpHeaders.ACCEPT);
+        for (String rawPath : List.of("/notes/a.ttl", "/notes/")) {
+            EntityExchangeResult<byte[]> result = get(rawPath)
+                    .exchange().expectStatus().isOk().expectBody().returnResult();
+
+            assertTrue(variesByAccept(result),
+                    () -> rawPath + " is negotiated, so it must vary by Accept; Vary was "
+                            + varyOf(result));
+        }
     }
 
     @Test
     void headCarriesVaryToo() {
-        client.head().uri(URI.create("/notes/a.ttl")).exchange()
-                .expectStatus().isOk()
-                .expectHeader().valueEquals(HttpHeaders.VARY, HttpHeaders.ACCEPT);
+        EntityExchangeResult<byte[]> result = client.head().uri(URI.create("/notes/a.ttl"))
+                .exchange().expectStatus().isOk().expectBody().returnResult();
+
+        assertTrue(variesByAccept(result),
+                () -> "HEAD must carry the Vary a GET would; Vary was " + varyOf(result));
     }
 
     @Test
@@ -475,7 +498,7 @@ class ResourceReadHttpTest {
         EntityExchangeResult<byte[]> result = get("/logo.png")
                 .exchange().expectStatus().isOk().expectBody().returnResult();
 
-        assertNull(result.getResponseHeaders().getFirst(HttpHeaders.VARY),
+        assertFalse(variesByAccept(result),
                 "a non-RDF resource has exactly one representation, so nothing varies by Accept");
     }
 

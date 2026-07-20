@@ -143,7 +143,7 @@ regression.
 - [x] **T2.7 PATCH (N3).** Wire T1.5 behind `PATCH` with `Content-Type: text/n3`;
   patching a non-existent resource creates it (per spec, requires Append/Write); wrong
   content type → 415. DoD: spec examples pass over HTTP.
-- [ ] **T2.8 OPTIONS + CORS.** OPTIONS with correct Allow/Accept-* per resource kind; CORS
+- [x] **T2.8 OPTIONS + CORS.** OPTIONS with correct Allow/Accept-* per resource kind; CORS
   wide-open by default (Solid apps are cross-origin by nature) with
   `Access-Control-Expose-Headers` covering ETag/Link/Location/WAC-Allow. DoD: preflight
   tests from a fake origin.
