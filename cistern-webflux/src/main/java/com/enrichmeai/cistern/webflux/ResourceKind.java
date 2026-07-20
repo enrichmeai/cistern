@@ -1,5 +1,6 @@
 package com.enrichmeai.cistern.webflux;
 
+import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.ldp.Ldp;
 import com.enrichmeai.cistern.core.ldp.ResourceView;
 import org.apache.jena.rdf.model.Resource;
@@ -120,11 +121,21 @@ public enum ResourceKind {
 
     static ResourceKind of(ResourceView view) {
         if (view.container()) {
-            // The root is a container whose method set is one method short (§5.4), so the
-            // distinction has to be drawn here rather than at each header-emitting site.
-            return view.identifier().isStorageRoot() ? STORAGE_ROOT : CONTAINER;
+            return ofContainer(view.identifier());
         }
         return view instanceof ResourceView.Rdf ? RDF_DOCUMENT : NON_RDF_DOCUMENT;
+    }
+
+    /**
+     * The kind of a container named by identifier alone — what a {@code POST} response needs,
+     * since its target resource is the container while the resource it creates is a different
+     * one, so {@link #of(ResourceView)}'s view is the wrong resource to ask.
+     *
+     * <p>The root is a container whose method set is one method short (Solid Protocol §5.4), so
+     * the distinction is drawn here rather than at each header-emitting site.
+     */
+    static ResourceKind ofContainer(ResourceIdentifier container) {
+        return container.isStorageRoot() ? STORAGE_ROOT : CONTAINER;
     }
 
     /** The {@code Allow} field value (RFC 9110 §10.2.1) this kind advertises. */
