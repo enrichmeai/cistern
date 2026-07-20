@@ -1,6 +1,6 @@
 # CLAUDE.md — Cistern
 
-Open, self-hostable **Solid pod server** for the AI era: JVM-native, Spring Boot 3 / WebFlux,
+Open, self-hostable **Solid pod server** for the AI era: JVM-native, Spring Boot 4 / WebFlux,
 MCP-fronted, conformance-first. Apache 2.0. © Good Shepherd Software Consultancy Ltd
 (Company No. 09702990), trading as **EnrichMeAI**.
 
