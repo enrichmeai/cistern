@@ -18,6 +18,14 @@ cd "$(dirname "$0")"
 
 mkdir -p reports
 
+# The harness image runs as uid 185 and writes its reports into this bind mount.
+# On Linux the mount preserves host ownership, so a default 0755 directory owned by
+# the invoking user is unwritable to that uid: the harness logs
+# "AccessDeniedException: /reports/coverage.html" and STILL EXITS 0, so the run looks
+# clean while producing no report at all. macOS Docker Desktop maps ownership to the
+# host user and hides this entirely — it only ever bites in CI.
+chmod 777 reports
+
 # The harness runs inside a container: it must reach the host's :3000 via
 # host.docker.internal (--add-host makes that name work on Linux; Docker
 # Desktop on macOS/Windows provides it natively).

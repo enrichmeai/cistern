@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Turn a conformance-harness run into a Markdown summary (stdout).
 #
-#   ./summarize.sh <harness-log> <reports-dir> [harness-exit-code]
+#   ./summarize.sh <harness-log> <reports-dir> [harness-exit-code] [extra-log...]
 #
 # CI (T3.1) redirects this into $GITHUB_STEP_SUMMARY; run it locally against a
 # saved log to see exactly what CI will say.
@@ -14,11 +14,16 @@
 #   * When no results report exists, the run is reported as fully UNTESTED,
 #     with the harness's own error as the stated reason.
 #   * A count this script could not parse is reported as unknown, never as 0.
+#   * A harness that could not WRITE its report is called out. It logs the failure
+#     and exits 0 regardless, so an unwritten report is otherwise indistinguishable
+#     from a clean run that simply had nothing to say.
 set -euo pipefail
 
-log="${1:?usage: summarize.sh <harness-log> <reports-dir> [exit-code]}"
-reports="${2:?usage: summarize.sh <harness-log> <reports-dir> [exit-code]}"
+log="${1:?usage: summarize.sh <harness-log> <reports-dir> [exit-code] [extra-log...]}"
+reports="${2:?usage: summarize.sh <harness-log> <reports-dir> [exit-code] [extra-log...]}"
 exit_code="${3:-}"
+shift 3 2>/dev/null || shift $#
+extra_logs=("$@")
 
 # Pull a single capture group out of the log; empty if the marker is absent.
 extract() { sed -n -E "s/.*$1.*/\2/p" "$log" | head -1; }
@@ -76,6 +81,18 @@ fi
 
 if [ -n "$coverage_report" ]; then
   echo "Coverage report generated ($(basename "$coverage_report")) — in the artifact."
+fi
+
+# The harness exits 0 even when it could not write its output, so an unwritten
+# report looks exactly like a clean run unless we say so.
+# ${arr[@]+"${arr[@]}"} — plain "${arr[@]}" on an empty array is an unbound-variable
+# error under `set -u` in bash 3.2, which is what macOS ships.
+write_failure=$(grep -h -m1 'Failed to write reports' "$log" ${extra_logs[@]+"${extra_logs[@]}"} 2>/dev/null || true)
+if [ -n "$write_failure" ]; then
+  echo
+  echo "> **The harness could not write its reports** (it logs this and exits 0 anyway)."
+  echo "> The reports directory must be writable by uid 185, the image's user:"
+  echo "> \`chmod 777 cth/reports\`. Reported output above may be incomplete."
 fi
 
 echo

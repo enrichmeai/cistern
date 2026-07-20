@@ -62,8 +62,12 @@ jobs:
             > "${{ runner.temp }}/server.log" 2>&1 &
           echo $! > "${{ runner.temp }}/server.pid"
           # Any HTTP response means up — the storage root legitimately 404s pre-T5.4.
+          # On a connection failure curl BOTH prints 000 and exits non-zero, so a
+          # `|| echo 000` fallback yields "000000", which is != "000" and reports a
+          # dead server as ready on the first attempt. Let the assignment carry the
+          # status instead.
           for i in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://localhost:3000/ || echo 000)
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://localhost:3000/ 2>/dev/null) || code=000
             if [ "$code" != "000" ]; then
               echo "server up (HTTP $code) after ${i}s"
               exit 0
@@ -91,18 +95,22 @@ jobs:
           ./cth/summarize.sh \
             "${{ runner.temp }}/cth-full.log" \
             cth/reports \
-            "${{ steps.cth.outputs.exit_code }}" >> "$GITHUB_STEP_SUMMARY"
+            "${{ steps.cth.outputs.exit_code }}" \
+            "${{ runner.temp }}/cth-coverage.log" >> "$GITHUB_STEP_SUMMARY"
+
+      # Collect the logs alongside the reports so the artifact has one predictable
+      # root. Mixing relative and absolute paths in upload-artifact makes the least
+      # common ancestor /home/runner/work, which buries everything under _temp/.
+      - name: Collect logs
+        if: always()
+        run: cp "${{ runner.temp }}"/*.log cth/reports/ || true
 
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cth-reports
-          path: |
-            cth/reports/
-            ${{ runner.temp }}/cth-full.log
-            ${{ runner.temp }}/cth-coverage.log
-            ${{ runner.temp }}/server.log
+          path: cth/reports/
           if-no-files-found: warn
 
       - name: Stop Cistern
