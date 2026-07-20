@@ -89,10 +89,14 @@ regression.
   replaced → 204/200. DoD: WebTestClient matrix create/replace/kind-flip/nested.
   Write orchestration is `LdpService.put` → `WriteOutcome(WriteEffect, ResourceView)`;
   replaced → **204** and created → **201 without `Location`** (RFC 9110 §9.3.4, §15.3.2).
-  `ETag` on document writes only — RFC 9110 §9.3.4 forbids a validator when the served
-  representation is not the content received, which a container's derived `ldp:contains`
-  makes true (§4.2). Media types are canonicalized on write (`text/turtle;charset=utf-8`
-  → `text/turtle`), which parameters on non-RDF types do not survive — see #60.
+  **No `ETag`/`Last-Modified` on RDF writes** (documents and containers alike) — RFC 9110
+  §9.3.4 forbids a validator unless the served representation is the content received, and
+  the read path re-serializes every RDF source from a parsed graph; both are sent on non-RDF
+  writes, where bytes are served verbatim. Clients get RDF validators from `GET`/`HEAD`.
+  Media types are canonicalized **only when RDF** (`text/turtle;charset=utf-8` →
+  `text/turtle`); non-RDF types keep their parameters, so `text/plain;charset=utf-16`
+  round-trips intact. Known: the create-vs-replace `exists`-then-`put` check is not atomic —
+  the fix belongs in the storage SPI and is tracked separately.
 - [ ] **T2.3 POST to container.** Slug header honored (sanitized), collision → server picks
   a fresh name (never overwrite); generated name is a UUID-ish short id; `Location` header
   on 201; POST with `Link: ...BasicContainer; rel="type"` creates a child container. POST
