@@ -5,7 +5,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.webflux.error.ErrorWebExceptionHandler;
 import org.springframework.core.annotation.Order;
-import org.springframework.http.MediaType;
 import org.springframework.http.codec.HttpMessageWriter;
 import org.springframework.http.codec.ServerCodecConfigurer;
 import org.springframework.stereotype.Component;
@@ -74,27 +73,27 @@ public class CisternErrorWebExceptionHandler implements ErrorWebExceptionHandler
         }
 
         ProblemMapper.Problem problem = mapper.map(error, exchange);
-        logIt(problem, error, exchange);
+        logIt(problem.body(), error, exchange);
 
         // A partially-populated Content-Type/Content-Length from the aborted handler would
         // otherwise survive onto the problem response.
         exchange.getResponse().getHeaders().clearContentHeaders();
 
-        return ServerResponse.status(problem.status())
+        return ServerResponse.status(problem.body().statusCode())
                 .headers(headers -> headers.putAll(problem.headers()))
-                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .contentType(ProblemDocument.MEDIA_TYPE)
                 .bodyValue(problem.body())
                 .flatMap(response -> response.writeTo(exchange, responseContext));
     }
 
-    private void logIt(ProblemMapper.Problem problem, Throwable error, ServerWebExchange exchange) {
+    private void logIt(ProblemDocument problem, Throwable error, ServerWebExchange exchange) {
         String method = String.valueOf(exchange.getRequest().getMethod());
         String path = exchange.getRequest().getPath().value();
-        if (problem.isServerError()) {
+        if (problem.statusCode().is5xxServerError()) {
             // The only record of what actually broke: the client is told nothing but "500".
-            log.error("{} {} failed with {}", method, path, problem.status(), error);
-        } else {
-            log.debug("{} {} rejected with {}: {}", method, path, problem.status(), error.toString());
+            log.error(WebfluxMessage.LOG_SERVER_ERROR.format(method, path, problem.status()), error);
+        } else if (log.isDebugEnabled()) {
+            log.debug(WebfluxMessage.LOG_CLIENT_ERROR.format(method, path, problem.status(), error));
         }
     }
 }
