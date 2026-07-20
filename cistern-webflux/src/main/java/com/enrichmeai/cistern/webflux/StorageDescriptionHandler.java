@@ -81,6 +81,14 @@ public class StorageDescriptionHandler {
      */
     private static final String LDP_RESOURCE_LINK = HttpConstants.linkType(Ldp.RESOURCE.getURI());
 
+    /*
+     * ALLOW and LDP_RESOURCE_LINK are this resource's own, not a ResourceKind row's (#60): the
+     * description is generated rather than stored, so it has no LdpKind and inventing one would
+     * break ResourceKindTest's one-row-per-kind invariant. Only the rendering is shared —
+     * describe() goes through InterfaceMetadata like the other six call sites, so every response
+     * in the storage emits these fields the same way.
+     */
+
     private final StorageDescription description;
     private final ContentNegotiator negotiator;
 
@@ -137,9 +145,7 @@ public class StorageDescriptionHandler {
      * whichever resource it started from.
      */
     private void describe(HttpHeaders headers) {
-        headers.set(HttpHeaders.ALLOW, ALLOW);
-        headers.add(HttpHeaders.LINK, LDP_RESOURCE_LINK);
-        headers.add(HttpHeaders.LINK, description.linkValue());
+        InterfaceMetadata.write(headers, ALLOW, List.of(LDP_RESOURCE_LINK), description.linkValue());
     }
 
     /** As {@link ResourceReadHandler}: a malformed {@code Accept} is the client's 400, not a 500. */

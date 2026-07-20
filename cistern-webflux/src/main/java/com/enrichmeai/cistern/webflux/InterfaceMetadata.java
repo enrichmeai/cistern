@@ -2,16 +2,19 @@ package com.enrichmeai.cistern.webflux;
 
 import org.springframework.http.HttpHeaders;
 
+import java.util.List;
+
 /**
  * Writes a resource's LDP interface metadata onto a response: {@code Allow}, the
  * {@code Accept-Put} / {@code Accept-Post} / {@code Accept-Patch} companions, and the
  * {@code Link rel="type"} values that advertise the interaction model.
  *
- * <p>The single place any of those five headers is emitted from a {@link ResourceKind} (#60).
- * Five handlers — read (T2.1), write (T2.2), create (T2.3), patch (T2.7) and OPTIONS (T2.8) —
- * had grown the same eight lines and their own copy of {@code setIfPresent}, and
- * {@link com.enrichmeai.cistern.webflux.error.ProblemMapper} a sixth, narrower copy for the
- * {@code Allow} on a 405.
+ * <p>The single place any of those five headers is emitted (#60). Five handlers — read (T2.1),
+ * write (T2.2), create (T2.3), patch (T2.7) and OPTIONS (T2.8) — had grown the same eight lines
+ * and their own copy of {@code setIfPresent};
+ * {@link com.enrichmeai.cistern.webflux.error.ProblemMapper} had a sixth, narrower copy for the
+ * {@code Allow} on a 405; and {@code StorageDescriptionHandler} (T2.9) a seventh, for the one
+ * resource in the pod that has no {@link ResourceKind} row at all.
  *
  * <p>Consolidating them is not only de-duplication: Solid Protocol §5.2 requires the
  * {@code Accept-*} field values to "correspond to acceptable HTTP methods listed in
@@ -51,13 +54,44 @@ public final class InterfaceMetadata {
      * survive; the rest are set, so calling this twice cannot double a field value.
      */
     public static void write(HttpHeaders headers, ResourceKind kind) {
-        for (String linkValue : kind.linkTypeValues()) {
-            headers.add(HttpHeaders.LINK, linkValue);
-        }
-        writeAllow(headers, kind);
+        writeTypeLinksAndAllow(headers, kind.linkTypeValues(), kind.allow());
         setIfPresent(headers, HttpConstants.ACCEPT_PUT, kind.acceptPut());
         setIfPresent(headers, HttpConstants.ACCEPT_POST, kind.acceptPost());
         setIfPresent(headers, HttpHeaders.ACCEPT_PATCH, kind.acceptPatch());
+    }
+
+    /**
+     * The same fields for a resource that has no {@link ResourceKind} row — in practice the
+     * generated storage description of Solid Protocol §4.1 (T2.9).
+     *
+     * <p>It has no row because it is not a stored resource: {@code ResourceKind} maps one-to-one
+     * onto core's {@code LdpKind}, and {@code ResourceKindTest} pins that. Inventing a kind for a
+     * resource the store does not hold would break that invariant to serve a formatting
+     * convenience. So the caller supplies the values and this supplies the one rendering, which
+     * is the half that was actually worth sharing.
+     *
+     * <p>No {@code Accept-*} companions: a caller with no kind has no write methods to describe,
+     * and Solid Protocol §5.2 requires those fields to correspond to methods listed in
+     * {@code Allow}. Omitting them here is what keeps that true by construction.
+     *
+     * @param allow                  the {@code Allow} field value, rendered by the caller from
+     *                               its own method list through {@code HttpConstants.allow}
+     * @param linkTypeValues         ready-to-emit {@code Link rel="type"} values
+     * @param storageDescriptionLink §4.1's storage-description {@code Link}
+     */
+    public static void write(HttpHeaders headers, String allow, List<String> linkTypeValues,
+                             String storageDescriptionLink) {
+        writeTypeLinksAndAllow(headers, linkTypeValues, allow);
+        headers.add(HttpHeaders.LINK, storageDescriptionLink);
+    }
+
+    /** The shared half: type links first, then {@code Allow} — one order for every caller. */
+    private static void writeTypeLinksAndAllow(HttpHeaders headers, List<String> linkTypeValues,
+                                               String allow) {
+        for (String linkValue : linkTypeValues) {
+            headers.add(HttpHeaders.LINK, linkValue);
+        }
+        headers.set(HttpHeaders.ALLOW, allow);
     }
 
     /**
