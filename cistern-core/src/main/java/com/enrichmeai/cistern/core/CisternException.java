@@ -41,6 +41,21 @@ public abstract class CisternException extends RuntimeException {
         public UnprocessableEntity(String message) { super(message); }
     }
 
+    /**
+     * No representation of the target resource matches the request's {@code Accept} header
+     * → 406 (RFC 9110 §15.5.7). Signalled by the read path when proactive negotiation
+     * cannot satisfy the client: an RDF source can only ever be served as
+     * {@code text/turtle} or {@code application/ld+json} (Solid Protocol §5.5), and a
+     * non-RDF source only as its stored media type.
+     *
+     * <p>Lives here rather than in the HTTP layer for the same reason
+     * {@link PreconditionFailed} does: handlers must not name status codes (ground rule 4),
+     * so the condition has to reach the single error mapper as a domain signal.
+     */
+    public static final class NotAcceptable extends CisternException {
+        public NotAcceptable(String message) { super(message); }
+    }
+
     /** Precondition (If-Match / If-None-Match) failed → 412. */
     public static final class PreconditionFailed extends CisternException {
         public PreconditionFailed(String message) { super(message); }

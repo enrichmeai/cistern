@@ -9,4 +9,38 @@
     <version>0.1.0-SNAPSHOT</version>
   </parent>
   <artifactId>cistern-webflux</artifactId>
+  <name>Cistern :: WebFlux</name>
+  <description>HTTP layer: functional routes, content negotiation, conditional requests, error
+    mapping. Thin by rule — LDP/Solid semantics live in cistern-core.</description>
+  <dependencies>
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <!-- Default backend wiring (@ConditionalOnMissingBean), so cistern-app is config
+           only. The starter (T7.1) is where backend selection should ultimately live. -->
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-storage-file</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webflux</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <!-- Boot 4 split WebTestClient support out of spring-boot-test-autoconfigure: the
+           @AutoConfigureWebTestClient annotation and its auto-configuration live here, and
+           @SpringBootTest no longer wires a WebTestClient without them. -->
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-webtestclient</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
 </project>

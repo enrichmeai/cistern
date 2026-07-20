@@ -1,6 +1,7 @@
 package com.enrichmeai.cistern.core.ldp;
 
 import com.enrichmeai.cistern.core.CisternException;
+import com.enrichmeai.cistern.core.CoreMessage;
 import com.enrichmeai.cistern.core.Representation;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.ResourceStore;
@@ -81,14 +82,55 @@ public final class LdpService {
         return Mono.defer(() -> {
             if (!container.isContainer()) {
                 return Mono.error(new IllegalArgumentException(
-                        "getContainer() requires a container identifier (trailing slash): "
-                                + container.uri()));
+                        CoreMessage.NOT_A_CONTAINER_IDENTIFIER.format(container.uri())));
             }
             return store.get(container)
                     .flatMap(stored -> store.children(container)
                             .collectList()
                             .map(children -> containerRepresentation(container, stored, children)));
         });
+    }
+
+    /**
+     * The read path every front-end uses (HTTP {@code GET}/{@code HEAD} in T2.1, MCP
+     * later): resolves one identifier to the content that must be served for it, together
+     * with the validators the caller needs for {@code ETag}/{@code Last-Modified}.
+     *
+     * <p>This is where "is this a graph or a byte stream?" is decided, because that is
+     * LDP/Solid semantics rather than transport detail (see {@link ResourceView}):
+     * <ul>
+     *   <li><b>Container</b> → {@link ResourceView.Rdf} carrying the same merged graph
+     *       {@link #getContainer} produces (derived {@code ldp:contains} + server-asserted
+     *       types, Solid Protocol §4.2). Containers are always RDF sources.</li>
+     *   <li><b>Document with an RDF media type</b> → {@link ResourceView.Rdf} carrying the
+     *       parsed graph, so the caller can satisfy {@code GET} in either
+     *       {@code text/turtle} or {@code application/ld+json} as Solid Protocol §5.5
+     *       requires. Parsing on read (rather than handing back stored bytes) is what makes
+     *       both serializations available from one code path.</li>
+     *   <li><b>Any other document</b> → {@link ResourceView.NonRdf} carrying the stored
+     *       representation untouched, to be served verbatim.</li>
+     * </ul>
+     *
+     * <p><b>Absence is an error signal here, unlike {@link #getContainer}.</b> The store
+     * reports absence as an empty Mono and {@link #getContainer} preserves that (it is the
+     * low-level graph accessor); {@code read} instead signals
+     * {@link CisternException.NotFound}. Rationale: {@code read} is the front-end-facing
+     * operation, and an empty Mono returned from a WebFlux handler means "no response was
+     * produced", which the framework — not Cistern's one error mapper (T2.6) — would turn
+     * into a bare 404. Making absence an explicit domain signal keeps every front-end
+     * (HTTP, MCP) on the same mapping and gives T2.6 a body to render.
+     *
+     * @param target the resource to read; container or document
+     * @return the view; signals {@link CisternException.NotFound} if no such resource
+     *         exists, and {@link IllegalStateException} if a stored RDF representation is
+     *         unparseable (server-side corruption → 500, never the reading client's
+     *         fault). Never throws synchronously.
+     */
+    public Mono<ResourceView> read(ResourceIdentifier target) {
+        return Mono.defer(() -> store.get(target)
+                .switchIfEmpty(Mono.error(() -> new CisternException.NotFound(
+                        CoreMessage.RESOURCE_NOT_FOUND.format(target.uri()))))
+                .flatMap(stored -> viewOf(target, stored)));
     }
 
     /**
@@ -127,12 +169,34 @@ public final class LdpService {
         Resource subject = body.createResource(target.uri().toString());
         if (body.listStatements(subject, Ldp.CONTAINS, (RDFNode) null).hasNext()) {
             throw new CisternException.Conflict(
-                    "Containment triples are server-managed (Solid Protocol §5.3): the request body"
-                            + " must not assert ldp:contains for <" + target.uri() + ">");
+                    CoreMessage.CONTAINMENT_SERVER_MANAGED.format(target.uri()));
         }
     }
 
     // ---------------------------------------------------------------- internals
+
+    /**
+     * Classifies one stored resource into a {@link ResourceView}. Containers take the same
+     * containment merge as {@link #getContainer} (one implementation, so a container read
+     * cannot differ between the two entry points); documents split on
+     * {@link Representation#isRdf()}.
+     */
+    private Mono<ResourceView> viewOf(ResourceIdentifier target, StoredResource stored) {
+        if (target.isContainer()) {
+            return store.children(target)
+                    .collectList()
+                    .map(children -> new ResourceView.Rdf(target, stored.etag(), stored.lastModified(),
+                            true, containerRepresentation(target, stored, children)));
+        }
+        if (stored.representation().isRdf()) {
+            // parseStored: CPU-bound, and a parse failure is server-side corruption (500),
+            // because stored bytes only get there through a validated write.
+            return Mono.fromCallable(() -> new ResourceView.Rdf(target, stored.etag(),
+                    stored.lastModified(), false, parseStored(stored, target)));
+        }
+        return Mono.just(new ResourceView.NonRdf(
+                target, stored.etag(), stored.lastModified(), stored.representation()));
+    }
 
     /** Pure CPU-bound merge, run inside the reactive chain via {@code map}. */
     private static Model containerRepresentation(
@@ -150,22 +214,22 @@ public final class LdpService {
     }
 
     /**
-     * Empty stored body → empty graph; otherwise parse with the container URI as base.
-     * A parse failure here is NOT the client's {@code BadInput}: stored container
-     * bodies only exist through validated writes, so unparseable stored state is a
-     * server fault, rethrown as {@link IllegalStateException} (→ 500, not 400).
+     * Empty stored body → empty graph; otherwise parse with the resource's own URI as base
+     * (RFC 3986 §5.1.3). A parse failure here is NOT the client's {@code BadInput}: stored
+     * bodies only exist through validated writes, so unparseable stored state is a server
+     * fault, rethrown as {@link IllegalStateException} (→ 500, not 400).
      */
-    private static Model parseStored(StoredResource stored, ResourceIdentifier container) {
+    private static Model parseStored(StoredResource stored, ResourceIdentifier resource) {
         Representation representation = stored.representation();
         if (representation.data().length == 0) {
             return ModelFactory.createDefaultModel();
         }
         try {
-            return RdfIo.parse(representation, container);
+            return RdfIo.parse(representation, resource);
         } catch (CisternException.BadInput e) {
             throw new IllegalStateException(
-                    "Stored representation for <" + container.uri() + "> is corrupt: "
-                            + e.getMessage(), e);
+                    CoreMessage.STORED_REPRESENTATION_CORRUPT.format(resource.uri(), e.getMessage()),
+                    e);
         }
     }
 
