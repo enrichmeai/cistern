@@ -154,9 +154,11 @@ public class ResourceWriteHandler {
     /**
      * Mirrors {@link ResourceReadHandler}'s handling of the kind table's absent entries. The
      * duplication is deliberate for this ticket: sharing it means reworking T2.1's response
-     * writer, which is out of scope here. Extracting one interface-metadata writer used by both
-     * handlers is the natural follow-up once {@code POST}/{@code DELETE}/{@code OPTIONS} land
-     * and there are five call sites instead of two.
+     * writer, which is out of scope here, and the values themselves come from the one
+     * {@link ResourceKind} table either way, so the two cannot advertise different interfaces.
+     * Extracting a single interface-metadata writer is the natural follow-up once {@code POST}
+     * and {@code OPTIONS} land — T2.4's {@code DELETE} does not emit these headers, so there
+     * are still only the two call sites today.
      */
     private static void setIfPresent(HttpHeaders headers, String name, String value) {
         if (value != null) {
