@@ -96,7 +96,7 @@ regression.
 - [ ] **T2.5 Conditional requests.** Honor `If-Match` (etag), `If-None-Match: *` (create-
   only PUT); mismatches → 412 before any store mutation; GET with `If-None-Match` matching
   → 304. DoD: tests prove the store is untouched on 412 (spy store).
-- [ ] **T2.6 Global error handler.** Single WebFlux error mapper: BadInput→400,
+- [x] **T2.6 Global error handler.** Single WebFlux error mapper: BadInput→400,
   AccessDenied→401/403 (401 iff unauthenticated), missing→404, Conflict→409,
   PreconditionFailed→412; RFC 9457 problem+json bodies. Remove any per-handler error
   logic that crept in. DoD: each mapping tested; no `.onErrorResume` in handlers.
