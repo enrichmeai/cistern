@@ -7,6 +7,9 @@ import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Guarantees {@code Vary: Origin} on every response (T2.8).
  *
@@ -47,13 +50,33 @@ public class OriginVaryFilter implements WebFilter {
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         ServerHttpResponse response = exchange.getResponse();
         response.beforeCommit(() -> {
-            HttpHeaders headers = response.getHeaders();
-            if (!variesByOrigin(headers)) {
-                headers.add(HttpHeaders.VARY, HttpHeaders.ORIGIN);
-            }
+            addOriginToVary(response.getHeaders());
             return Mono.empty();
         });
         return chain.filter(exchange);
+    }
+
+    /**
+     * Appends {@code Origin} to {@code Vary} unless it is already there.
+     *
+     * <p>Written as "replace the field with a new list" rather than the obvious
+     * {@code headers.add(VARY, ORIGIN)} because {@code add} mutates the existing value list in
+     * place, and that list is not always mutable: when a functional {@code ServerResponse}
+     * supplies the header, the list it copies in is immutable, so {@code add} raises
+     * {@code UnsupportedOperationException} — a 500 on every response a handler set {@code Vary}
+     * on. It is also environment-dependent, which is the dangerous part: Reactor Netty's header
+     * adapter hands back a mutable list, so the server ran fine under curl while the test suite
+     * failed. Copying first is correct in both.
+     */
+    private static void addOriginToVary(HttpHeaders headers) {
+        if (variesByOrigin(headers)) {
+            return;
+        }
+        List<String> existing = headers.get(HttpHeaders.VARY);
+        List<String> updated =
+                existing == null ? new ArrayList<>() : new ArrayList<>(existing);
+        updated.add(HttpHeaders.ORIGIN);
+        headers.put(HttpHeaders.VARY, updated);
     }
 
     /**
