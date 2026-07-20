@@ -5,12 +5,13 @@ import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.ResourceStore;
 import com.enrichmeai.cistern.core.StoredResource;
 import com.enrichmeai.cistern.core.ldp.Ldp;
+import com.enrichmeai.cistern.webflux.error.ProblemDocument;
+import com.enrichmeai.cistern.webflux.error.ProblemType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -55,12 +56,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>{@code HEAD} identical to {@code GET} minus the body — RFC 9110 §9.3.2.</li>
  * </ul>
  *
- * <p>The 4xx statuses come from {@link PlaceholderErrorMapping} until T2.6's real mapper
- * lands; the assertions themselves do not change when it does.
+ * <p>The 4xx responses are produced by T2.6's single error mapper
+ * ({@code CisternErrorWebExceptionHandler}), which the component scan picks up like any other
+ * production bean — there is no test stand-in. Each one is asserted as a full RFC 9457
+ * {@code application/problem+json} document, not merely as a status code, so this class also
+ * pins that the two halves compose: T2.1 signals a {@code CisternException} through the
+ * reactive chain and T2.6 renders it.
  */
 @SpringBootTest(properties = "cistern.base-url=http://localhost:3000")
 @AutoConfigureWebTestClient
-@Import(PlaceholderErrorMapping.class)
 class ResourceReadHttpTest {
 
     private static final String BASE = "http://localhost:3000";
@@ -146,6 +150,32 @@ class ResourceReadHttpTest {
         return new String(result.getResponseBodyContent(), StandardCharsets.UTF_8);
     }
 
+    /**
+     * Asserts a full RFC 9457 problem response rather than only a status code: the exact
+     * status, the {@code application/problem+json} media type, and every member of §3.1.
+     * Expected values are read off {@link ProblemType}, so a change to a title or a type URI
+     * cannot leave this asserting the old one.
+     */
+    private static WebTestClient.BodyContentSpec expectProblem(
+            WebTestClient.RequestHeadersSpec<?> request, ProblemType expected, String instance) {
+        return request.exchange()
+                .expectStatus().isEqualTo(expected.status())
+                .expectHeader().contentType(ProblemDocument.MEDIA_TYPE)
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(expected.status().value())
+                .jsonPath("$.type").isEqualTo(expected.uri().toString())
+                .jsonPath("$.title").isEqualTo(expected.title())
+                .jsonPath("$.detail").isNotEmpty()
+                .jsonPath("$.instance").isEqualTo(instance);
+    }
+
+    /** Asserts the problem {@code detail} quotes {@code expected} back to the client. */
+    private static void detailMentions(WebTestClient.BodyContentSpec problem, String expected) {
+        problem.consumeWith(result -> assertTrue(body(result).contains(expected),
+                "RFC 9457 §3.1.4: the detail must explain this occurrence, naming " + expected
+                        + "; got: " + body(result)));
+    }
+
     // ---------------------------------------------------------------- negotiation
 
     @Test
@@ -206,10 +236,14 @@ class ResourceReadHttpTest {
 
     @Test
     void unsatisfiableAcceptOnAnRdfSourceIsNotAcceptable() {
-        get("/notes/a.ttl")
-                .header(HttpHeaders.ACCEPT, "application/xml")
-                .exchange()
-                .expectStatus().isEqualTo(406);
+        // Composes the two halves end to end: ContentNegotiator signals NotAcceptable through
+        // the reactive chain (T2.1) and the single error mapper renders it (T2.6). Asserted as
+        // a whole problem document, because a bare "406" would also pass against a handler
+        // that wrote a status code itself — which ground rule 4 forbids.
+        detailMentions(expectProblem(
+                        get("/notes/a.ttl").header(HttpHeaders.ACCEPT, "application/xml"),
+                        ProblemType.NOT_ACCEPTABLE, "/notes/a.ttl"),
+                "application/xml");
     }
 
     @Test
@@ -506,10 +540,10 @@ class ResourceReadHttpTest {
 
     @Test
     void nonRdfResourceIsNotConvertedToTurtleOnRequest() {
-        get("/logo.png")
-                .header(HttpHeaders.ACCEPT, Representation.TURTLE)
-                .exchange()
-                .expectStatus().isEqualTo(406);
+        detailMentions(expectProblem(
+                        get("/logo.png").header(HttpHeaders.ACCEPT, Representation.TURTLE),
+                        ProblemType.NOT_ACCEPTABLE, "/logo.png"),
+                "image/png");
     }
 
     @Test
@@ -567,7 +601,16 @@ class ResourceReadHttpTest {
 
     @Test
     void headOfAMissingResourceIsNotFoundToo() {
-        client.head().uri(URI.create("/nope.ttl")).exchange().expectStatus().isNotFound();
+        // RFC 9110 §9.3.2: HEAD carries GET's header fields and no content, so the problem
+        // media type must still be announced even though the document itself is not sent.
+        EntityExchangeResult<byte[]> result = client.head().uri(URI.create("/nope.ttl"))
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectHeader().contentType(ProblemDocument.MEDIA_TYPE)
+                .expectBody().returnResult();
+
+        byte[] content = result.getResponseBodyContent();
+        assertTrue(content == null || content.length == 0, "HEAD MUST NOT send content");
     }
 
     // ---------------------------------------------------------------- slash semantics
@@ -596,14 +639,16 @@ class ResourceReadHttpTest {
     void containerUriDoesNotResolveToTheSameNamedDocument() {
         put("/only-document", turtle(""));
 
-        get("/only-document/").exchange().expectStatus().isNotFound();
+        expectProblem(get("/only-document/"), ProblemType.NOT_FOUND, "/only-document/");
     }
 
     // ---------------------------------------------------------------- rejected targets
 
     @Test
     void missingResourceIsNotFound() {
-        get("/nope.ttl").exchange().expectStatus().isNotFound();
+        // The other half of the compose check: a read of a resource the store does not hold
+        // becomes a 404 problem document, through the production routes over FileResourceStore.
+        expectProblem(get("/nope.ttl"), ProblemType.NOT_FOUND, "/nope.ttl");
     }
 
     @Test
@@ -611,16 +656,16 @@ class ResourceReadHttpTest {
         // FileResourceStore signals IllegalArgumentException for these (→ 500) and
         // ResourceIdentifier.isContainer() reads the DECODED path, so raw and decoded slash
         // structure would disagree. The HTTP layer refuses the target instead: 400, not 500.
-        get("/notes/a%2Fb.ttl").exchange().expectStatus().isBadRequest();
+        expectProblem(get("/notes/a%2Fb.ttl"), ProblemType.BAD_INPUT, "/notes/a%2Fb.ttl");
     }
 
     @Test
     void lowercaseEncodedSlashIsRejectedToo() {
-        get("/notes/a%2fb.ttl").exchange().expectStatus().isBadRequest();
+        expectProblem(get("/notes/a%2fb.ttl"), ProblemType.BAD_INPUT, "/notes/a%2fb.ttl");
     }
 
     @Test
     void emptyPathSegmentIsRejected() {
-        get("/notes//a.ttl").exchange().expectStatus().isBadRequest();
+        expectProblem(get("/notes//a.ttl"), ProblemType.BAD_INPUT, "/notes//a.ttl");
     }
 }

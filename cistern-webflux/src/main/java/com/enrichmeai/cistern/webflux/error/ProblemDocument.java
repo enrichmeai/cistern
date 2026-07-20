@@ -1,5 +1,6 @@
 package com.enrichmeai.cistern.webflux.error;
 
+import com.enrichmeai.cistern.webflux.WebfluxMessage;
 import java.net.URI;
 import java.util.Objects;
 import org.springframework.http.HttpStatus;

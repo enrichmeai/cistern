@@ -1,6 +1,7 @@
 package com.enrichmeai.cistern.webflux.error;
 
 import com.enrichmeai.cistern.core.CisternException;
+import com.enrichmeai.cistern.webflux.WebfluxMessage;
 import java.net.URI;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -38,6 +39,7 @@ final class ProblemMapper {
             CisternException.BadInput.class, ProblemType.BAD_INPUT,
             CisternException.UnprocessableEntity.class, ProblemType.UNPROCESSABLE_ENTITY,
             CisternException.NotFound.class, ProblemType.NOT_FOUND,
+            CisternException.NotAcceptable.class, ProblemType.NOT_ACCEPTABLE,
             CisternException.Conflict.class, ProblemType.CONFLICT,
             CisternException.PreconditionFailed.class, ProblemType.PRECONDITION_FAILED);
 

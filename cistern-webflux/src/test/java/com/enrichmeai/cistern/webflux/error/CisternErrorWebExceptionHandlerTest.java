@@ -2,6 +2,7 @@ package com.enrichmeai.cistern.webflux.error;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.enrichmeai.cistern.webflux.WebfluxMessage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,6 +63,12 @@ class CisternErrorWebExceptionHandlerTest {
     @DisplayName("NotFound → 404")
     void notFound() {
         assertTyped(Probe.NOT_FOUND, ProblemType.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("NotAcceptable → 406 (RFC 9110 §15.5.7); ContentNegotiator raises it")
+    void notAcceptable() {
+        assertTyped(Probe.NOT_ACCEPTABLE, ProblemType.NOT_ACCEPTABLE);
     }
 
     @Test

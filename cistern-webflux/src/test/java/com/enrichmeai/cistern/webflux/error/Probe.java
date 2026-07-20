@@ -17,6 +17,8 @@ enum Probe {
     UNPROCESSABLE_ENTITY("unprocessable-entity", "patch deletes a triple it does not bind",
             CisternException.UnprocessableEntity::new),
     NOT_FOUND("not-found", "no such resource", CisternException.NotFound::new),
+    NOT_ACCEPTABLE("not-acceptable", "this resource is an RDF source; Accept requested application/xml",
+            CisternException.NotAcceptable::new),
     CONFLICT("conflict", "cannot write containment triples", CisternException.Conflict::new),
     PRECONDITION_FAILED("precondition-failed", "If-Match did not match the current ETag",
             CisternException.PreconditionFailed::new),

@@ -1,14 +1,18 @@
 package com.enrichmeai.cistern.webflux;
 
 /**
- * cistern-webflux's message catalogue (ground rule 7): every exception message this module
- * produces is a constant here, never text inlined at a throw site.
+ * cistern-webflux's message catalogue (ground rule 7): every piece of human-readable text this
+ * module produces — exception messages, RFC 9457 problem titles and details, log lines — is a
+ * constant here, never text inlined at a throw or log site. One catalogue per module, so the
+ * {@code error} subpackage draws from this enum rather than keeping a second one.
  *
  * <p>Templates are {@link String#format} patterns. A literal percent sign must be doubled
  * ({@code %%}) — the request-target messages quote percent-encoded text, so this matters
  * here more than most places.
  */
-enum WebfluxMessage {
+public enum WebfluxMessage {
+
+    // ---------------------------------------------------------------- request targets
 
     /** Request-target that is not an absolute path — nothing to resolve against the base. */
     TARGET_NOT_ABSOLUTE("Request target must be an absolute path: %s"),
@@ -24,6 +28,8 @@ enum WebfluxMessage {
 
     /** Percent-escape or character that makes the request-target unparseable as a URI. */
     TARGET_MALFORMED("Malformed request target %s: %s"),
+
+    // ---------------------------------------------------------------- negotiation
 
     /** {@code Accept} that will not parse — the client's error, not the server's. */
     ACCEPT_MALFORMED("Malformed Accept header: %s"),
@@ -42,8 +48,50 @@ enum WebfluxMessage {
     STORED_CONTENT_TYPE_INVALID(
             "Stored content type for <%s> is not a valid media type: %s"),
 
+    // ---------------------------------------------------------------- configuration
+
     /** {@code cistern.base-url} must be usable as the base of every resource identifier. */
-    BASE_URL_INVALID("cistern.base-url must be an absolute URI without a fragment: %s");
+    BASE_URL_INVALID("cistern.base-url must be an absolute URI without a fragment: %s"),
+
+    // ---------------------------------------- RFC 9457 titles, one per problem type
+
+    // Titles are the RFC 9457 title member and so must not vary between occurrences of the
+    // same problem type (§3.1.3): they carry no format arguments. Occurrence-specific text
+    // belongs in detail, which comes from the domain exception. See ProblemType.
+
+    TITLE_BAD_INPUT("Malformed request entity"),
+    TITLE_UNPROCESSABLE_ENTITY("Request entity violates a protocol constraint"),
+    TITLE_NOT_FOUND("Resource not found"),
+
+    /** RFC 9110 §15.5.7 — nothing the server can produce matches the request's {@code Accept}. */
+    TITLE_NOT_ACCEPTABLE("No acceptable representation"),
+
+    TITLE_CONFLICT("Request conflicts with the state of the resource"),
+    TITLE_PRECONDITION_FAILED("Precondition failed"),
+    TITLE_AUTHENTICATION_REQUIRED("Authentication required"),
+    TITLE_ACCESS_DENIED("Access denied"),
+
+    // ---------------------------------------------------------------- problem details
+
+    /**
+     * The only detail any 5xx response ever carries. RFC 9457 §5 warns that problem details
+     * must not leak information about the system; the real cause goes to the log instead.
+     * Wording follows RFC 9110 §15.6.1's definition of 500 rather than describing the fault.
+     */
+    DETAIL_INTERNAL_ERROR(
+            "The server encountered an unexpected condition that prevented it from fulfilling the request."),
+
+    // ---------------------------------------------------------------- log lines
+
+    LOG_SERVER_ERROR("%s %s failed with %s"),
+    LOG_CLIENT_ERROR("%s %s rejected with %s: %s"),
+    /** Fires when a {@code CisternException} subtype exists that the registry has no row for. */
+    LOG_UNMAPPED_DOMAIN_ERROR(
+            "No problem type registered for %s — falling back to 500. Add a row to ProblemMapper.DOMAIN_PROBLEMS."),
+
+    // ---------------------------------------------------------------- programming errors
+
+    PROBLEM_MEMBER_REQUIRED("RFC 9457 member '%s' must not be null");
 
     private final String template;
 
@@ -51,8 +99,12 @@ enum WebfluxMessage {
         this.template = template;
     }
 
-    /** The message text with {@code args} substituted into this entry's template. */
-    String format(Object... args) {
+    /**
+     * The message text with {@code args} substituted into this entry's template. Always goes
+     * through {@link String#format}, including when called with no arguments, so a doubled
+     * {@code %%} resolves to one percent sign however the entry is used.
+     */
+    public String format(Object... args) {
         return String.format(template, args);
     }
 }

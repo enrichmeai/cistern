@@ -1,5 +1,6 @@
 package com.enrichmeai.cistern.webflux.error;
 
+import com.enrichmeai.cistern.webflux.WebfluxMessage;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

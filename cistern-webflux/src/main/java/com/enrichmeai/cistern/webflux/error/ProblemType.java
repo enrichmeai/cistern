@@ -1,5 +1,6 @@
 package com.enrichmeai.cistern.webflux.error;
 
+import com.enrichmeai.cistern.webflux.WebfluxMessage;
 import java.net.URI;
 import org.springframework.http.HttpStatus;
 
@@ -31,6 +32,13 @@ public enum ProblemType {
             WebfluxMessage.TITLE_UNPROCESSABLE_ENTITY),
 
     NOT_FOUND("not-found", HttpStatus.NOT_FOUND, WebfluxMessage.TITLE_NOT_FOUND),
+
+    /**
+     * RFC 9110 §15.5.7 — the resource has no representation the request's {@code Accept} will
+     * take. Raised by {@code ContentNegotiator}: an RDF source can only be Turtle or JSON-LD
+     * (Solid Protocol §5.5), and a non-RDF source is served verbatim or not at all.
+     */
+    NOT_ACCEPTABLE("not-acceptable", HttpStatus.NOT_ACCEPTABLE, WebfluxMessage.TITLE_NOT_ACCEPTABLE),
 
     /** Solid Protocol §5.3 (containment-triple writes) and §5.4 (non-empty container delete). */
     CONFLICT("conflict", HttpStatus.CONFLICT, WebfluxMessage.TITLE_CONFLICT),
