@@ -84,9 +84,15 @@ regression.
   `Link: <...ldp#Resource>; rel="type"` (+BasicContainer for containers); ETag,
   Last-Modified, Allow, Accept-Put/Post/Patch headers; HEAD = GET minus body. Non-RDF
   resources served verbatim. DoD: WebTestClient tests per header; curl transcript in PR.
-- [ ] **T2.2 PUT.** Create/replace with intermediate containers; enforce slash semantics
+- [x] **T2.2 PUT.** Create/replace with intermediate containers; enforce slash semantics
   (PUT to `/foo/` with non-container body or kind-flip → 409 via Conflict); created → 201,
   replaced → 204/200. DoD: WebTestClient matrix create/replace/kind-flip/nested.
+  Write orchestration is `LdpService.put` → `WriteOutcome(WriteEffect, ResourceView)`;
+  replaced → **204** and created → **201 without `Location`** (RFC 9110 §9.3.4, §15.3.2).
+  `ETag` on document writes only — RFC 9110 §9.3.4 forbids a validator when the served
+  representation is not the content received, which a container's derived `ldp:contains`
+  makes true (§4.2). Media types are canonicalized on write (`text/turtle;charset=utf-8`
+  → `text/turtle`), which parameters on non-RDF types do not survive — see #60.
 - [ ] **T2.3 POST to container.** Slug header honored (sanitized), collision → server picks
   a fresh name (never overwrite); generated name is a UUID-ish short id; `Location` header
   on 201; POST with `Link: ...BasicContainer; rel="type"` creates a child container. POST
