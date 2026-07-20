@@ -48,6 +48,20 @@ public enum WebfluxMessage {
     STORED_CONTENT_TYPE_INVALID(
             "Stored content type for <%s> is not a valid media type: %s"),
 
+    // ---------------------------------------------------------------- write requests
+
+    /** Solid Protocol §2.1 mandates 400 for a content-bearing write with no Content-Type. */
+    CONTENT_TYPE_REQUIRED(
+            "A write request must declare the media type of its body in the Content-Type"
+                    + " header field (Solid Protocol §2.1)"),
+
+    /** {@code Content-Type} that will not parse — the client's error, not the server's. */
+    CONTENT_TYPE_MALFORMED("Malformed Content-Type header: %s"),
+
+    /** RFC 9110 §8.3: Content-Type names what the body IS; a range names what is acceptable. */
+    CONTENT_TYPE_NOT_CONCRETE(
+            "Content-Type must name a concrete media type, not a range: %s"),
+
     // ---------------------------------------------------------------- configuration
 
     /** {@code cistern.base-url} must be usable as the base of every resource identifier. */

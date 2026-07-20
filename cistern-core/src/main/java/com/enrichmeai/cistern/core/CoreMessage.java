@@ -30,6 +30,17 @@ public enum CoreMessage {
     STORAGE_ROOT_NOT_DELETABLE(
             "The storage's root container cannot be deleted (Solid Protocol §5.4): <%s>"),
 
+    /**
+     * A container's representation is an RDF source (Solid Protocol §4.2), so a write that
+     * offers it any other media type conflicts with what the target resource is. RFC 9110
+     * §9.3.4 names the two acceptable refusals for a representation "inconsistent with the
+     * target resource" — 409 or 415 — and Solid's slash semantics make this the same
+     * container/document conflict as a kind flip, so it is a Conflict.
+     */
+    CONTAINER_REQUIRES_RDF_BODY(
+            "<%s> is a container and its representation is an RDF source (Solid Protocol §4.2):"
+                    + " it cannot be written as \"%s\"; use %s or %s"),
+
     /** Stored bytes that will not parse: server-side corruption, never a client fault. */
     STORED_REPRESENTATION_CORRUPT("Stored representation for <%s> is corrupt: %s");
 
