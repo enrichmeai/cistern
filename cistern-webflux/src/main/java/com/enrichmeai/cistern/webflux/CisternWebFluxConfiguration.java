@@ -101,6 +101,22 @@ public class CisternWebFluxConfiguration {
     }
 
     /**
+     * The patch route (T2.7), one bean per method for the reason T2.4 gives above.
+     *
+     * <p>{@code /**} with no {@code contentType} predicate, deliberately. Restricting the route
+     * to {@code text/n3} would let the framework answer a wrongly-typed {@code PATCH} — as a 404
+     * for an unmatched route, or a 415 with an {@code Accept} field instead of the
+     * {@code Accept-Patch} RFC 5789 §2.2 asks for. Routing every {@code PATCH} to the handler
+     * keeps that refusal a decision Cistern makes and the single error mapper renders.
+     */
+    @Bean
+    public RouterFunction<ServerResponse> cisternPatchRoutes(ResourcePatchHandler handler) {
+        return RouterFunctions.route(
+                RequestPredicates.method(HttpMethod.PATCH).and(RequestPredicates.path(ALL_PATHS)),
+                handler::patch);
+    }
+
+    /**
      * The LDP/Solid semantics layer over whichever {@link ResourceStore} is configured.
      * Conditional so an embedder can supply its own.
      */

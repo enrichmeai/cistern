@@ -1,5 +1,6 @@
 package com.enrichmeai.cistern.webflux;
 
+import com.enrichmeai.cistern.core.rdf.N3Patch;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 
@@ -22,8 +23,13 @@ final class HttpConstants {
     /** Solid Protocol §5.2 — media types acceptable in a {@code PUT} to this resource. */
     static final String ACCEPT_PUT = "Accept-Put";
 
-    /** N3 Patch documents (Solid Protocol §5.3.2), wired to {@code PATCH} by T2.7. */
-    static final String TEXT_N3 = "text/n3";
+    /**
+     * N3 Patch documents (Solid Protocol §5.3.1), served by T2.7's {@code PATCH}. Taken from
+     * core's patch engine rather than spelled again here: the media type this server advertises
+     * in {@code Accept-Patch} and the one {@link N3Patch#parse} will actually accept are one
+     * fact, and a second literal is a second thing to get wrong.
+     */
+    static final String TEXT_N3 = N3Patch.MEDIA_TYPE;
 
     /**
      * RFC 5023 §9.7 — the client's name hint on a {@code POST}, adopted by LDP §5.2.3.10. Not a

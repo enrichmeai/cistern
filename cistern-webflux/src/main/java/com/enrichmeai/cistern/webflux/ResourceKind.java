@@ -157,7 +157,7 @@ public enum ResourceKind {
      * {@code ResourceKindTest} asserts one row per {@link LdpKind}, so adding a kind in core
      * without giving it an interface here fails the build rather than a request.
      */
-    static ResourceKind forKind(LdpKind kind) {
+    public static ResourceKind forKind(LdpKind kind) {
         return BY_LDP_KIND.get(kind);
     }
 
