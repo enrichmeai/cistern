@@ -48,6 +48,16 @@ public enum ProblemType {
     METHOD_NOT_ALLOWED("method-not-allowed", HttpStatus.METHOD_NOT_ALLOWED,
             WebfluxMessage.TITLE_METHOD_NOT_ALLOWED),
 
+    /**
+     * RFC 9110 §15.5.16 — the content is in a media type the target resource does not accept for
+     * this method. Raised for a {@code PATCH} body that is not {@code text/n3} (T2.7): Solid
+     * Protocol §5.3.1 identifies an N3 Patch by that media type alone, and RFC 5789 §2.2 names
+     * 415 as the status for "a patch document format that the server does not support". The
+     * response carries {@code Accept-Patch}, which {@link ProblemMapper} attaches.
+     */
+    UNSUPPORTED_MEDIA_TYPE("unsupported-media-type", HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+            WebfluxMessage.TITLE_UNSUPPORTED_MEDIA_TYPE),
+
     /** Solid Protocol §5.3 (containment-triple writes) and §5.4 (non-empty container delete). */
     CONFLICT("conflict", HttpStatus.CONFLICT, WebfluxMessage.TITLE_CONFLICT),
 

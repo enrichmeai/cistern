@@ -1,6 +1,8 @@
 package com.enrichmeai.cistern.webflux.error;
 
 import com.enrichmeai.cistern.core.CisternException;
+import com.enrichmeai.cistern.core.ldp.LdpKind;
+import com.enrichmeai.cistern.core.rdf.N3Patch;
 import com.enrichmeai.cistern.webflux.ResourceKind;
 import com.enrichmeai.cistern.webflux.WebfluxMessage;
 import java.net.URI;
@@ -8,6 +10,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.server.ServerWebExchange;
@@ -31,9 +34,6 @@ final class ProblemMapper {
 
     private static final Logger log = LoggerFactory.getLogger(ProblemMapper.class);
 
-    /** Solid Protocol §3.1: a URI path ending with this separator denotes a container. */
-    private static final String CONTAINER_SUFFIX = "/";
-
     /**
      * Exception class → problem type, for every {@link CisternException} subtype whose status
      * depends on nothing but its class. {@code AccessDenied} is deliberately absent:
@@ -45,6 +45,7 @@ final class ProblemMapper {
             CisternException.NotFound.class, ProblemType.NOT_FOUND,
             CisternException.NotAcceptable.class, ProblemType.NOT_ACCEPTABLE,
             CisternException.MethodNotAllowed.class, ProblemType.METHOD_NOT_ALLOWED,
+            CisternException.UnsupportedMediaType.class, ProblemType.UNSUPPORTED_MEDIA_TYPE,
             CisternException.Conflict.class, ProblemType.CONFLICT,
             CisternException.PreconditionFailed.class, ProblemType.PRECONDITION_FAILED);
 
@@ -94,67 +95,58 @@ final class ProblemMapper {
      * knows nothing about HTTP — so where a status has a required header, this is where it is
      * supplied.
      *
-     * <p>Only 405 has one: RFC 9110 §15.5.6 — "The origin server MUST generate an
-     * {@code Allow} header field in a 405 response containing a list of the target resource's
-     * currently supported methods." The value is {@link ResourceKind}'s, so a 405's
-     * {@code Allow} and the {@code Allow} on a successful read of the same resource are one
-     * table entry rather than two literals that can drift — which Solid Protocol §5.4 requires
-     * for the root ("Server MUST exclude the {@code DELETE} method in the field value of the
-     * {@code Allow} header field, in response to requests to these resources").
+     * <p>Two statuses have one:
+     * <ul>
+     *   <li><b>405 → {@code Allow}.</b> RFC 9110 §15.5.6: "The origin server MUST generate an
+     *       {@code Allow} header field in a 405 response containing a list of the target
+     *       resource's currently supported methods." The value is {@link ResourceKind}'s, so a
+     *       405's {@code Allow} and the {@code Allow} on a successful read of the same resource
+     *       are one table entry rather than two literals that can drift — which Solid Protocol
+     *       §5.4 requires for the root ("Server MUST exclude the {@code DELETE} method in the
+     *       field value of the {@code Allow} header field, in response to requests to these
+     *       resources").</li>
+     *   <li><b>415 on a {@code PATCH} → {@code Accept-Patch}.</b> RFC 5789 §2.2: a 415 for an
+     *       unsupported patch document "SHOULD include an {@code Accept-Patch} response header
+     *       ... to notify the client what patch document media types are supported". Scoped to
+     *       {@code PATCH} because RFC 5789 §3.1 makes the field's presence "an implicit
+     *       indication that PATCH is allowed on the resource", so emitting it on some future
+     *       415 from another method would assert something this response does not know.</li>
+     * </ul>
      *
-     * <p>T2.3 brought the second such resource this method's earlier note predicted: a
-     * {@code POST} to a document is a 405 (Solid Protocol §5.3 confines creation by {@code POST}
-     * to paths ending in {@code /}), and answering it with the storage root's {@code Allow} would
-     * have listed {@code POST} in the refusal of a {@code POST} — a self-contradicting response.
-     * See {@link #allowedMethods} for how the kind is chosen without the exception having to
-     * carry it.
+     * <h2>The {@code Allow} is core's answer now, not a guess from the path (T2.7)</h2>
+     * This method used to derive the kind from the request path, which was exact only while
+     * {@code PATCH} was unimplemented: a document's {@code Allow} was the same whether it held a
+     * graph or a JPEG. It no longer is, and no amount of looking at the URI can say which a path
+     * names — Solid Protocol §3.1 puts only the container/document split in the trailing slash.
+     * So {@link CisternException.MethodNotAllowed} carries the {@link LdpKind} of the resource
+     * that refused, and this maps it through the one table. A refusal now advertises exactly
+     * what a successful read of the same resource advertises, for every kind, which is what
+     * Solid Protocol §5.2 asks of {@code Allow} and its {@code Accept-*} companions.
+     *
+     * <p><b>One source of truth with T2.5's precondition gate.</b> The value read here is
+     * {@link ResourceKind#allow()}, <em>derived</em> from the same {@code List<HttpMethod>} that
+     * {@code ResourceKind.permits} answers from — and that is what {@code ConditionalRequests}
+     * consults to decide whether RFC 9110 §13.2.1 requires a request's preconditions to be
+     * ignored because the answer would be a 405 regardless. So the {@code Allow} on a refusal and
+     * the applicability of a precondition cannot disagree; they are one list.
+     * {@code ResourceKindTest} pins that invariant rather than leaving it to inspection.
      */
     private static HttpHeaders domainHeaders(CisternException error, ServerWebExchange exchange) {
-        if (!(error instanceof CisternException.MethodNotAllowed)) {
-            return HttpHeaders.EMPTY;
+        if (error instanceof CisternException.MethodNotAllowed methodNotAllowed) {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.ALLOW, ResourceKind.forKind(methodNotAllowed.kind()).allow());
+            return headers;
         }
-        HttpHeaders headers = new HttpHeaders();
-        headers.set(HttpHeaders.ALLOW, allowedMethods(exchange));
-        return headers;
-    }
-
-    /**
-     * The {@code Allow} field value for a resource known only by its request path.
-     *
-     * <p>Solid Protocol §3.1 makes the trailing slash decide the container/document split, so the
-     * path alone separates the two resources that can raise a {@link
-     * CisternException.MethodNotAllowed} today: the storage root refusing {@code DELETE} (§5.4)
-     * and a document refusing {@code POST} (§5.3). Reading it from the exchange keeps a
-     * {@code CisternException} free of HTTP, which is the whole point of the type.
-     *
-     * <p>{@link ResourceKind#NON_RDF_DOCUMENT} is the document row rather than
-     * {@link ResourceKind#RDF_DOCUMENT} because the two differ only in {@code PATCH}, the path
-     * cannot say which applies, and RFC 9110 §10.2.1 defines {@code Allow} as the methods the
-     * resource supports — so the row that claims only what every document supports is the one
-     * that cannot over-advertise. {@code PATCH} is not served until T2.7, which is when this
-     * needs to become exact; at that point the distinction is a fact only core holds, and the
-     * exception will have to carry it.
-     *
-     * <p><b>One source of truth with T2.5's precondition gate.</b> This reads
-     * {@link ResourceKind#allow()}, which since T2.5 is <em>derived</em> from the same
-     * {@code List<HttpMethod>} that {@code ResourceKind.permits} answers from — and that is what
-     * {@code ConditionalRequests} consults to decide whether RFC 9110 §13.2.1 requires a
-     * request's preconditions to be ignored because the answer would be a 405 regardless. So the
-     * {@code Allow} on a refusal and the applicability of a precondition cannot disagree; they
-     * are one list. {@code ResourceKindTest} pins that invariant rather than leaving it to
-     * inspection.
-     *
-     * <p>What is still duplicated is narrower and deliberate: the container/document split is
-     * decided here from the raw path, while {@link ResourceKind#ofContainer} decides it from a
-     * {@link com.enrichmeai.cistern.core.ResourceIdentifier}. The mapper has no identifier —
-     * only an exchange — so unifying the two belongs with the interface-metadata consolidation
-     * tracked in #60, not with a ticket that would have to invent a base URL here to do it.
-     */
-    private static String allowedMethods(ServerWebExchange exchange) {
-        boolean container = exchange.getRequest().getPath().value().endsWith(CONTAINER_SUFFIX);
-        return container
-                ? ResourceKind.STORAGE_ROOT.allow()
-                : ResourceKind.NON_RDF_DOCUMENT.allow();
+        if (error instanceof CisternException.UnsupportedMediaType
+                && HttpMethod.PATCH.equals(exchange.getRequest().getMethod())) {
+            HttpHeaders headers = new HttpHeaders();
+            // N3Patch.MEDIA_TYPE rather than a literal or the webflux constant: core's patch
+            // engine defines the media type it accepts, so what the 415 tells the client to
+            // retry with is the very string the parser matches against.
+            headers.set(HttpHeaders.ACCEPT_PATCH, N3Patch.MEDIA_TYPE);
+            return headers;
+        }
+        return HttpHeaders.EMPTY;
     }
 
     private ProblemDocument domain(CisternException error, URI instance, ServerWebExchange exchange) {

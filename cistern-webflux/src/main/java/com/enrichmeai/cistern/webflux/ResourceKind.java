@@ -2,12 +2,16 @@ package com.enrichmeai.cistern.webflux;
 
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.ldp.Ldp;
+import com.enrichmeai.cistern.core.ldp.LdpKind;
 import com.enrichmeai.cistern.core.ldp.ResourceView;
 import org.apache.jena.rdf.model.Resource;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * The three kinds of resource Cistern serves, and the interface metadata each advertises.
@@ -47,6 +51,19 @@ import java.util.List;
  * describes the resource, and splitting the table across five tickets would guarantee it
  * drifts.
  *
+ * <h2>One row per {@link LdpKind} (T2.7)</h2>
+ * This enum is the HTTP <em>interface</em> of a resource kind; {@link LdpKind} in cistern-core
+ * is the kind itself. Every row names the core constant it describes, and {@link #forKind}
+ * is the only way a kind becomes an interface — so the HTTP layer never decides what a
+ * resource is, it only looks up what that resource advertises.
+ *
+ * <p>Before T2.7 the two could be conflated, because the container/document split is visible in
+ * the URI (Solid Protocol §3.1). {@code PATCH} ended that: {@link #RDF_DOCUMENT} and
+ * {@link #NON_RDF_DOCUMENT} differ by {@code PATCH} and {@code Accept-Patch} alone, and no
+ * amount of looking at a path can tell them apart — only the stored media type can, which is
+ * core's fact. Hence the kind travels here from core, on the {@code ResourceView} for a
+ * successful response and on {@code CisternException.MethodNotAllowed} for a 405.
+ *
  * <p>T2.4 resolved the nuance T2.1 parked here — the storage root refuses {@code DELETE} — by
  * making it a kind of its own ({@link #STORAGE_ROOT}) rather than a special case at one call
  * site. Solid Protocol §5.4 requires both halves of that, and requiring them of every response
@@ -57,6 +74,7 @@ public enum ResourceKind {
 
     /** An LDP Basic Container (Solid Protocol §3.1: a path ending in a slash). */
     CONTAINER(
+            LdpKind.CONTAINER,
             List.of(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
                     HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE),
             RdfSerialization.mediaTypeList(),
@@ -77,6 +95,7 @@ public enum ResourceKind {
      * sentence exists to forbid.
      */
     STORAGE_ROOT(
+            LdpKind.STORAGE_ROOT,
             List.of(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
                     HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH),
             RdfSerialization.mediaTypeList(),
@@ -86,6 +105,7 @@ public enum ResourceKind {
 
     /** A document stored as one of the RDF media types: patchable, not postable to. */
     RDF_DOCUMENT(
+            LdpKind.RDF_DOCUMENT,
             List.of(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
                     HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE),
             MediaType.ALL_VALUE,
@@ -95,6 +115,7 @@ public enum ResourceKind {
 
     /** A binary document: replaceable and deletable, but there is no graph to patch. */
     NON_RDF_DOCUMENT(
+            LdpKind.NON_RDF_DOCUMENT,
             List.of(HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS,
                     HttpMethod.PUT, HttpMethod.DELETE),
             MediaType.ALL_VALUE,
@@ -102,6 +123,12 @@ public enum ResourceKind {
             null,
             List.of(Ldp.RESOURCE));
 
+    /** One row per {@link LdpKind}, so {@link #forKind} is total and needs no default. */
+    private static final Map<LdpKind, ResourceKind> BY_LDP_KIND =
+            Arrays.stream(values()).collect(Collectors.toUnmodifiableMap(
+                    ResourceKind::ldpKind, kind -> kind));
+
+    private final LdpKind ldpKind;
     private final List<HttpMethod> methods;
     private final String allow;
     private final String acceptPut;
@@ -109,8 +136,9 @@ public enum ResourceKind {
     private final String acceptPatch;
     private final List<String> linkTypeValues;
 
-    ResourceKind(List<HttpMethod> methods, String acceptPut, String acceptPost,
+    ResourceKind(LdpKind ldpKind, List<HttpMethod> methods, String acceptPut, String acceptPost,
                  String acceptPatch, List<Resource> types) {
+        this.ldpKind = ldpKind;
         this.methods = List.copyOf(methods);
         this.allow = HttpConstants.allow(this.methods);
         this.acceptPut = acceptPut;
@@ -121,11 +149,20 @@ public enum ResourceKind {
                 .toList();
     }
 
+    /**
+     * The interface metadata for a resource whose kind core has already decided — the seam
+     * T2.7 introduced so the HTTP layer never re-derives the kind from a URI.
+     *
+     * <p>Total by construction: {@link #BY_LDP_KIND} is built from the rows themselves, and
+     * {@code ResourceKindTest} asserts one row per {@link LdpKind}, so adding a kind in core
+     * without giving it an interface here fails the build rather than a request.
+     */
+    public static ResourceKind forKind(LdpKind kind) {
+        return BY_LDP_KIND.get(kind);
+    }
+
     static ResourceKind of(ResourceView view) {
-        if (view.container()) {
-            return ofContainer(view.identifier());
-        }
-        return view instanceof ResourceView.Rdf ? RDF_DOCUMENT : NON_RDF_DOCUMENT;
+        return forKind(LdpKind.of(view));
     }
 
     /**
@@ -137,7 +174,12 @@ public enum ResourceKind {
      * the distinction is drawn here rather than at each header-emitting site.
      */
     static ResourceKind ofContainer(ResourceIdentifier container) {
-        return container.isStorageRoot() ? STORAGE_ROOT : CONTAINER;
+        return forKind(LdpKind.ofContainer(container));
+    }
+
+    /** The core-side fact this row describes the HTTP interface of. */
+    LdpKind ldpKind() {
+        return ldpKind;
     }
 
     /**

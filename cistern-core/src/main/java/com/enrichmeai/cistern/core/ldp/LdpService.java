@@ -6,6 +6,7 @@ import com.enrichmeai.cistern.core.Representation;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.ResourceStore;
 import com.enrichmeai.cistern.core.StoredResource;
+import com.enrichmeai.cistern.core.rdf.N3Patch;
 import com.enrichmeai.cistern.core.rdf.RdfIo;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
@@ -25,8 +26,8 @@ import java.util.Optional;
  * LDP/Solid semantics over a {@link ResourceStore} — the single service the HTTP layer
  * (and the MCP front-end) call. It owns the containment layer (container reads and the
  * write guard for server-managed containment triples, T1.4), the read path {@link #read}
- * (T2.1), the {@code PUT} write path {@link #put} (T2.2) and {@link #delete} (T2.4). Patch
- * orchestration joins them later in Phase 2.
+ * (T2.1), the {@code PUT} write path {@link #put} (T2.2), {@link #delete} (T2.4) and the
+ * {@code PATCH} path {@link #patch} (T2.7).
  *
  * <p>Front-ends stay thin because the LDP decisions live here, not in a handler: what a
  * resource contains, whether a body may be stored against it, and whether a write created or
@@ -245,8 +246,12 @@ public final class LdpService {
     public Mono<Void> delete(ResourceIdentifier target) {
         return Mono.defer(() -> {
             if (target.isStorageRoot()) {
+                // LdpKind.STORAGE_ROOT is known from the identifier alone, so the refusal needs
+                // no read: §5.4's "MUST exclude DELETE from the Allow header field" is a
+                // property of being the root, which is exactly what this kind encodes.
                 return Mono.error(new CisternException.MethodNotAllowed(
-                        CoreMessage.STORAGE_ROOT_NOT_DELETABLE.format(target.uri())));
+                        CoreMessage.STORAGE_ROOT_NOT_DELETABLE.format(target.uri()),
+                        LdpKind.STORAGE_ROOT));
             }
             return store.delete(target);
         });
@@ -455,13 +460,130 @@ public final class LdpService {
                                     CoreMessage.POST_TARGET_NOT_FOUND.format(container.uri())));
                         }
                         if (!container.isContainer()) {
-                            return Mono.error(new CisternException.MethodNotAllowed(
-                                    CoreMessage.POST_TARGET_NOT_A_CONTAINER.format(container.uri())));
+                            // The kind is looked up only on this refusal path, so an ordinary
+                            // POST still costs one existence check: the happy path never needs
+                            // to know whether the target is RDF, and this one cannot be answered
+                            // without asking (T2.7 — the URI does not distinguish a graph from a
+                            // JPEG, and the 405's Allow differs between them by PATCH).
+                            return kindOfExisting(container).flatMap(kind -> Mono.<ResourceView>error(
+                                    new CisternException.MethodNotAllowed(
+                                            CoreMessage.POST_TARGET_NOT_A_CONTAINER.format(
+                                                    container.uri()), kind)));
                         }
                         return freeChild(container, slug.map(Slug::value), model, NAME_ATTEMPTS)
                                 .flatMap(child -> put(child, representation))
                                 .map(WriteOutcome::view);
                     });
+        });
+    }
+
+    /**
+     * The patch path every front-end uses (HTTP {@code PATCH} in T2.7, MCP later): applies an
+     * N3 Patch document (T1.5) to the target's graph and stores the result, reporting whether
+     * the write created the resource or modified it.
+     *
+     * <h2>The three steps, and where each rule comes from</h2>
+     * Solid Protocol §5.3.1 states the algorithm; this method is that sentence-for-sentence,
+     * with the parsing and application already implemented by {@link N3Patch}:
+     * <ol>
+     *   <li><b>Parse the patch document</b> — {@link N3Patch#parse}, which owns the
+     *       400/422 split the spec's constraints require and this method deliberately does not
+     *       re-derive.</li>
+     *   <li><b>"Start from the RDF dataset in the target document, or an empty RDF dataset if
+     *       the target resource does not exist yet"</b> — hence {@code defaultIfEmpty} on an
+     *       empty model rather than a {@link CisternException.NotFound}. This is the whole
+     *       reason a patch can create.</li>
+     *   <li><b>Apply, then store</b> — {@link N3Patch#applyTo} owns the three 409s (no mapping,
+     *       multiple mappings, deleting a triple that is absent).</li>
+     * </ol>
+     *
+     * <h2>Patching a resource that does not exist creates it</h2>
+     * Four sentences of the spec say so together, which is why this is not read as an
+     * extrapolation from {@code PUT}:
+     * <ul>
+     *   <li>§5.3.1's processing step quoted above starts a patch of an absent resource from the
+     *       empty dataset instead of failing it.</li>
+     *   <li>§5.5: "When a server creates an RDF source on HTTP {@code PUT}, {@code POST}, or
+     *       {@code PATCH} requests, the server MUST satisfy {@code GET} requests on this
+     *       resource ..." — a server that could not create by {@code PATCH} could not have this
+     *       obligation.</li>
+     *   <li>§5.3, URI Allocation: "Clients can use {@code PUT} and {@code PATCH} requests to
+     *       assign a URI to a resource."</li>
+     *   <li>§5.3: "Servers MUST create intermediate containers and include corresponding
+     *       containment triples in container representations derived from the URI path
+     *       component of {@code PUT} and {@code PATCH} requests" — the path to a patched
+     *       resource is built, so the resource at the end of it is too. That half is free here:
+     *       the write goes through {@link #put}, so the store creates intermediates exactly as
+     *       it does for a {@code PUT}.</li>
+     * </ul>
+     *
+     * <h2>What a patch may not touch</h2>
+     * §5.3: "Servers MUST NOT allow HTTP {@code PUT} or {@code PATCH} on a container to update
+     * its containment triples; if the server receives such a request, it MUST respond with a
+     * {@code 409} status code." Both directions of "update" end in that 409, and neither is
+     * checked against the patch <em>document</em> — which is the point, since a patch can insert
+     * a containment triple that appears nowhere in its own text (an insertion whose terms come
+     * from variables the {@code where} clause bound):
+     * <ul>
+     *   <li><b>Inserting</b> containment is caught by {@link #rejectServerManagedTriples}
+     *       running on the <b>result</b> graph. It runs there because the write is delegated to
+     *       {@link #put}, whose guard sees the graph that is actually about to be stored, so a
+     *       patch cannot smuggle past a check that only read its input.</li>
+     *   <li><b>Deleting</b> containment is caught by {@link N3Patch#applyTo}'s deletes-absent
+     *       rule, because the base graph a patch is applied to excludes the derived triples (see
+     *       below) — so the triple is not there to delete, and the answer is the same 409.</li>
+     * </ul>
+     *
+     * <h2>A container is patched against its stored triples, not its served representation</h2>
+     * A container's <em>served</em> graph includes {@code ldp:contains} triples derived from its
+     * live children and the server-asserted LDP types (§4.2), none of which is stored. The base
+     * graph here is the stored, client-authored triples only — {@link #stripServerManaged} is
+     * applied for the same defense-in-depth reason {@link #getContainer} applies it.
+     *
+     * <p>The alternative reading — patch the merged graph, then strip before storing — was
+     * rejected because it makes the spec's mandated 409 unreachable and replaces it with silence:
+     * every container with at least one child would either fail every patch (the result always
+     * contains derived containment, so the §5.3 guard would fire on a patch that never mentioned
+     * it) or, if the guard were relaxed, would report success for a deletion of a containment
+     * triple that the next read re-derives anyway. Excluding the derived triples makes both
+     * attempted containment updates the 409 the spec asks for, and costs only that a
+     * {@code where} clause cannot match on containment — flagged for the architect rather than
+     * settled here.
+     *
+     * <h2>The stored media type survives the patch</h2>
+     * A patched JSON-LD document is stored as JSON-LD and a patched Turtle document as Turtle:
+     * the patch changes the graph, and nothing in the request says anything about the
+     * serialization. RFC 5789 §2 is explicit that it must not — "entity-headers contained in the
+     * request apply only to the contained patch document and MUST NOT be applied to the resource
+     * being modified ... this document does not specify a way to modify a document's
+     * Content-Type". A resource created by a patch has no previous type to keep, so it is stored
+     * as {@code text/turtle}; §5.5 makes both RDF serializations available on {@code GET}
+     * regardless of which one is stored.
+     *
+     * <p>Unlike {@link #put}, the bytes stored here are Cistern's serialization of the patched
+     * graph rather than the client's own: a patch document is not a representation, so there is
+     * no client byte sequence for this resource to preserve.
+     *
+     * @param target        the resource to patch; container or document, existing or not
+     * @param patchDocument the {@code text/n3} patch document
+     * @return the effect plus the post-write {@link ResourceView}. Signals
+     *         {@link CisternException.BadInput} (400) for a malformed patch document,
+     *         {@link CisternException.UnprocessableEntity} (422) for one that breaches §5.3.1's
+     *         constraints, {@link CisternException.Conflict} (409) for a patch that cannot be
+     *         applied to this graph or that asserts the target's containment, and
+     *         {@link CisternException.MethodNotAllowed} (405) for a non-RDF target. Never throws
+     *         synchronously.
+     */
+    public Mono<WriteOutcome> patch(ResourceIdentifier target, Representation patchDocument) {
+        return Mono.defer(() -> {
+            Objects.requireNonNull(target, "target");
+            Objects.requireNonNull(patchDocument, "patchDocument");
+            N3Patch patch = N3Patch.parse(patchDocument, target);
+            return store.get(target)
+                    .map(stored -> patchBaseOf(target, stored))
+                    .defaultIfEmpty(PatchBase.ofAbsentResource())
+                    .map(base -> RdfIo.serialize(patch.applyTo(base.graph()), base.mediaType()))
+                    .flatMap(patched -> put(target, patched));
         });
     }
 
@@ -506,6 +628,81 @@ public final class LdpService {
     }
 
     // ---------------------------------------------------------------- internals
+
+    /**
+     * What {@link #patch} applies a patch to: the graph the patch starts from, and the media
+     * type the result must be stored as.
+     *
+     * <p>A record rather than a pair of locals because the two travel together through the
+     * reactive chain and are decided by the same branch — a resource that is not there yields
+     * the empty graph <em>and</em> the default media type, and neither half means anything
+     * without the other.
+     *
+     * @param graph     the base graph: the target's stored triples, or empty if it does not exist
+     * @param mediaType the RDF media type the patched graph is serialized back into
+     */
+    private record PatchBase(Model graph, String mediaType) {
+
+        /**
+         * Solid Protocol §5.3.1: "Start from the RDF dataset in the target document, or an
+         * <b>empty RDF dataset if the target resource does not exist yet</b>." A resource being
+         * created by a patch has no previous serialization to preserve, so it is stored as
+         * Turtle; §5.5 keeps both RDF serializations available on {@code GET} either way.
+         */
+        static PatchBase ofAbsentResource() {
+            return new PatchBase(ModelFactory.createDefaultModel(), Representation.TURTLE);
+        }
+    }
+
+    /**
+     * The base graph for a patch of a resource that exists, and the refusal for one that has no
+     * graph at all.
+     *
+     * <p>Solid Protocol §5.3.1 requires {@code PATCH} with an N3 Patch body only "when the
+     * target of the request is an RDF document", and there is nothing in a byte stream for a
+     * patch to apply to, so a non-RDF document is refused with
+     * {@link CisternException.MethodNotAllowed} — RFC 9110 §15.5.6's "known by the origin server
+     * but not supported by the target resource". It carries {@link LdpKind#NON_RDF_DOCUMENT} so
+     * the refusal's mandatory {@code Allow} is exactly the one that resource advertises on a
+     * successful read, which is a fact only core holds: the URI does not say whether a path
+     * names a graph or a JPEG.
+     *
+     * <p>Pure CPU-bound work that throws, called from inside the {@code Mono.defer} chain so the
+     * throw becomes an error signal.
+     */
+    private static PatchBase patchBaseOf(ResourceIdentifier target, StoredResource stored) {
+        Representation representation = stored.representation();
+        if (!target.isContainer() && !representation.isRdf()) {
+            throw new CisternException.MethodNotAllowed(
+                    CoreMessage.PATCH_TARGET_NOT_AN_RDF_SOURCE.format(
+                            target.uri(), representation.contentType()),
+                    LdpKind.NON_RDF_DOCUMENT);
+        }
+        Model base = parseStored(stored, target);
+        if (target.isContainer()) {
+            // Containment and the LDP types are derived on read and never stored (see the class
+            // javadoc), so they are not part of what a patch may change. Stripping here is the
+            // same defense in depth getContainer applies: anything that slipped into storage is
+            // dropped rather than being patched and written back as though it were client data.
+            stripServerManaged(base, base.createResource(target.uri().toString()));
+        }
+        String mediaType = representation.isRdf() ? representation.contentType() : Representation.TURTLE;
+        return new PatchBase(base, mediaType);
+    }
+
+    /**
+     * The kind of an existing resource, for a refusal that must advertise a truthful
+     * {@code Allow}. Resolved from the {@link ResourceView} because RDF-versus-binary is the
+     * read path's own classification and cannot be read off the URI.
+     *
+     * <p>Falls back to the kind that claims the least if the resource vanished between the
+     * existence check and this lookup: an {@code Allow} that under-advertises is a worse answer
+     * for a client than an over-advertising one is for the protocol, and the race is the same
+     * benign one {@link #put} documents.
+     */
+    private Mono<LdpKind> kindOfExisting(ResourceIdentifier resource) {
+        return find(resource).map(LdpKind::of).defaultIfEmpty(LdpKind.NON_RDF_DOCUMENT);
+    }
 
     /**
      * The identifier of a child of {@code container} that nothing currently occupies.

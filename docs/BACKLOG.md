@@ -140,7 +140,7 @@ regression.
   AccessDenied→401/403 (401 iff unauthenticated), missing→404, Conflict→409,
   PreconditionFailed→412; RFC 9457 problem+json bodies. Remove any per-handler error
   logic that crept in. DoD: each mapping tested; no `.onErrorResume` in handlers.
-- [ ] **T2.7 PATCH (N3).** Wire T1.5 behind `PATCH` with `Content-Type: text/n3`;
+- [x] **T2.7 PATCH (N3).** Wire T1.5 behind `PATCH` with `Content-Type: text/n3`;
   patching a non-existent resource creates it (per spec, requires Append/Write); wrong
   content type → 415. DoD: spec examples pass over HTTP.
 - [ ] **T2.8 OPTIONS + CORS.** OPTIONS with correct Allow/Accept-* per resource kind; CORS

@@ -62,6 +62,15 @@ public enum WebfluxMessage {
     CONTENT_TYPE_NOT_CONCRETE(
             "Content-Type must name a concrete media type, not a range: %s"),
 
+    /**
+     * Solid Protocol §5.3.1 identifies an N3 Patch by {@code text/n3} and by nothing else, so a
+     * {@code PATCH} body in any other media type is RFC 5789 §2.2's "unsupported patch document"
+     * — a 415, whose {@code Accept-Patch} tells the client what to retry with.
+     */
+    PATCH_MEDIA_TYPE_UNSUPPORTED(
+            "A PATCH body must be an N3 Patch document declared as %s (Solid Protocol §5.3.1);"
+                    + " this request declared %s"),
+
     // ---------------------------------------------------------------- conditional requests
 
     /**
@@ -118,6 +127,9 @@ public enum WebfluxMessage {
 
     /** RFC 9110 §15.5.6 — the method is not supported on this resource; see {@code Allow}. */
     TITLE_METHOD_NOT_ALLOWED("Method not allowed on this resource"),
+
+    /** RFC 9110 §15.5.16 — the body's media type is not one this method takes for this resource. */
+    TITLE_UNSUPPORTED_MEDIA_TYPE("Unsupported media type for this method"),
 
     TITLE_CONFLICT("Request conflicts with the state of the resource"),
     TITLE_PRECONDITION_FAILED("Precondition failed"),
