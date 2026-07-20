@@ -176,7 +176,7 @@ class ConditionalRequestHttpTest {
      * also pass against a handler that wrote a status code itself, which ground rule 4 forbids.
      */
     private static void expectPreconditionFailed(WebTestClient.RequestHeadersSpec<?> request,
-                                                 String instance, String detailMentions) {
+                                                 String instance, String... detailMentions) {
         request.exchange()
                 .expectStatus().isEqualTo(HttpStatus.PRECONDITION_FAILED)
                 .expectHeader().contentType(ProblemDocument.MEDIA_TYPE)
@@ -185,10 +185,13 @@ class ConditionalRequestHttpTest {
                 .jsonPath("$.type").isEqualTo(ProblemType.PRECONDITION_FAILED.uri().toString())
                 .jsonPath("$.title").isEqualTo(ProblemType.PRECONDITION_FAILED.title())
                 .jsonPath("$.instance").isEqualTo(instance)
-                .jsonPath("$.detail").value(detail ->
-                        assertTrue(String.valueOf(detail).contains(detailMentions),
+                .jsonPath("$.detail").value(detail -> {
+                    for (String expected : detailMentions) {
+                        assertTrue(String.valueOf(detail).contains(expected),
                                 "RFC 9457 §3.1.4: the detail must explain this occurrence,"
-                                        + " naming " + detailMentions + "; got: " + detail));
+                                        + " naming " + expected + "; got: " + detail);
+                    }
+                });
     }
 
     /**
@@ -226,7 +229,7 @@ class ConditionalRequestHttpTest {
 
         expectNoStoreMutation(() -> expectPreconditionFailed(
                 putTurtle(path, TURTLE_UPDATED).header(HttpHeaders.IF_MATCH, STALE_ETAG),
-                path, HttpHeaders.IF_MATCH));
+                path, HttpHeaders.IF_MATCH, "no current representation", STALE_ETAG));
 
         get(path).exchange().expectBody(String.class)
                 .value(body -> assertTrue(body.contains("\"v\""), "the old representation stands"));
@@ -335,9 +338,12 @@ class ConditionalRequestHttpTest {
         // is neither GET nor HEAD.
         String path = seed(unique("/t25-createonly-taken-%d.ttl"));
 
+        // The detail must say the resource EXISTS. If-Match fails because nothing matched and
+        // If-None-Match because something did, so one shared wording is wrong for one of them —
+        // a real defect this assertion now pins.
         expectNoStoreMutation(() -> expectPreconditionFailed(
                 putTurtle(path, TURTLE_UPDATED).header(HttpHeaders.IF_NONE_MATCH, "*"),
-                path, HttpHeaders.IF_NONE_MATCH));
+                path, HttpHeaders.IF_NONE_MATCH, "has a current representation"));
 
         get(path).exchange().expectBody(String.class)
                 .value(body -> assertTrue(body.contains("\"v\""), "the existing resource stands"));

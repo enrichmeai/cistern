@@ -130,9 +130,12 @@ regression.
   parsed as the RFC 8288 structured field it is (`LinkHeader`), not substring-matched.
 - [x] **T2.4 DELETE.** Document delete → 204 + parent containment updated; non-empty
   container → 409; storage root → 405. DoD: tests incl. root protection.
-- [ ] **T2.5 Conditional requests.** Honor `If-Match` (etag), `If-None-Match: *` (create-
+- [x] **T2.5 Conditional requests.** Honor `If-Match` (etag), `If-None-Match: *` (create-
   only PUT); mismatches → 412 before any store mutation; GET with `If-None-Match` matching
-  → 304. DoD: tests prove the store is untouched on 412 (spy store).
+  → 304. DoD: tests prove the store is untouched on 412 (spy store). Delivered the full
+  RFC 9110 §13.2.2 order (`If-Match`, `If-Unmodified-Since`, `If-None-Match`,
+  `If-Modified-Since`); `If-Range` is out of scope while range requests are unimplemented
+  (§14 makes them optional).
 - [x] **T2.6 Global error handler.** Single WebFlux error mapper: BadInput→400,
   AccessDenied→401/403 (401 iff unauthenticated), missing→404, Conflict→409,
   PreconditionFailed→412; RFC 9457 problem+json bodies. Remove any per-handler error

@@ -65,19 +65,30 @@ public enum WebfluxMessage {
     // ---------------------------------------------------------------- conditional requests
 
     /**
-     * A failed {@code If-Match} or {@code If-None-Match} (RFC 9110 §13.1.1, §13.1.2). Names the
-     * field so a client that sent both knows which one to fix, and quotes the tags back so it
-     * can see that the server read them as it meant them.
+     * A failed {@code If-Match} (RFC 9110 §13.1.1). Names the field, so a client that sent
+     * several conditionals knows which one to fix, and quotes the tags back so it can see the
+     * server read them as it meant them.
      */
-    PRECONDITION_ENTITY_TAG_FAILED(
+    PRECONDITION_IF_MATCH_FAILED(
             "The %s precondition failed for <%s>: no current representation of the resource"
-                    + " matches %s (RFC 9110 §13.2.2). Re-read the resource to obtain its"
+                    + " matches %s (RFC 9110 §13.1.1). Re-read the resource to obtain its"
                     + " current ETag before retrying."),
+
+    /**
+     * A failed {@code If-None-Match} (RFC 9110 §13.1.2) — the opposite sense to
+     * {@link #PRECONDITION_IF_MATCH_FAILED}, and a separate entry precisely so it cannot be
+     * described with the wrong one: this failure means the resource <em>does</em> match, which
+     * for {@code *} means it already exists and the write would not have been a create.
+     */
+    PRECONDITION_IF_NONE_MATCH_FAILED(
+            "The %s precondition failed for <%s>: the resource has a current representation"
+                    + " matching %s (RFC 9110 §13.1.2), so this request would not have been"
+                    + " applied to the state the client assumed."),
 
     /** A failed {@code If-Unmodified-Since} (RFC 9110 §13.1.4). */
     PRECONDITION_MODIFICATION_DATE_FAILED(
             "The %s precondition failed for <%s>: the resource was modified after the date"
-                    + " given (RFC 9110 §13.2.2). Re-read the resource before retrying."),
+                    + " given (RFC 9110 §13.1.4). Re-read the resource before retrying."),
 
     /**
      * Fires only if the evaluator and the write path disagree about which methods are reads:

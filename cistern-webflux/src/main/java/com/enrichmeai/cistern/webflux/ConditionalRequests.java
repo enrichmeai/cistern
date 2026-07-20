@@ -125,14 +125,27 @@ public class ConditionalRequests {
                 TargetState.ofSelected(view, selected));
     }
 
-    /** The 412 detail, naming the field that failed and quoting what the client sent. */
+    /**
+     * The 412 detail, naming the field that failed and quoting what the client sent.
+     *
+     * <p>A message per field rather than one shared entity-tag message: {@code If-Match} fails
+     * because <em>nothing</em> matched and {@code If-None-Match} because <em>something did</em>,
+     * so a single wording is necessarily wrong for one of them — as a curl transcript of an
+     * earlier revision of this class showed, reporting a rejected create-only {@code PUT} as
+     * "no current representation matches *".
+     */
     String detailFor(PreconditionResult result, ConditionalRequest conditions,
                      ResourceIdentifier target) {
         ConditionalHeader header = result.decidedBy().orElseThrow(IllegalStateException::new);
         return switch (header) {
-            case IF_MATCH, IF_NONE_MATCH -> WebfluxMessage.PRECONDITION_ENTITY_TAG_FAILED
+            case IF_MATCH -> WebfluxMessage.PRECONDITION_IF_MATCH_FAILED
                     .format(header.fieldName(), target.uri(),
                             conditions.conditionOf(header).describe());
+            case IF_NONE_MATCH -> WebfluxMessage.PRECONDITION_IF_NONE_MATCH_FAILED
+                    .format(header.fieldName(), target.uri(),
+                            conditions.conditionOf(header).describe());
+            // If-Modified-Since can only ever yield 304, never 412, but the switch stays total
+            // so that a future step cannot route through here without choosing its wording.
             case IF_UNMODIFIED_SINCE, IF_MODIFIED_SINCE ->
                     WebfluxMessage.PRECONDITION_MODIFICATION_DATE_FAILED
                             .format(header.fieldName(), target.uri());
