@@ -220,6 +220,14 @@ regression.
   Write, POST=Append on container, PATCH=per-patch-op, ACL editing=Control); enforce
   before handlers; emit `WAC-Allow` header on GET/HEAD. DoD: WebTestClient matrix
   authenticated/anonymous × allowed/denied → 200/401/403.
+  *Two additions from `docs/demo/walkthrough.md`, both cheap here and expensive to
+  retrofit. (a) **No authorization decision may outlive the request that produced it** —
+  the moment a decision is cached into a session or token, instant revocation dies
+  quietly and the demo's third beat with it. Add to the DoD as a test: delete a policy
+  mid-session, next request is denied. (b) **The decision must name the policy resource
+  that permitted or refused it**, so "which agent read what, under which grant" is
+  answerable. Audit is asserted as a property in STRATEGY.md but scheduled nowhere; it is
+  nearly free if the decision point carries it from the start.*
 - [ ] **T5.4 Pod provisioning.** `cistern.pods.seed` config: create pod root + owner ACL
   (owner WebID gets all modes incl. Control) on first boot; this is how CTH's alice/bob
   get pods. DoD: fresh boot creates seeded pods; restart is idempotent.
@@ -241,6 +249,15 @@ regression.
   reads and writes a note in a pod, is denied on another user's private container. Record
   the transcript; this is the launch asset. DoD: reproducible from the doc on a clean
   machine.
+  *Script drafted ahead of the code in `docs/demo/walkthrough.md` (2026-07-21) — the demo
+  is the product claim, and a claim is cheaper to reject in prose than in Java. Four
+  beats: it works, **the refusal**, **live revocation**, the receipt. A demo without a
+  refusal is a file browser, and beat 3 is what no token-scoping product can match.
+  Two open questions it raises are not technical: which corpus (a demo over invented
+  notes makes the refusal abstract), and how the owner authors the rule — a Turtle file
+  proves enforcement works while demonstrating the product is unusable by its intended
+  user. Recommendation there is a single-purpose CLI (`cistern grant claude --read
+  /notes/ --for 24h`), roughly a day against a file format that must exist anyway.*
 
 ## Phase 7 — Packaging & announcement
 
@@ -261,8 +278,7 @@ regression.
   disk + IAP-only firewall for a GCP test pod, and `.github/workflows/terraform.yml`
   splitting `validate` (no credentials, every PR) from `plan`/`apply` (Workload Identity
   Federation, manual dispatch). Added outside the original plan at the owner's request
-  2026-07-20; **no corresponding GitHub issue** (the mirror runs T0.1=#1 … T7.4=#44), so
-  open one if the issue mirror is being kept exact. DoD: `terraform validate` green in
+  2026-07-20; mirrored as issue #81, outside the T0.1=#1 … T7.4=#44 numbering. DoD: `terraform validate` green in
   CI with no cloud setup; the `0.0.0.0/0` guard demonstrated in both directions.
   *Authored, not applied — **apply is blocked by ADR 0001** until Phase 5 gives the pod
   an authorization layer. The one-time WIF/state-bucket bootstrap is deliberately
@@ -270,8 +286,8 @@ regression.
 - [x] **T7.6 Kubernetes manifests (local).** `k8s/` kustomization — namespace with the
   `restricted` Pod Security Standard, RWO PVC, single-replica Deployment, ClusterIP
   Service, deny-all NetworkPolicy — plus `.github/workflows/k8s.yml` (kubeconform schema
-  validation + a guard refusing NodePort/LoadBalancer/Ingress). Owner request 2026-07-21;
-  **no mirrored GitHub issue**, same caveat as T7.5. DoD: applied to a real cluster,
+  validation + a guard refusing NodePort/LoadBalancer/Ingress). Owner request 2026-07-21; mirrored as
+  issue #82, outside the original numbering as T7.5 is. DoD: applied to a real cluster,
   data survives pod deletion, guard demonstrated in both directions.
   *Verified on Docker Desktop k8s v1.25.4: PUT 201 / GET 200, uid 10001, data survived
   the pod being destroyed. Two findings recorded in `k8s/README.md` — the `restricted`
