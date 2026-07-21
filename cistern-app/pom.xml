@@ -42,6 +42,17 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+        <!-- The parent imports spring-boot-dependencies as a BOM rather than inheriting
+             spring-boot-starter-parent, so the repackage goal is not bound by default.
+             Bind it explicitly: `mvn package` must yield a runnable jar, because CI
+             (T3.1) boots this artifact for the conformance run. -->
+        <executions>
+          <execution>
+            <goals>
+              <goal>repackage</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
