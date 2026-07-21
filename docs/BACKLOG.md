@@ -209,9 +209,26 @@ regression.
 
 ## Phase 5 — Authorization (cistern-wac)
 
-- [ ] **T5.1 ACL discovery.** Effective-ACL algorithm: resource's own `.acl` else walk
+- [x] **T5.1 ACL discovery.** Effective-ACL algorithm: resource's own `.acl` else walk
   ancestors for `acl:default`; advertise via `Link: rel="acl"`. DoD: unit tests for deep
   inheritance chains and root fallback.
+  *`AclDiscovery` (reactive walk, no blocking I/O), `AclResource` (the `.acl` naming
+  convention in one place, matching CSS so a pod moves between implementations),
+  `EffectiveAcl` (graph + scope + source). The `Link: rel="acl"` header itself is emitted
+  in T5.3 — `EffectiveAcl.aclResource()` supplies the URI.*
+  *Two ways the obvious implementation is more permissive than the spec, both now tested.
+  **An ACL that exists but does not parse denies rather than falling through** — continuing
+  the walk would substitute an ancestor's `acl:default` (usually the more generous rule)
+  for the one the owner wrote. **An empty ACL terminates the walk**, because the spec's
+  condition is "has an associated aclResource with a representation", not a useful one; an
+  empty ACL deliberately denies everyone and must not let a parent's defaults leak back.*
+  ***Bug this caught in T5.2***: `acl:default` names the **container**, so an inherited
+  authorization must be matched against the container the ACL is attached to, never against
+  the child being requested. Matching the child silently denied every inherited grant. Fixed
+  by making `EffectiveAcl.source()` the value to match and adding
+  `WacEngine.decide(EffectiveAcl, Agent)` so callers cannot pass the two inconsistently.
+  The unit test that should have caught it was passing the container while claiming to test
+  a child — found only by the end-to-end test.*
 - [x] **T5.2 WAC engine.** Evaluate Authorization triples: modes (Read/Write/Append/
   Control), subjects (`acl:agent`, `acl:agentClass foaf:Agent|acl:AuthenticatedAgent`,
   ~~`acl:origin`~~), targets (`acl:accessTo`, `acl:default`). Append ⊂ Write. Control never
