@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cistern
+  namespace: cistern
+  labels:
+    app.kubernetes.io/name: cistern
+spec:
+  # ClusterIP, and deliberately not NodePort or LoadBalancer. Cistern has no
+  # authentication and no access control until Phase 5 — an anonymous caller can create
+  # and delete any resource — so nothing here should be reachable from outside the
+  # cluster. Reach it with `kubectl port-forward`, which is the cluster equivalent of
+  # the 127.0.0.1 binding in docker-compose.yml.
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: cistern
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

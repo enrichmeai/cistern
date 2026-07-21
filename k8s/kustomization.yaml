@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: cistern
+
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
+
+commonLabels:
+  app.kubernetes.io/name: cistern
+  app.kubernetes.io/part-of: cistern
+
+# Override the tag without editing deployment.yaml:
+#   kustomize edit set image cistern=ghcr.io/enrichmeai/cistern:v0.1.0
+images:
+  - name: cistern
+    newTag: local
