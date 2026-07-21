@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and fill in. Everything not listed has a safe default.
+
+project_id = "cistern-503016"
+zone       = "europe-west2-a"
+
+# Pin a published tag rather than :latest, so a redeploy is reproducible.
+# image = "ghcr.io/enrichmeai/cistern:v0.1.0"
+
+# Reaching the pod through the IAP tunnel makes localhost:3000 the client-visible
+# origin, and cistern.base-url has to match it or every URI the pod mints names an
+# origin nobody called.
+# base_url = "http://localhost:3000"
+
+# Leave these alone until Phase 5. There is no authorization layer yet: an
+# anonymous caller can create and delete resources. 0.0.0.0/0 is rejected outright.
+# enable_external_ip    = false
+# allowed_ingress_cidrs = ["203.0.113.4/32"]

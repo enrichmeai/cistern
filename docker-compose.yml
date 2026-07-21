@@ -1,0 +1,28 @@
+# Cistern, one command:  docker compose up --build
+#
+# SECURITY: no authentication, no access control (Phases 4 and 5 are not built).
+# The port is bound to 127.0.0.1 deliberately — change that to 0.0.0.0 and every
+# resource in the pod becomes readable, writable and deletable by anyone who can
+# reach the host.
+
+services:
+  cistern:
+    build: .
+    image: cistern:local
+    # Loopback only. Not "0.0.0.0:3000:3000" until there is something to stop a
+    # stranger emptying the pod.
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      CISTERN_STORAGE_ROOT: /data
+      # Must match the URL clients actually call — it mints Location headers and the
+      # storage description. Override when fronting this with a proxy or a real host.
+      CISTERN_BASE_URL: http://localhost:3000
+    volumes:
+      # A named volume, so /data keeps the image's ownership. A bind mount would
+      # carry the host's instead, and the non-root user could not write to it.
+      - cistern-data:/data
+    restart: unless-stopped
+
+volumes:
+  cistern-data:
