@@ -1,5 +1,11 @@
 # Cistern, one command:  docker compose up --build
 #
+# Runs on http://127.0.0.1:3737 by default. Port 3000 is crowded on a dev machine —
+# something else holding it does not fail loudly, it just answers your requests instead,
+# which reads as Cistern misbehaving. Pick your own when several instances run at once:
+#
+#   CISTERN_HOST_PORT=3801 docker compose up
+#
 # SECURITY: no authentication, no access control (Phases 4 and 5 are not built).
 # The port is bound to 127.0.0.1 deliberately — change that to 0.0.0.0 and every
 # resource in the pod becomes readable, writable and deletable by anyone who can
@@ -9,15 +15,18 @@ services:
   cistern:
     build: .
     image: cistern:local
-    # Loopback only. Not "0.0.0.0:3000:3000" until there is something to stop a
-    # stranger emptying the pod.
+    # Loopback only. Not "0.0.0.0:..." until there is something to stop a stranger
+    # emptying the pod. Only the HOST side varies — inside the container it is always
+    # 3000, where nothing can collide with it.
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${CISTERN_HOST_PORT:-3737}:3000"
     environment:
       CISTERN_STORAGE_ROOT: /data
-      # Must match the URL clients actually call — it mints Location headers and the
-      # storage description. Override when fronting this with a proxy or a real host.
-      CISTERN_BASE_URL: http://localhost:3000
+      # Derived from the same variable on purpose. cistern.base-url mints Location
+      # headers and the storage description, so if it and the published port ever
+      # disagree the pod hands out URIs nobody can reach — a bug that surfaces far from
+      # its cause. One knob means they cannot drift.
+      CISTERN_BASE_URL: http://localhost:${CISTERN_HOST_PORT:-3737}
     volumes:
       # A named volume, so /data keeps the image's ownership. A bind mount would
       # carry the host's instead, and the non-root user could not write to it.

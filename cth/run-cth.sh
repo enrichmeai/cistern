@@ -26,10 +26,15 @@ mkdir -p reports
 # host user and hides this entirely — it only ever bites in CI.
 chmod 777 reports
 
-# The harness runs inside a container: it must reach the host's :3000 via
+# Which host port the server under test is listening on. Must match however it was
+# started — docker-compose publishes ${CISTERN_HOST_PORT:-3737}, so exporting the same
+# variable keeps the two in step. CI runs the jar directly and sets it explicitly.
+PORT="${CISTERN_HOST_PORT:-3737}"
+
+# The harness runs inside a container: it must reach the host's port via
 # host.docker.internal (--add-host makes that name work on Linux; Docker
 # Desktop on macOS/Windows provides it natively).
-SERVER_ROOT="http://host.docker.internal:3000"
+SERVER_ROOT="http://host.docker.internal:${PORT}"
 
 # Coverage mode never contacts the server; every other mode does.
 coverage_only=false
@@ -49,10 +54,13 @@ if [ "$coverage_only" = false ]; then
   # On a connection failure curl BOTH prints 000 and exits non-zero, so piping a
   # fallback through `|| echo 000` yields "000000" and the guard below never matches.
   # Let the assignment carry curl's status instead.
-  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:3000/ 2>/dev/null) || code=000
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:${PORT}/" 2>/dev/null) || code=000
   if [ "$code" = "000" ]; then
-    echo "error: nothing answering on http://localhost:3000/ — start the server first:" >&2
-    echo "  CISTERN_BASE_URL=${SERVER_ROOT} mvn -q -pl cistern-app spring-boot:run" >&2
+    echo "error: nothing answering on http://localhost:${PORT}/ — start the server first:" >&2
+    echo "  CISTERN_HOST_PORT=${PORT} docker compose up -d" >&2
+    echo "or, running it directly:" >&2
+    echo "  SERVER_PORT=${PORT} CISTERN_BASE_URL=${SERVER_ROOT} mvn -q -pl cistern-app spring-boot:run" >&2
+    echo "(set CISTERN_HOST_PORT to match if the server is on another port)" >&2
     exit 2
   fi
 fi
