@@ -212,10 +212,29 @@ regression.
 - [ ] **T5.1 ACL discovery.** Effective-ACL algorithm: resource's own `.acl` else walk
   ancestors for `acl:default`; advertise via `Link: rel="acl"`. DoD: unit tests for deep
   inheritance chains and root fallback.
-- [ ] **T5.2 WAC engine.** Evaluate Authorization triples: modes (Read/Write/Append/
+- [x] **T5.2 WAC engine.** Evaluate Authorization triples: modes (Read/Write/Append/
   Control), subjects (`acl:agent`, `acl:agentClass foaf:Agent|acl:AuthenticatedAgent`,
-  `acl:origin`), targets (`acl:accessTo`, `acl:default`). Append ⊂ Write. Control never
+  ~~`acl:origin`~~), targets (`acl:accessTo`, `acl:default`). Append ⊂ Write. Control never
   implied. Deny by default. DoD: table-driven tests covering the WAC spec examples.
+  *`cistern-wac`: `WacEngine` + `AccessMode`/`AgentClass`/`AclScope` enums,
+  `Authorization`/`AccessDecision` records, `WacMessage` catalogue. 30 tests, no Spring,
+  no HTTP, no I/O — pure evaluation over a graph, so an authorization bug is findable
+  without a server.*
+  ***`acl:origin` deliberately not implemented*** *— it is absent from the matchers the
+  current WAC spec defines, the CTH has no assertion for it, and
+  `docs/ideas/agent-scoped-delegation.md` records why it is a dead letter (conjunctive
+  rather than a subject in its own right; applies only to requests carrying an `Origin`
+  header, so every non-browser client including every AI agent bypasses it; CSS ignores
+  it outright). The ticket text predates that research. Raised rather than silently
+  skipped, per ground rule 1.*
+  *Two decisions worth carrying into T5.3. (a) The engine returns the **granted mode set**,
+  not a boolean, because one evaluation must answer both "may this proceed?" and "what
+  should `WAC-Allow` advertise?" — evaluating twice invites the two to disagree. (b)
+  `AclScope` is a required argument: the same ACL yields different permissions depending on
+  whether it was found on the resource (`acl:accessTo`) or inherited from an ancestor
+  (`acl:default`), and conflating them leaks a container-only rule down the whole tree.*
+  *Confirmed from the CTH for T5.3: authenticated-but-denied → **403**, unauthenticated →
+  **401**.*
 - [ ] **T5.3 Enforcement.** Map HTTP method+state → required mode (GET=Read, PUT/DELETE=
   Write, POST=Append on container, PATCH=per-patch-op, ACL editing=Control); enforce
   before handlers; emit `WAC-Allow` header on GET/HEAD. DoD: WebTestClient matrix

@@ -9,4 +9,26 @@
     <version>0.1.0-SNAPSHOT</version>
   </parent>
   <artifactId>cistern-wac</artifactId>
+  <name>Cistern :: WAC</name>
+  <description>Web Access Control engine: evaluates Authorization graphs. No Spring, no HTTP.</description>
+  <dependencies>
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!-- Authorizations arrive as a parsed graph; the engine reads Jena directly rather than
+         re-modelling RDF. No Spring dependency here, as in cistern-core. -->
+    <dependency>
+      <groupId>org.apache.jena</groupId>
+      <artifactId>jena-arq</artifactId>
+    </dependency>
+    <!-- Declared rather than inherited by accident: slf4j-api reaches the classpath
+         transitively through Jena, and a module that imports it in source should say so.
+         Version comes from the spring-boot-dependencies BOM the parent imports. -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+  </dependencies>
 </project>
