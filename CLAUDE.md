@@ -51,8 +51,8 @@ data over MCP, with Solid WAC enforcing the consent.
 ```bash
 mvn -q verify                              # full build + unit tests
 mvn -q -pl cistern-core -am test           # one module
-mvn -q -pl cistern-app spring-boot:run     # server on :3000 (storage in ./data)
-./cth/run-cth.sh                           # conformance harness against localhost:3000 (Docker)
+docker compose up --build                  # server on :3737 (CISTERN_HOST_PORT overrides)
+./cth/run-cth.sh                           # conformance harness against localhost:3737 (Docker)
 ```
 
 Java 21 (SDKMAN), Maven 3.9. No Gradle. No Lombok — use records.

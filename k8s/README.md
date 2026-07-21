@@ -24,11 +24,11 @@ docker build -t cistern:local .          # the manifests expect this exact tag
 kubectl apply -k k8s/
 kubectl rollout status -n cistern deploy/cistern
 
-kubectl port-forward -n cistern svc/cistern 3000:3000
+kubectl port-forward -n cistern svc/cistern 3737:3000
 curl -X PUT -H 'Content-Type: text/turtle' \
   --data '<#me> <http://xmlns.com/foaf/0.1/name> "Joseph" .' \
-  http://127.0.0.1:3000/notes/hello
-curl http://127.0.0.1:3000/notes/hello
+  http://127.0.0.1:3737/notes/hello
+curl http://127.0.0.1:3737/notes/hello
 ```
 
 Tear down:
@@ -42,19 +42,25 @@ kubectl delete namespace cistern                         # same, plus the namesp
 Note that `delete -k` **does** remove the PVC, because `pvc.yaml` is part of the
 kustomization. Scale to zero if you want the pod's contents to survive.
 
-### If port 3000 is taken
+### Ports, and running several instances at once
 
-Common on a dev machine — a stray Grafana or another compose stack will silently win the
-race and answer your curl, which looks like Cistern misbehaving. Forward to a free local
-port instead, and remember it changes the base URL:
+The local side of the forward defaults to **3737**, matching `docker-compose.yml`. Port
+3000 is avoided deliberately: it is crowded on a dev machine, and a stray Grafana or
+another compose stack holding it does not fail loudly — it silently answers your requests
+instead, which reads as Cistern misbehaving. (That is not hypothetical; it happened while
+these manifests were being written.)
+
+The port *inside* the pod is always 3000 and never collides, so only the forward changes:
 
 ```bash
-kubectl port-forward -n cistern svc/cistern 3100:3000
+kubectl port-forward -n cistern svc/cistern 3801:3000
 ```
 
-`CISTERN_BASE_URL` in `deployment.yaml` mints `Location` headers and the storage
-description, so if you settle on a different local port, change it to match — otherwise the
-pod hands out URIs naming an origin you are not calling.
+If you do that, change `CISTERN_BASE_URL` in `deployment.yaml` to match. It mints
+`Location` headers and the storage description, so a mismatch makes the pod hand out URIs
+naming an origin you are not calling — a failure that surfaces far from its cause. Unlike
+`docker-compose.yml`, which derives both from `${CISTERN_HOST_PORT}`, the manifest cannot
+compute this for you.
 
 ### minikube
 

@@ -3,8 +3,9 @@
 The [Solid conformance test harness](https://github.com/solid-contrib/conformance-test-harness)
 is this project's fitness function. `./run-cth.sh` runs the dockerized harness
 (`solidproject/conformance-test-harness`) against a Cistern instance on
-`http://localhost:3000` (reached from inside the container as
-`http://host.docker.internal:3000`).
+`http://localhost:3737` (reached from inside the container as
+`http://host.docker.internal:3737`). Override with `CISTERN_HOST_PORT`, which
+`docker-compose.yml` and CI read too.
 
 - `subject-cistern.ttl` — the test-subject description (format per the examples in
   [specification-tests](https://github.com/solid-contrib/specification-tests)
@@ -19,21 +20,22 @@ is this project's fitness function. `./run-cth.sh` runs the dockerized harness
 Run modes:
 
 ```bash
-./run-cth.sh               # full test run against localhost:3000 (exit 1 on failures)
+./run-cth.sh               # full test run against localhost:3737 (exit 1 on failures)
 ./run-cth.sh --coverage    # coverage report only; does not touch the server
 ```
 
 Start the server with the base URL the harness will actually call:
 
 ```bash
-CISTERN_BASE_URL=http://host.docker.internal:3000 mvn -q -pl cistern-app spring-boot:run
+SERVER_PORT=3737 CISTERN_BASE_URL=http://host.docker.internal:3737 \
+  mvn -q -pl cistern-app spring-boot:run
 ```
 
 `cistern.base-url` is what mints `Location` headers and the storage description. Left at
 its `localhost` default, every URI the server hands the harness names an origin the
 harness never called — so once tests can run, URI-assignment assertions fail for a reason
 that has nothing to do with the code under test. `run-cth.sh` preflights that *something*
-answers on `:3000` (any status — the storage root honestly 404s until T5.4) and exits 2
+answers on that port (any status — the storage root honestly 404s until T5.4) and exits 2
 with this instruction if nothing does.
 
 In CI, the `conformance` job (T3.1) boots the packaged jar with that variable set, runs

@@ -32,7 +32,7 @@ Roadmap: [docs/BACKLOG.md](docs/BACKLOG.md) · Architecture:
 
 ```bash
 mvn -q verify
-mvn -q -pl cistern-app spring-boot:run     # pod server on http://localhost:3000
+docker compose up --build                  # pod server on http://127.0.0.1:3737
 ./cth/run-cth.sh                           # run the conformance harness (Docker)
 ```
 

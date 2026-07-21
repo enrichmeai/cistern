@@ -47,11 +47,13 @@ spec:
           env:
             - name: CISTERN_STORAGE_ROOT
               value: /data
-            # Must be the URL clients actually call. With `kubectl port-forward` that is
-            # localhost:3000. cistern.base-url mints Location headers and the storage
+            # Must be the URL clients actually call, which with `kubectl port-forward`
+            # is the LOCAL side of the forward — 3737 by default here, matching
+            # docker-compose. cistern.base-url mints Location headers and the storage
             # description, so a mismatch makes the pod hand out unreachable URIs.
+            # Forwarding to a different local port? Change this to match.
             - name: CISTERN_BASE_URL
-              value: http://localhost:3000
+              value: http://localhost:3737
             # Respect the container memory limit instead of the host's RAM.
             - name: JAVA_OPTS
               value: "-XX:MaxRAMPercentage=75.0"
