@@ -182,8 +182,17 @@ class WacEngineTest {
                     "acl:accessTo names one resource; it must not leak to children");
         }
 
+        /**
+         * {@code acl:default} names the <em>container</em> — WAC: "denotes a container
+         * resource whose Authorization applies to lower hierarchy members" — so the URI to
+         * match an inherited rule against is the container the ACL is attached to, never the
+         * child being requested. Matching the child's URI here finds nothing and silently
+         * denies every inherited grant; that was a real bug in this engine, caught by the
+         * end-to-end test in {@code AclDiscoveryTest} rather than by this unit test, which
+         * originally passed the container while claiming to test a child.
+         */
         @Test
-        @DisplayName("an acl:default rule applies to a child when inherited")
+        @DisplayName("an inherited acl:default rule matches on the container it names")
         void defaultInherits() {
             Model acl = acl("<#a> a acl:Authorization ;\n"
                     + "  acl:agent <" + ALICE + "> ;\n"
@@ -194,6 +203,23 @@ class WacEngineTest {
                     acl, URI.create(CONTAINER), Agent.of(URI.create(ALICE)), AclScope.INHERITED);
 
             assertTrue(inherited.allows(AccessMode.READ));
+        }
+
+        @Test
+        @DisplayName("matching an inherited rule against the CHILD's URI grants nothing")
+        void inheritedRuleIsNotMatchedAgainstTheChild() {
+            Model acl = acl("<#a> a acl:Authorization ;\n"
+                    + "  acl:agent <" + ALICE + "> ;\n"
+                    + "  acl:default <" + CONTAINER + "> ;\n"
+                    + "  acl:mode acl:Read .");
+
+            AccessDecision wrong = engine.decide(
+                    acl, URI.create(RESOURCE), Agent.of(URI.create(ALICE)), AclScope.INHERITED);
+
+            assertTrue(wrong.isDenied(),
+                    "acl:default names the container, so the child's URI is never in targets —"
+                            + " callers must pass EffectiveAcl.source(), which decide(EffectiveAcl,"
+                            + " Agent) does for them");
         }
 
         @Test

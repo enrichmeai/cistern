@@ -30,5 +30,15 @@
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
     </dependency>
+    <!-- The core test-jar (T1.2) publishes InMemoryResourceStore. Reused here so the ACL
+         walk is exercised against the same reference store every backend is checked
+         against, rather than against a second fake written for this module. -->
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-core</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 </project>

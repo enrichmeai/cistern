@@ -45,28 +45,53 @@ public final class WacEngine {
     private static final Logger log = LoggerFactory.getLogger(WacEngine.class);
 
     /**
-     * What {@code agent} may do to {@code target}, according to {@code effectiveAcl}.
+     * What {@code agent} may do to the resource {@code acl} was discovered for.
      *
-     * @param effectiveAcl the ACL graph that governs the target, as located by ACL discovery
-     * @param target       the resource being accessed
+     * <p>The preferred entry point, because {@link EffectiveAcl} already carries the two facts
+     * that have to agree — the scope and the resource the ACL is attached to — so they cannot
+     * be passed inconsistently.
+     */
+    public AccessDecision decide(EffectiveAcl acl, Agent agent) {
+        Objects.requireNonNull(acl, "acl");
+        return decide(acl.graph(), acl.source().uri(), agent, acl.scope());
+    }
+
+    /**
+     * What {@code agent} may do, according to {@code effectiveAcl}.
+     *
+     * <p><strong>{@code aclSubject} is the resource the ACL is <em>attached to</em>, which is
+     * not always the resource being requested.</strong> WAC defines {@code acl:default} on the
+     * <em>container</em> — "denotes a container resource whose Authorization applies to lower
+     * hierarchy members" — so an inherited authorization names the ancestor, never the child.
+     * Matching an inherited rule against the requested child's URI finds nothing and denies
+     * every inherited grant; matching an {@code acl:accessTo} rule against an ancestor would
+     * leak it downwards. Both mistakes are silent, which is why {@link #decide(EffectiveAcl,
+     * Agent)} exists and this overload spells the parameter out.
+     *
+     * <p>Discovery makes the two cases uniform: it reports {@code source} as the target itself
+     * when the ACL was the resource's own, and as the ancestor when inherited. So the correct
+     * value is always {@code EffectiveAcl.source()}.
+     *
+     * @param effectiveAcl the ACL graph, as located by ACL discovery
+     * @param aclSubject   the resource the ACL is attached to
      * @param agent        the requester; {@link Agent#ANONYMOUS} for an unauthenticated request
      * @param scope        whether the ACL was found on the resource or inherited from an ancestor
      * @return the granted modes, closed under implication; {@link AccessDecision#DENIED} if none
      */
-    public AccessDecision decide(Model effectiveAcl, URI target, Agent agent, AclScope scope) {
+    public AccessDecision decide(Model effectiveAcl, URI aclSubject, Agent agent, AclScope scope) {
         Objects.requireNonNull(effectiveAcl, "effectiveAcl");
-        Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(aclSubject, "aclSubject");
         Objects.requireNonNull(agent, "agent");
         Objects.requireNonNull(scope, "scope");
 
         AccessDecision decision = AccessDecision.DENIED;
         for (Authorization authorization : parse(effectiveAcl, scope)) {
-            if (authorization.covers(target) && authorization.matches(agent)) {
+            if (authorization.covers(aclSubject) && authorization.matches(agent)) {
                 decision = decision.union(new AccessDecision(authorization.modes()));
             }
         }
         if (decision.isDenied() && log.isDebugEnabled()) {
-            log.debug(WacMessage.NO_APPLICABLE_AUTHORIZATION.format(target, scope));
+            log.debug(WacMessage.NO_APPLICABLE_AUTHORIZATION.format(aclSubject, scope));
         }
         return decision;
     }
