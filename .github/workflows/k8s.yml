@@ -1,0 +1,50 @@
+name: k8s
+
+# Renders and validates the manifests against real Kubernetes API schemas. Needs no
+# cluster and no credentials, so it runs on every PR — the point is that a broken
+# manifest fails review rather than failing in someone's terminal.
+
+on:
+  pull_request:
+    paths:
+      - 'k8s/**'
+      - '.github/workflows/k8s.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'k8s/**'
+      - '.github/workflows/k8s.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Render
+        run: kubectl kustomize k8s/ | tee /tmp/rendered.yaml
+
+      # Schema validation without a cluster. -strict rejects unknown fields, which is what
+      # catches a typo'd key the API would otherwise silently ignore.
+      - name: Validate against Kubernetes schemas
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C /tmp kubeconform
+          /tmp/kubeconform -strict -summary -output text /tmp/rendered.yaml
+
+      # The security posture these manifests exist to hold. Cistern has no authorization
+      # layer yet (ADR 0001), so an exposed Service type is a defect, not a preference.
+      - name: Refuse externally-reachable Service types
+        run: |
+          if grep -nE '^\s*type:\s*(NodePort|LoadBalancer)' /tmp/rendered.yaml; then
+            echo "::error::Service must stay ClusterIP until Phase 5 — see k8s/README.md and ADR 0001."
+            exit 1
+          fi
+          if grep -qiE '^\s*kind:\s*Ingress' /tmp/rendered.yaml; then
+            echo "::error::No Ingress before Phase 5 — it would expose an unauthenticated store."
+            exit 1
+          fi
+          echo "Service stays ClusterIP; no Ingress."

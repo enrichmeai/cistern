@@ -1,0 +1,22 @@
+# Defence in depth for a server that currently has no authorization layer: deny all
+# ingress to the pod, then allow nothing. `kubectl port-forward` still works, because it
+# proxies through the API server rather than crossing the pod network.
+#
+# NOTE: enforcement depends on the CNI. Docker Desktop's default networking does NOT
+# enforce NetworkPolicy, so treat this as a statement of intent there and as a real
+# control on a cluster with Calico/Cilium. The Service being ClusterIP is what actually
+# keeps this unreachable locally.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cistern-deny-ingress
+  namespace: cistern
+  labels:
+    app.kubernetes.io/name: cistern
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cistern
+  policyTypes: ["Ingress"]
+  # No ingress rules == deny everything inbound.
+  ingress: []

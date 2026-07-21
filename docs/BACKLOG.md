@@ -267,6 +267,20 @@ regression.
   *Authored, not applied — **apply is blocked by ADR 0001** until Phase 5 gives the pod
   an authorization layer. The one-time WIF/state-bucket bootstrap is deliberately
   manual and documented in `infra/terraform/README.md`.*
+- [x] **T7.6 Kubernetes manifests (local).** `k8s/` kustomization — namespace with the
+  `restricted` Pod Security Standard, RWO PVC, single-replica Deployment, ClusterIP
+  Service, deny-all NetworkPolicy — plus `.github/workflows/k8s.yml` (kubeconform schema
+  validation + a guard refusing NodePort/LoadBalancer/Ingress). Owner request 2026-07-21;
+  **no mirrored GitHub issue**, same caveat as T7.5. DoD: applied to a real cluster,
+  data survives pod deletion, guard demonstrated in both directions.
+  *Verified on Docker Desktop k8s v1.25.4: PUT 201 / GET 200, uid 10001, data survived
+  the pod being destroyed. Two findings recorded in `k8s/README.md` — the `restricted`
+  PSS **is** enforced (a non-compliant pod was refused), the NetworkPolicy is **not**
+  (Docker Desktop's CNI ignores it; a second pod reached the service), so `ClusterIP`
+  is the control that actually holds locally. Load-bearing choices: `strategy: Recreate`
+  (the file backend is single-writer; RollingUpdate over an RWO volume risks two
+  writers), TCP probes (the root legitimately 404s until T5.4, so httpGet would
+  crash-loop a healthy server), `fsGroup: 10001` and an `emptyDir` at `/tmp`.*
 
 ## Parked (post-milestone-3 candidates — do not start without architect approval)
 

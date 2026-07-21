@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cistern
+  labels:
+    app.kubernetes.io/name: cistern
+    # Cistern has no authentication and no access control until Phase 5. Nothing here
+    # should be reachable from outside the cluster — see k8s/README.md and ADR 0001.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest

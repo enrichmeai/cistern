@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cistern-data
+  namespace: cistern
+  labels:
+    app.kubernetes.io/name: cistern
+spec:
+  # ReadWriteOnce is not a limitation to work around — it matches the backend. The file
+  # store is a single-writer design (no distributed locking), so the Deployment pins
+  # replicas to 1 and uses the Recreate strategy. See deployment.yaml.
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+  # storageClassName intentionally unset: use whatever the cluster's default is
+  # (docker-desktop -> hostpath, minikube -> standard). Pin it in an overlay if needed.

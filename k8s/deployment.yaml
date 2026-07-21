@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cistern
+  namespace: cistern
+  labels:
+    app.kubernetes.io/name: cistern
+spec:
+  # One writer, always. The file backend has no distributed locking, so two pods sharing
+  # the volume would interleave writes to the same resources.
+  replicas: 1
+
+  # Recreate, NOT the default RollingUpdate. A rolling update starts the new pod before
+  # terminating the old one, which against a ReadWriteOnce volume either wedges the
+  # rollout on a multi-node cluster or — worse, on a single node — briefly runs two
+  # writers over the same data directory.
+  strategy:
+    type: Recreate
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cistern
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cistern
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        # fsGroup is what makes the mounted volume group-writable by the container user.
+        # Without it the PVC arrives root-owned and the non-root process cannot write —
+        # the pod starts, then fails on the first PUT.
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cistern
+          image: cistern:local
+          # Never pull: this tag is built locally and does not exist in any registry.
+          # A published image would set this to IfNotPresent and pin a v* tag.
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: CISTERN_STORAGE_ROOT
+              value: /data
+            # Must be the URL clients actually call. With `kubectl port-forward` that is
+            # localhost:3000. cistern.base-url mints Location headers and the storage
+            # description, so a mismatch makes the pod hand out unreachable URIs.
+            - name: CISTERN_BASE_URL
+              value: http://localhost:3000
+            # Respect the container memory limit instead of the host's RAM.
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=75.0"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            # readOnlyRootFilesystem is on, and the JVM still needs somewhere to write
+            # (hsperfdata, any java.io.tmpdir use). Without this the container fails at
+            # startup rather than at first request.
+            - name: tmp
+              mountPath: /tmp
+
+          # All three probes are TCP, deliberately. The storage root legitimately 404s
+          # until pods are provisioned (T5.4), so an httpGet probe would treat a healthy
+          # server as failed and crash-loop it.
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 3
+            failureThreshold: 30   # ~90s for the JVM to come up
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+              # No CPU limit on purpose: a limit throttles JVM startup and buys nothing
+              # on a single-tenant local cluster.
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: cistern-data
+        - name: tmp
+          emptyDir: {}
