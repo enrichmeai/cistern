@@ -57,6 +57,16 @@ spec:
             # Respect the container memory limit instead of the host's RAM.
             - name: JAVA_OPTS
               value: "-XX:MaxRAMPercentage=75.0"
+            # Who owns this pod. Setting these two turns Web Access Control ON: the root
+            # ACL is seeded granting this WebID full access, and everything else — every
+            # anonymous request included — is denied by default. Leave them unset and the
+            # pod has no authorization layer at all, which the server warns about on boot.
+            - name: CISTERN_OWNER_WEBID
+              valueFrom:
+                secretKeyRef: {name: cistern-owner, key: web-id}
+            - name: CISTERN_OWNER_TOKEN
+              valueFrom:
+                secretKeyRef: {name: cistern-owner, key: token}
           volumeMounts:
             - name: data
               mountPath: /data
