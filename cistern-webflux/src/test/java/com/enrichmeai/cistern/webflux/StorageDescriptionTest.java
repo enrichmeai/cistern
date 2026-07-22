@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class StorageDescriptionTest {
 
     private static StorageDescription describing(String baseUrl) {
-        return new StorageDescription(new CisternProperties(baseUrl, null, null));
+        return new StorageDescription(new CisternProperties(baseUrl, null, null, null));
     }
 
     @Test

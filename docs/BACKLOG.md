@@ -252,10 +252,39 @@ regression.
   (`acl:default`), and conflating them leaks a container-only rule down the whole tree.*
   *Confirmed from the CTH for T5.3: authenticated-but-denied → **403**, unauthenticated →
   **401**.*
-- [ ] **T5.3 Enforcement.** Map HTTP method+state → required mode (GET=Read, PUT/DELETE=
+- [x] **T5.3 Enforcement.** Map HTTP method+state → required mode (GET=Read, PUT/DELETE=
   Write, POST=Append on container, PATCH=per-patch-op, ACL editing=Control); enforce
   before handlers; emit `WAC-Allow` header on GET/HEAD. DoD: WebTestClient matrix
   authenticated/anonymous × allowed/denied → 200/401/403.
+  ***Anonymous DELETE now returns 401, not 204*** *— the defect behind ADR 0001 is fixed.
+  `AuthorizationFilter` (a WebFilter, so no handler can be added that forgets to ask),
+  `RequiredAccess` (the method→mode table), `AccessControl` (discovery + engine),
+  `PrincipalResolver`/`LocalCredentialResolver`/`AnonymousResolver`, `OwnerPodSeeder`.
+  11 HTTP tests; full build 1,195 green.*
+  ***DELETE requires Write on the parent container as well as on the resource*** *— taken
+  from the harness, which returns 403 for `container=no, resource=W`. Removing a resource
+  edits its parent's containment triples, so checking only the resource side would let an
+  agent with Write on one document delete it out of a container it has no rights over.*
+  ***Enforcement is registered only when `cistern.owner.web-id` is set.*** *WAC needs a
+  principal and a root ACL to be useful; with neither, the only reachable decision is
+  "deny", so the pod would be inert rather than secure and there would be no way in to
+  write the ACL that fixes it. A deployment that forgets the owner is unprotected exactly
+  as before — made loud (`NO_OWNER_CONFIGURED` at WARN every boot) rather than silent, and
+  ADR 0001 keeps such a pod on loopback anyway. Turning it on brick-walled 211 existing
+  tests, which is what surfaced the question.*
+  *PATCH requires only Append, deliberately: reading the body to tell inserts from deletes
+  would mean consuming it before the handler. Append is the weaker check and the N3 engine
+  already refuses to delete absent triples; tighten to Write once the parsed patch reaches
+  the enforcement point.*
+- [x] **T5.4 Pod provisioning.** `cistern.pods.seed` config: create pod root + owner ACL
+  (owner WebID gets all modes incl. Control) on first boot. DoD: fresh boot creates seeded
+  pods; restart is idempotent.
+  *Done as `OwnerPodSeeder` for the single-owner case: seeds the root ACL with
+  `acl:accessTo` **and** `acl:default` (granting only the first leaves every child
+  unreachable), never overwrites an existing one — a restart is not a request to reset
+  permissions — and grants nothing to `foaf:Agent`, so a new pod is private until its owner
+  says otherwise. **The CTH's alice/bob multi-pod seeding is NOT done** and still needs
+  Phase 4; this unblocks the owner, not the harness.*
   *Two additions from `docs/demo/walkthrough.md`, both cheap here and expensive to
   retrofit. (a) **No authorization decision may outlive the request that produced it** —
   the moment a decision is cached into a session or token, instant revocation dies
@@ -264,9 +293,7 @@ regression.
   that permitted or refused it**, so "which agent read what, under which grant" is
   answerable. Audit is asserted as a property in STRATEGY.md but scheduled nowhere; it is
   nearly free if the decision point carries it from the start.*
-- [ ] **T5.4 Pod provisioning.** `cistern.pods.seed` config: create pod root + owner ACL
-  (owner WebID gets all modes incl. Control) on first boot; this is how CTH's alice/bob
-  get pods. DoD: fresh boot creates seeded pods; restart is idempotent.
+
 - [ ] **T5.5 WAC grind.** Same ratchet loop as T3.3 against the CTH WAC suite. DoD: WAC
   suite green ⇒ Milestone 3 gate 1.
 

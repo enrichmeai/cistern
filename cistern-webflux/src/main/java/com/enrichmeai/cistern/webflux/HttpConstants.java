@@ -17,6 +17,23 @@ final class HttpConstants {
     /** Separator for the comma-delimited list values of RFC 9110 §5.6.1 ("#rule"). */
     static final String LIST_SEPARATOR = ", ";
 
+    /** The {@code user=} group of a {@code WAC-Allow} value: modes held by this requester. */
+    static final String WAC_ALLOW_USER = "user";
+
+    /** The {@code public=} group of a {@code WAC-Allow} value: modes held by everyone. */
+    static final String WAC_ALLOW_PUBLIC = "public";
+
+    /**
+     * The challenge sent with a 401. RFC 9110 §11.6.1 requires at least one on an
+     * Unauthorized response, and Solid Protocol §5.1 repeats it.
+     *
+     * <p>{@code Bearer} because that is what this server currently accepts — see
+     * {@code LocalCredentialResolver}. Solid-OIDC's {@code DPoP} scheme joins it in Phase 4;
+     * advertising a scheme the server cannot yet honour would send clients down a path that
+     * always fails.
+     */
+    static final String WWW_AUTHENTICATE_CHALLENGE = "Bearer realm=\"cistern\"";
+
     /** LDP 1.0 §7.1.2 — media types acceptable in a {@code POST} to this container. */
     static final String ACCEPT_POST = "Accept-Post";
 
