@@ -21,9 +21,10 @@ import java.util.List;
  *                slash is insignificant and stripped
  * @param storage storage backend settings
  * @param cors    cross-origin sharing settings (T2.8); wide open unless narrowed
+ * @param owner   the pod owner and their local credential (T5.3/T5.4)
  */
 @ConfigurationProperties(prefix = "cistern")
-public record CisternProperties(String baseUrl, Storage storage, Cors cors) {
+public record CisternProperties(String baseUrl, Storage storage, Cors cors, Owner owner) {
 
     private static final String DEFAULT_BASE_URL = "http://localhost:3000";
 
@@ -41,6 +42,7 @@ public record CisternProperties(String baseUrl, Storage storage, Cors cors) {
         }
         storage = storage == null ? new Storage(null) : storage;
         cors = cors == null ? new Cors(null, null) : cors;
+        owner = owner == null ? new Owner(null, null) : owner;
     }
 
     /**
@@ -104,6 +106,28 @@ public record CisternProperties(String baseUrl, Storage storage, Cors cors) {
                     ? DEFAULT_ALLOWED_ORIGINS
                     : List.copyOf(allowedOrigins);
             maxAge = maxAge == null ? DEFAULT_MAX_AGE : maxAge;
+        }
+    }
+
+    /**
+     * Who owns this pod, and the secret that proves it.
+     *
+     * <p>Both must be set for local authentication to work at all. An unconfigured server
+     * therefore has no credential that authenticates anyone — the safe default, given that
+     * the alternative is a well-known token shipping in the jar.
+     *
+     * <p>This is not Solid-OIDC and is not a substitute for it (Phase 4). It is the minimum
+     * that lets the owner of a pod on their own machine be somebody, so that WAC has a
+     * principal to evaluate. See {@code docs/ideas/first-user-path.md}.
+     *
+     * @param webId the owner's WebID; also the agent granted full access by the seeded root ACL
+     * @param token shared secret presented as {@code Authorization: Bearer <token>}
+     */
+    public record Owner(URI webId, String token) {
+
+        /** Whether local authentication is configured. Both halves are required. */
+        public boolean isConfigured() {
+            return webId != null && token != null && !token.isBlank();
         }
     }
 }

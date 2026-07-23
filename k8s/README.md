@@ -22,6 +22,15 @@ reachable from outside the cluster. `kubectl port-forward` is the cluster equiva
 ```bash
 docker build -t cistern:local .          # the manifests expect this exact tag
 kubectl apply -k k8s/
+
+# Required: the owner's identity and credential. Setting these turns Web Access Control
+# ON — the root ACL is seeded granting this WebID full access and everything else is
+# denied. Without the secret the pod will not start, deliberately: silently running with
+# no authorization layer is the failure this prevents.
+kubectl create secret generic cistern-owner -n cistern \
+  --from-literal=web-id='https://you.example/profile/card#me' \
+  --from-literal=token="$(openssl rand -hex 32)"
+
 kubectl rollout status -n cistern deploy/cistern
 
 kubectl port-forward -n cistern svc/cistern 3737:3000
@@ -42,7 +51,20 @@ kubectl delete namespace cistern                         # same, plus the namesp
 Note that `delete -k` **does** remove the PVC, because `pvc.yaml` is part of the
 kustomization. Scale to zero if you want the pod's contents to survive.
 
-### Ports, and running several instances at once
+### The demo
+
+```bash
+kubectl port-forward -n cistern svc/cistern 3737:3000 &
+CISTERN_TOKEN=<the token you generated> ./k8s/demo.sh
+```
+
+It shows a **negative**, which is the point: the owner stores a note and reads it with
+`WAC-Allow` reporting exactly what they hold, then an agent with no grant is refused a
+`GET` and a `DELETE` — and the note is still there. Before T5.3 that `DELETE` returned
+`204` and the note was gone. A demo whose climax is *successful* access is a file browser;
+see `docs/demo/walkthrough.md`.
+
+## Ports, and running several instances at once
 
 The local side of the forward defaults to **3737**, matching `docker-compose.yml`. Port
 3000 is avoided deliberately: it is crowded on a dev machine, and a stray Grafana or

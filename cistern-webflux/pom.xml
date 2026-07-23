@@ -18,6 +18,14 @@
       <artifactId>cistern-core</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!-- The authorization engine. The HTTP layer stays thin (module rule): it maps a
+         request onto a target and a method and asks; deciding what that requires and
+         evaluating it lives in cistern-wac. -->
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-wac</artifactId>
+      <version>${project.version}</version>
+    </dependency>
     <dependency>
       <!-- Default backend wiring (@ConditionalOnMissingBean), so cistern-app is config
            only. The starter (T7.1) is where backend selection should ultimately live. -->

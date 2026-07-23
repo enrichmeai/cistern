@@ -158,7 +158,16 @@ public enum WebfluxMessage {
 
     // ---------------------------------------------------------------- programming errors
 
-    PROBLEM_MEMBER_REQUIRED("RFC 9457 member '%s' must not be null");
+    PROBLEM_MEMBER_REQUIRED("RFC 9457 member '%s' must not be null"),
+
+    /** Startup: no owner configured, so nothing can authenticate. Logged, never thrown. */
+    NO_OWNER_CONFIGURED(
+            "cistern.owner.web-id / cistern.owner.token are not set: no credential"
+                    + " authenticates anyone, so only what the ACLs grant the public is"
+                    + " reachable. Set both to use this pod as its owner."),
+
+    /** Startup: a fresh pod was given a root ACL granting its owner full access. */
+    SEEDED_ROOT_ACL("Seeded root ACL <%s> granting full access to owner <%s>");
 
     private final String template;
 

@@ -2,8 +2,15 @@ package com.enrichmeai.cistern.webflux;
 
 import com.enrichmeai.cistern.core.ResourceStore;
 import com.enrichmeai.cistern.core.ldp.LdpService;
+import com.enrichmeai.cistern.wac.AccessControl;
+import com.enrichmeai.cistern.wac.AclDiscovery;
+import com.enrichmeai.cistern.wac.WacEngine;
+import com.enrichmeai.cistern.webflux.auth.AnonymousResolver;
+import com.enrichmeai.cistern.webflux.auth.LocalCredentialResolver;
+import com.enrichmeai.cistern.webflux.auth.PrincipalResolver;
 import com.enrichmeai.cistern.storage.file.FileResourceStore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -101,6 +108,77 @@ public class CisternWebFluxConfiguration {
      * a path, and whether it may be removed, are questions for
      * {@code LdpService.delete}, not for routing.
      */
+    // ---- Authorization (T5.2/T5.1/T5.3) ---------------------------------------------
+
+    /**
+     * Seeds the root ACL on first boot (T5.4). Without it, deny-by-default plus an absent
+     * root ACL means nobody can reach anything — including the owner, and including the ACL
+     * they would need to write to fix it.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public OwnerPodSeeder ownerPodSeeder(ResourceStore store, CisternProperties properties) {
+        return new OwnerPodSeeder(store, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public WacEngine wacEngine() {
+        return new WacEngine();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AclDiscovery aclDiscovery(ResourceStore store) {
+        return new AclDiscovery(store);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AccessControl accessControl(AclDiscovery discovery, WacEngine engine) {
+        return new AccessControl(discovery, engine);
+    }
+
+    /**
+     * How a request becomes an {@code Agent}. The local credential when an owner is
+     * configured, otherwise nothing authenticates — an unconfigured server must not ship a
+     * usable default credential, and "no owner set" is a clearer failure than a secret
+     * everybody knows.
+     *
+     * <p>{@code @ConditionalOnMissingBean} so cistern-auth can supply a Solid-OIDC resolver
+     * in Phase 4 without this having to know about it.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public PrincipalResolver principalResolver(CisternProperties properties) {
+        CisternProperties.Owner owner = properties.owner();
+        return owner.isConfigured()
+                ? new LocalCredentialResolver(owner.webId(), owner.token())
+                : new AnonymousResolver();
+    }
+
+    /**
+     * Enforcement, ahead of every handler (T5.3).
+     *
+     * <p><strong>Registered only when an owner is configured.</strong> Web Access Control
+     * needs two things to be useful: a principal, and a root ACL granting that principal
+     * something. Without {@code cistern.owner.web-id} there is neither — nobody can
+     * authenticate, so the only reachable decision is "deny", and the pod would be inert
+     * rather than secure. There would also be no way in to write the ACL that would fix it.
+     *
+     * <p>This is a deliberate choice with a real edge: a deployment that forgets to set an
+     * owner is unprotected, exactly as it is today. It is made visible rather than silent —
+     * {@code OwnerPodSeeder} logs {@code NO_OWNER_CONFIGURED} at WARN on every boot — and the
+     * alternative, enforcing with no way to authenticate, turns "upgrade" into "brick".
+     * ADR 0001 keeps such a deployment on loopback regardless.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "cistern.owner", name = "web-id")
+    public AuthorizationFilter cisternAuthorizationFilter(
+            PrincipalResolver principals, AccessControl accessControl, RequestPaths paths) {
+        return new AuthorizationFilter(principals, accessControl, paths);
+    }
+
     @Bean
     public RouterFunction<ServerResponse> cisternDeleteRoutes(ResourceDeleteHandler handler) {
         return RouterFunctions.route(
