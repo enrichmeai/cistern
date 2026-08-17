@@ -2,17 +2,24 @@
 
 ## Read this first
 
-Cistern has **no authentication and no access control**. Phases 4 (auth) and 5 (WAC) are
-not built: an anonymous request with no credentials creates a resource (`201`) and deletes
-one (`204`), and no `WWW-Authenticate` or `WAC-Allow` header is emitted.
+Cistern enforces **Web Access Control** (T5.1–T5.4): every request crosses one
+enforcement point, deny by default. Enforcement is switched on by configuring the pod's
+owner (`CISTERN_OWNER_WEBID` / `CISTERN_OWNER_TOKEN`, below); the root ACL is then seeded
+granting that WebID full access and everything else is denied — an anonymous `GET`, `PUT`
+or `DELETE` gets `401`, and `GET`/`HEAD` report exactly what the caller holds in
+`WAC-Allow`.
 
-These manifests are for a **local cluster only** — Docker Desktop, minikube, kind. Do not
-apply them to a shared or internet-reachable cluster until Phase 5 lands. See
+What is **not** built yet is real authentication: Solid-OIDC + DPoP (Phase 4) is absent,
+so the only credential is a shared bearer secret suitable for a single owner on a
+private network. That is why these manifests are for a **local cluster only** — Docker
+Desktop, minikube, kind — and why the Service is deliberately `ClusterIP`, never
+`NodePort` or `LoadBalancer`; `kubectl port-forward` is the cluster equivalent of the
+`127.0.0.1` binding in `docker-compose.yml`. See
 `docs/adr/0001-local-only-until-phase-5.md`.
 
-The Service is deliberately `ClusterIP`, never `NodePort` or `LoadBalancer`, so nothing is
-reachable from outside the cluster. `kubectl port-forward` is the cluster equivalent of the
-`127.0.0.1` binding in `docker-compose.yml`.
+**Check your context first.** `kubectl apply -k k8s/` deploys to whatever cluster
+`kubectl config current-context` names. Make it `docker-desktop`, `minikube` or `kind-*`
+before applying.
 
 > If you only want to run it, `docker compose up --build` is simpler. Reach for these
 > manifests when you want to exercise it the way it will eventually be deployed.
@@ -58,11 +65,18 @@ kubectl port-forward -n cistern svc/cistern 3737:3000 &
 CISTERN_TOKEN=<the token you generated> ./k8s/demo.sh
 ```
 
-It shows a **negative**, which is the point: the owner stores a note and reads it with
-`WAC-Allow` reporting exactly what they hold, then an agent with no grant is refused a
-`GET` and a `DELETE` — and the note is still there. Before T5.3 that `DELETE` returned
-`204` and the note was gone. A demo whose climax is *successful* access is a file browser;
-see `docs/demo/walkthrough.md`.
+It shows a **negative**, which is the point. An agent with no grant is refused; the owner
+writes a rule — a file in the pod: *read `/notes/`, nothing else*; the agent can now read
+the note but not delete it and not reach `/private/`; the owner deletes the rule and the
+agent's very next request is refused again — no restart, no token reissued — while the
+owner is unaffected. Before T5.3 an anonymous `DELETE` returned `204` and the note was
+gone. A demo whose climax is *successful* access is a file browser; see
+`docs/demo/walkthrough.md`.
+
+The script needs no cluster: point `CISTERN_BASE` at any running Cistern (the jar on
+`--server.port=3737` works) and pass the owner's token in `CISTERN_TOKEN`. "The agent" is
+any caller without the owner's credential; the grant is class-based (`foaf:Agent`)
+because the per-agent principal is not built yet.
 
 ## Ports, and running several instances at once
 
