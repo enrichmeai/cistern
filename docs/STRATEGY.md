@@ -119,9 +119,30 @@ natural-language, time-bounded grants ("share my driver's license with the renta
 for the next 48 hours"). That is our argument, nearly verbatim.
 
 Read it two ways, both true. It **validates the thesis** — the incumbent independently
-reached the same conclusion. And it is **the clock** — as of the survey it is a prototype
-seeking release partners, with no dates, no repos and no GA, exactly the pattern Charlie
-followed. Being right does not matter if they ship first and closed.
+reached the same conclusion. And it is **the clock** — as of the survey it was a prototype
+seeking release partners, with no dates, no repos and no GA.
+
+**Update 2026-08-18 — the clock has run.** Inrupt shipped it: ESS 3.0 (27 May 2026,
+inrupt.com/blog/ess-version-3-0-making-consumer-data-ready-for-ai-assistants) includes an
+**MCP Server** microservice for per-consumer "Data Vaults"; "third-party AI agents must
+request an Access Grant from the consumer", "users can revoke access at any time", "every
+interaction is recorded in the audit trail"; native IdP mapping (Okta, Azure AD, Ping);
+stable identifiers; 5-minute access tokens. It is closed, on a 60-day evaluation licence,
+and explicitly "enterprise-controlled deployment — the AI agent is embedded in the
+company's own application stack." Consequences for this document:
+
+- Cistern is **not** first, and must never be described as such. It is the open alternative
+  to a shipped closed product. Three of ESS 3.0's four headline features map to tickets
+  already on the board (#88 identity, #93 receipts, Phase 6 MCP).
+- The differentiators that survive are structural, not mechanical: **licence** (Apache 2.0
+  vs evaluation/enterprise), **who deploys and whose agent** (anyone hosts, any agent
+  through the same door — vs the enterprise deploying its own agent over its own
+  customers), **who holds the pen** (the owner writes the rule vs the agent requests a
+  grant the consumer approves), **proof** (public conformance record and source vs take
+  their word), and **ecosystem shape** (a horizontal primitive vs a vertical stack).
+- "Enforced at the store, revoked instantly, receipted" is no longer a differentiator
+  against Inrupt — they have it. Do not pitch the mechanism as unique; pitch the licence
+  and the shape.
 
 Broader timing: AuthZEN COAZ reached WG draft in June 2026 and the IETF is scheduled to
 convene an `agentproto` working-group-forming BOF on 23 July 2026. The space is officially
