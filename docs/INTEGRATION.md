@@ -110,6 +110,56 @@ Five sentences that fix the shape of every integration:
 
 ---
 
+## 2a. Who holds the user's data, and where
+
+Read this before the playbook. It is the first question a CTO, a DPO, or a client's counsel
+asks, and the answer is structural, not a setting.
+
+**Cistern is software, not a service.** Whoever runs a Cistern instance holds the data on
+that instance. EnrichMeAI holds nothing unless it operates a hosted offering for you (#103 —
+not yet offered). There is no phone-home, no telemetry, no copy anywhere else.
+
+| Topology | Who runs the server | Where the bytes are | Who is accountable for the data | Status |
+|---|---|---|---|---|
+| **Self-hosted by an organisation** (a firm, a business, a public body) | The organisation's own ops, on its own machines or cloud account | Under `cistern.storage.root` on a volume the organisation controls (file backend); an object-storage bucket the organisation owns after #95 | The organisation — it is the data controller/fiduciary; the person is the owner of the pod within it | **Available today** (private network; internet-facing after #94) |
+| **Hosted by a provider** (EnrichMeAI or a hosting partner) | The provider | In the provider's region of choice — SG and IN first, per the ADR to be written | Provider as processor; the tenant organisation as controller; the person as pod owner | **Not yet** — #103 decides the model |
+| **Personal** (a person runs their own) | The person | Their machine or their cloud account | The person | Available today, developer audience only |
+
+Within any topology:
+
+- **One pod per person (or per client, per firm — your choice), one folder per matter/purpose.** Isolation between pods is enforced by the WAC engine on every request; nothing is reachable through Cistern without a grant. Storage-level isolation between *tenants* (separate roots or buckets per firm) is an ops decision documented in #94.
+- **What is stored:** the resources exactly as written (documents byte-for-byte; RDF as parsed graphs), the `.acl` permission files, and metadata sidecars. After #93, an append-only decision log under `<root>/.cistern/decisions/`.
+- **What is *not* stored anywhere else:** the application must not keep an authoritative copy (§5, derived-data rule). This is a rule for the integrator, and it is the difference between governance and theatre.
+- **In transit:** TLS is terminated in front of Cistern (#94); today the posture is loopback/private network only (ADR 0001).
+- **At rest:** the file backend writes plain files. Encryption at rest is the volume's or bucket's (disk/KMS encryption on the host or cloud) — Cistern does not encrypt content itself today. State this in your own DPIA rather than assuming otherwise.
+- **Backups and export:** backups are the operator's (schedule + restore drill in #94). Export is inherent — a pod is standard Solid data and can be moved to any conformant server; that portability is part of the pitch and must stay true in any hosted offering (#103).
+- **Who can see what:** the pod owner (Control) sees everything in their pod and, after #93, the receipts; a granted application sees only its granted folders; the operator can read the disk — as with any self-hosted system — which is why the operator is the accountable party in the table above.
+
+## 2b. Integration hurdles, and how much work it is
+
+Being straight about the effort is what makes the rest of this document credible.
+
+**How much work, by integrator type**
+
+| Integrator | What they do | Effort today | Effort after the levers land |
+|---|---|---|---|
+| **An AI assistant** (Claude Desktop, ChatGPT, an in-house agent) | Connects over MCP; the person grants it a folder | Not yet possible — the MCP front door is Phase 6 | **Near zero**: the assistant already speaks MCP; the company integrates nothing |
+| **An application** (ValueDocs, a firm's DMS, a consumer app) | Authenticates as a principal, reads/writes under a grant, handles refusal, keeps no authoritative copy | Weeks, and only for a single-owner setup: bearer token, hand-written ACLs, plain HTTP; multi-user needs #88 | Days, once #88 (identity), #91 (grant CLI/API), T7.9 (SDKs) and T7.10 (integration kit) exist; EnrichMeAI does it for the first partners (Shape A) |
+| **An operator / hoster** | Runs Cistern for tenants | Local only (ADR 0001); jar/Docker/k8s exist | Production posture after #94; hosted model after #103 |
+
+**The hurdles, named** — each with where it is on the board:
+
+1. **The application has to change how it holds data.** "The pod is the source of truth" is an architecture decision inside the integrator's product, not a library import. No ticket removes this; the derived-data rule (§5) is the contract, and Shape A design-partner engineering is how it is done alongside them the first times.
+2. **Identity plumbing.** Their users, their IdP, their service credentials → WebIDs and grants. Today: one owner token. After **#88**: OIDC/JWT resolver + service principals; **T7.10** ships a working Keycloak realm to copy.
+3. **Grant authoring.** Today a Turtle file with two silent-deny traps (§9). After **#91**: `cistern grant` / `GrantService`. A consumer-facing authoring UX is a later milestone and the hardest problem in the space.
+4. **Provisioning at scale.** Today one owner seeded at boot. After **#90**: pods/matters on demand.
+5. **Receipts.** Today the engine names the deciding rule but writes nothing. After **#93**: append-only log + Control-protected query.
+6. **Time-limited grants.** Not in WAC. After **#92**: `cistern:validUntil`, fail-closed.
+7. **Operations.** Today loopback only. After **#94**: TLS, backups, tenant isolation; **#103** decides hosting.
+8. **Client code.** Today: read §8 and write HTTP. After **T7.9**: thin Java/TS clients that make the common mistakes impossible.
+
+**So: is it easy?** For an assistant, it will be trivial once the MCP door exists — that is the strategic point. For an application, it is honest engineering — a few days with the levers above, weeks without them, and a product decision either way about where the data lives. That is why the first integration is our own (ValueDocs) and the next two are done *with* partners rather than handed a document.
+
 ## 3. Playbook — integrating an application (ValueDocs as the worked example)
 
 Every step says what works **today** and what changes **after** a numbered issue. Commands are
