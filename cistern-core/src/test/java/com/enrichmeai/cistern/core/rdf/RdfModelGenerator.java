@@ -11,6 +11,8 @@ import org.apache.jena.rdf.model.Resource;
 
 import java.util.Random;
 
+import org.apache.jena.sys.JenaSystem;
+
 /**
  * Deterministic, seeded generator of varied Jena models for round-trip property tests.
  * Plain {@link java.util.Random} with a fixed seed — no property-based-testing library —
@@ -39,6 +41,13 @@ final class RdfModelGenerator {
     };
     private static final String[] LANGUAGE_TAGS = {"en", "fr", "de"};
     private static final String[] CANONICAL_DOUBLES = {"4.2E0", "-2.75E2", "1.0E0", "3.14159E0"};
+    static {
+        // TypeMapper.getInstance() is null until Jena has initialised. In the full suite some earlier
+        // test usually does that by accident; run in isolation (or first on a differently ordered
+        // filesystem, as on the CI runner) this class failed in <clinit>. Initialise explicitly.
+        JenaSystem.init();
+    }
+
     private static final RDFDatatype CUSTOM_DATATYPE =
             TypeMapper.getInstance().getSafeTypeByName("https://vocab.example/datatype/point2d");
 
