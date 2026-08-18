@@ -1,6 +1,6 @@
 # Cistern
 
-**An open, self-hostable Solid pod server for the AI era.** JVM-native (Spring Boot 3 /
+**An open, self-hostable Solid pod server for the AI era.** JVM-native (Spring Boot 4 /
 WebFlux), conformance-first, and MCP-fronted — so any AI agent (Claude, ChatGPT, your
 in-house bot) can read and write user-owned data *with the user's consent model enforced
 by the server, not promised by the vendor*.
