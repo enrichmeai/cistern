@@ -55,7 +55,7 @@ docker compose up --build                  # server on :3737 (CISTERN_HOST_PORT 
 ./cth/run-cth.sh                           # conformance harness against localhost:3737 (Docker)
 ```
 
-Java 21 (SDKMAN), Maven 3.9. No Gradle. No Lombok — use records.
+Java 25 (SDKMAN), Maven 3.9. No Gradle. No Lombok — use records.
 
 ## Module map
 

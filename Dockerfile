@@ -10,7 +10,7 @@
 # resource in the pod. Publish it to localhost or a private network only.
 
 # ---- build ----------------------------------------------------------------
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-25 AS build
 WORKDIR /build
 
 # Poms first, so the dependency layer survives any source-only change.
@@ -35,7 +35,7 @@ RUN mvn -B -q -DskipTests package \
  && cp cistern-app/target/cistern-app-*.jar /build/cistern.jar
 
 # ---- runtime --------------------------------------------------------------
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 
 # Non-root. /data is chowned before it becomes a volume so that a *named* volume
 # inherits this ownership; a bind mount keeps the host's, which is the usual cause
