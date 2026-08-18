@@ -26,7 +26,8 @@ Pre-0.1, built in the open. Conformance against the official
 [Solid test harness](https://github.com/solid-contrib/conformance-test-harness) is the
 project's public health metric — numbers only move forward (see `cth/BASELINE.md`).
 Roadmap: [docs/BACKLOG.md](docs/BACKLOG.md) · Architecture:
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Integrating an application:
+[docs/INTEGRATION.md](docs/INTEGRATION.md)
 
 ## Quickstart (dev)
 

@@ -4,6 +4,9 @@
 > authority layer for agents over user-owned data rather than a Solid server that speaks
 > MCP, and why we are not building a framework. `docs/BACKLOG.md` is the *when*.
 
+For how an application integrates against the server *as built* — request path, playbook,
+first-cut interfaces for the authority-layer work — see `INTEGRATION.md`.
+
 ## The shape
 
 ```

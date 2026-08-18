@@ -77,6 +77,13 @@ regression.
   Deliberate limitation: blank nodes in `solid:where` are refused as **422** (spec-well-formed,
   but the mapping algorithm is defined over variables only) — revisit with CTH evidence, #57.
 
+- [ ] **T1.6 Object-storage backend (GCS/S3).** New `cistern-storage-gcs` (or `-s3`, by first
+  deployment target) implementing `ResourceStore` — objects keyed by resource path, media type
+  and ETag in object metadata, `children()` via prefix listing; never a mounted bucket (gcsfuse
+  breaks atomic rename). DoD: `ResourceStoreContractTest` green against a real bucket (integration
+  profile) and an emulator in CI; no RDF parsing; wired via `cistern.storage.backend`. Issue #95.
+  Post-Milestone-3 unless a first deployment (T7.7) needs it. Owner request 2026-08-18.
+
 ## Phase 2 — HTTP layer (cistern-webflux)
 
 - [x] **T2.1 GET/HEAD.** Functional endpoints (RouterFunction, not annotated controllers):
@@ -181,6 +188,18 @@ regression.
   all unauthenticated read/write assertions of the protocol suite green.
 
 ## Phase 4 — Authentication (cistern-auth)
+
+- [ ] **T4.0 Resolver seam — pluggable `PrincipalResolver` chain, OIDC/JWT resolver, service
+  principals.** Phase 4-lite for a first application (ValueDocs legal/tax), per
+  `docs/ideas/first-user-path.md`: `ChainedPrincipalResolver` (first authenticated wins) keeping
+  `LocalCredentialResolver`/`AnonymousResolver`; `OidcJwtPrincipalResolver` in `cistern-auth`
+  (Nimbus JWKS, iss/aud/exp, claim → WebID); `ServicePrincipalRegistry` so each application is
+  its own WebID with its own credential. Enforcement path untouched. **Does not replace
+  T4.1–T4.4**, which remain the conformance/interop path. DoD: WebTestClient matrix (valid /
+  expired / wrong-aud / bad-sig JWT; service credential; owner token); fixtures captured from a
+  real IdP; `docs/INTEGRATION.md` §Identity updated; no CTH regression. Issue #88.
+  *Depends on the architect's ruling on the resolver-seam resequencing and on the
+  principal-shape decision (issue #89, the T4.3 `Agent(webId, client)` question).*
 
 - [ ] **T4.1 Solid-OIDC validation.** Accept `Authorization: DPoP <token>`: resolve issuer
   discovery doc + JWKS (cached, TTL), verify signature/exp/aud per Solid-OIDC, extract
@@ -297,6 +316,36 @@ regression.
 - [ ] **T5.5 WAC grind.** Same ratchet loop as T3.3 against the CTH WAC suite. DoD: WAC
   suite green ⇒ Milestone 3 gate 1.
 
+- [ ] **T5.6 Pod & matter provisioning API/CLI (multi-owner).** The un-built half of T5.4
+  (#34): `PodProvisioner` in `cistern-wac` creating a root/matter container + owner ACL
+  (`accessTo` **and** `default`, no `foaf:Agent`), idempotent, never overwriting an existing
+  ACL; exposed as `cistern pod create` (new `cistern-cli` module) and as a Control-protected
+  admin call; `cistern.pods.seed[]` for boot-time seeding of several pods. DoD: N seeded pods
+  on fresh boot, restart idempotent; CLI second run is a no-op; contract test on the ACL shape;
+  CTH alice/bob seeding expressible by config. Issue #90.
+- [ ] **T5.7 Grant authoring — `GrantService` + `cistern grant` CLI.** Add/remove an
+  `Authorization` for a WebID or `foaf:Agent` on a target, always preserving the owner's
+  authorization and always writing `accessTo` + `default` on containers (the two silent-deny
+  traps); performed as a normal `PUT <target>.acl` under the caller's credential so Control is
+  enforced. `--until` requires T5.8. DoD: property test — owner keeps Control after any
+  grant/revoke sequence; CLI transcript reproduces beats 3 and 5 of `k8s/demo.sh` without
+  hand-written Turtle. Issue #91.
+- [ ] **T5.8 Time-boxed grants.** `cistern:validUntil` (xsd:dateTime) on an `acl:Authorization`
+  (new `Cistern` vocab class in core); `Authorization` gains `Optional<Instant> validUntil`;
+  `WacEngine` treats expired or malformed values as absent (fail closed); `Clock` injected; no
+  decision caching (T5.3 invariant). Foreign ACLs without the term behave as today. DoD: engine
+  tests active/expired/malformed/boundary; HTTP test — grant with past `--until` denied on the
+  next request, future allowed, clock advance denies without restart; no CTH regression.
+  Issue #92.
+- [ ] **T5.9 Decision log & receipts.** `AccessDecision` carries `decidedBy` (the effective ACL
+  resource, already known to `EffectiveAcl`) and matched authorization IRIs; `DecisionRecord` +
+  `DecisionSink` (append-only JSON Lines under `<root>/.cistern/decisions/` via `ResourceStore`;
+  in-memory for tests); one record per decision from `AuthorizationFilter`, allow and deny,
+  never blocking the request (`cistern.audit.required` flips that); `DecisionQuery` per resource
+  (requires Control) and per agent (owner). DoD: the five demo beats yield a receipt naming
+  `/trips/.acl`; receipts endpoint denies without Control; log failure does not change the
+  outcome unless required. Issue #93. *This is beat 4 of `docs/demo/walkthrough.md`.*
+
 ## Phase 6 — MCP front-end (cistern-mcp)
 
 - [ ] **T6.1 MCP server.** Using the official MCP Java SDK (Spring integration): expose
@@ -360,6 +409,20 @@ regression.
   (the file backend is single-writer; RollingUpdate over an RWO volume risks two
   writers), TCP probes (the root legitimately 404s until T5.4, so httpGet would
   crash-loop a healthy server), `fsGroup: 10001` and an `emptyDir` at `/tmp`.*
+
+- [ ] **T7.7 Production deployment posture.** Supersede ADR 0001 with ADR 0002 once T4.0 lands
+  (conditions: T4.0 merged, TLS terminated, no owner secret in production): TLS + domain,
+  apply `infra/terraform` to the GCP test project (COS + persistent disk, never Cloud Run +
+  gcsfuse), backup schedule + restore drill, per-firm isolation (separate pods/roots), edge
+  rate limiting, request-id propagation for T5.9. DoD: a ValueDocs test instance over TLS with
+  T4.0 auth and the owner secret unset; `k8s/demo.sh` passes remotely with a JWT/service
+  credential; restore drill documented in `docs/deploy.md`. Issue #94.
+- [ ] **T7.8 Integration architecture & application playbook.** `docs/INTEGRATION.md`:
+  architecture as built, integration model, step-by-step playbook (ValueDocs worked example)
+  with curl verified against the jar, derived-data rule, first-cut interfaces and module
+  placement for T4.0/T5.6–T5.9/T7.7/T1.6, config reference, status-code contract. DoD: every
+  claim verified or marked planned with its ticket; linked from README and ARCHITECTURE.
+  Issue #96.
 
 ## Parked (post-milestone-3 candidates — do not start without architect approval)
 
