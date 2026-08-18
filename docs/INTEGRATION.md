@@ -20,6 +20,10 @@ deployment posture), #95 (T1.6 object storage), #96 (this document).
 Every HTTP request — from a browser, an application, or (later) the MCP front-end — crosses
 the same path. There is no privileged internal route (ARCHITECTURE decision 6).
 
+![One request through Cistern, as built](diagrams/request-path-sequence.svg)
+
+<details><summary>Text version of the same path</summary>
+
 ```
 request
   │
@@ -43,6 +47,8 @@ LdpService (cistern-core)      containment, RDF io (Jena), N3 Patch, resource ki
   ▼
 ResourceStore SPI (cistern-core) ──► cistern-storage-file (file-per-resource + metadata sidecar)
 ```
+
+</details>
 
 Facts an integrator relies on, all observed on 2026-08-18:
 
@@ -161,6 +167,12 @@ Being straight about the effort is what makes the rest of this document credible
 **So: is it easy?** For an assistant, it will be trivial once the MCP door exists — that is the strategic point. For an application, it is honest engineering — a few days with the levers above, weeks without them, and a product decision either way about where the data lives. That is why the first integration is our own (ValueDocs) and the next two are done *with* partners rather than handed a document.
 
 ## 3. Playbook — integrating an application (ValueDocs as the worked example)
+
+The whole lifecycle in one picture — each band says what is possible today and which ticket
+changes it:
+
+![An application integrating: provision → identity → grant → use → end of engagement](diagrams/integration-lifecycle-sequence.svg)
+
 
 Every step says what works **today** and what changes **after** a numbered issue. Commands are
 against a local jar; substitute the deployment base URL later.
@@ -460,6 +472,9 @@ is a report you would be happy to hand the client — because it is one, and the
 Cloud Run + gcsfuse), backups with a restore drill, per-firm isolation, edge rate limiting.
 
 ### Step 9 — Test your integration
+
+![The scoped-grant demo as a sequence](diagrams/scoped-grant-sequence.svg)
+
 
 Run `k8s/demo.sh` against your instance (`CISTERN_BASE`, `CISTERN_TOKEN`) — it exercises
 create, deny-by-default, grant, scoped read vs write vs outside-grant, revoke, owner-unaffected.

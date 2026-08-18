@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 976" width="840" height="976" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif">
+<defs><marker id="arr-req" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#435457"/></marker><marker id="arr-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2f6b3d"/></marker><marker id="arr-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a3401f"/></marker><marker id="arr-ret" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6f8083"/></marker></defs>
+<rect width="840" height="976" fill="#ffffff"/>
+<text x="40" y="34" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" letter-spacing="0.12em" fill="#6f8083">SEQUENCE · AN APPLICATION INTEGRATING (TODAY → AFTER #88/#91/#93)</text>
+<line x1="130" y1="114" x2="130" y2="962" stroke="#c9d3d0" stroke-width="1.2"/>
+<rect x="50" y="70" width="160" height="44" rx="6" fill="#ffffff" stroke="#c9d3d0" stroke-width="1.2"/>
+<text x="130" y="89" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" font-weight="650" fill="#17262a">Owner / firm</text>
+<text x="130" y="104" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="11" fill="#6f8083">Control on the pod</text>
+<line x1="400" y1="114" x2="400" y2="962" stroke="#c9d3d0" stroke-width="1.2"/>
+<rect x="320" y="70" width="160" height="44" rx="6" fill="#ffffff" stroke="#c9d3d0" stroke-width="1.2"/>
+<text x="400" y="97" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" font-weight="650" fill="#17262a">Cistern</text>
+<line x1="670" y1="114" x2="670" y2="962" stroke="#c9d3d0" stroke-width="1.2"/>
+<rect x="590" y="70" width="160" height="44" rx="6" fill="#ffffff" stroke="#c9d3d0" stroke-width="1.2"/>
+<text x="670" y="89" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" font-weight="650" fill="#17262a">Application</text>
+<text x="670" y="104" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="11" fill="#6f8083">e.g. ValueDocs legal</text>
+<rect x="40" y="122" width="760" height="26" fill="#eaf0ee" rx="4"/>
+<text x="52" y="140" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" letter-spacing="0.06em" fill="#435457">PROVISION (TODAY: OWNER SEEDED AT BOOT · AFTER #90: ON DEMAND)</text>
+<line x1="130" y1="174" x2="400" y2="174" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="265.0" y="167" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">create pod + matter folder(s), owner ACL</text>
+<line x1="400" y1="208" x2="130" y2="208" stroke="#2f6b3d" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arr-ok)"/>
+<text x="265.0" y="201" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#2f6b3d" font-weight="600">201</text>
+<rect x="40" y="228" width="760" height="26" fill="#eaf0ee" rx="4"/>
+<text x="52" y="246" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" letter-spacing="0.06em" fill="#435457">IDENTITY (TODAY: OWNER TOKEN · AFTER #88: OIDC/JWT + SERVICE PRINCIPAL)</text>
+<line x1="670" y1="280" x2="400" y2="280" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="535.0" y="273" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">authenticate as service principal</text>
+<line x1="400" y1="314" x2="670" y2="314" stroke="#6f8083" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arr-ret)"/>
+<text x="535.0" y="307" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#6f8083">Agent = the app's WebID</text>
+<rect x="40" y="334" width="760" height="26" fill="#eaf0ee" rx="4"/>
+<text x="52" y="352" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" letter-spacing="0.06em" fill="#435457">GRANT (TODAY: PUT .ACL BY HAND · AFTER #91: CISTERN GRANT / GRANTSERVICE)</text>
+<line x1="130" y1="386" x2="400" y2="386" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="265.0" y="379" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">grant app Read on /matters/2026-114/</text>
+<line x1="400" y1="420" x2="130" y2="420" stroke="#2f6b3d" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arr-ok)"/>
+<text x="265.0" y="413" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#2f6b3d" font-weight="600">201 (.acl written; owner keeps Control)</text>
+<rect x="40" y="440" width="760" height="26" fill="#eaf0ee" rx="4"/>
+<text x="52" y="458" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" letter-spacing="0.06em" fill="#435457">USE — EVERY REQUEST DECIDED FRESH</text>
+<line x1="670" y1="492" x2="400" y2="492" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="535.0" y="485" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">GET /matters/2026-114/  (list)</text>
+<line x1="400" y1="526" x2="670" y2="526" stroke="#2f6b3d" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arr-ok)"/>
+<text x="535.0" y="519" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#2f6b3d" font-weight="600">200 + ldp:contains  · WAC-Allow: user=&quot;read&quot;</text>
+<line x1="670" y1="560" x2="400" y2="560" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="535.0" y="553" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">GET /matters/2026-114/contract.pdf</text>
+<line x1="400" y1="594" x2="670" y2="594" stroke="#2f6b3d" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arr-ok)"/>
+<text x="535.0" y="587" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#2f6b3d" font-weight="600">200 application/pdf · ETag</text>
+<line x1="670" y1="628" x2="400" y2="628" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="535.0" y="621" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">GET /tax/FY2025-26/  (another folder)</text>
+<line x1="400" y1="662" x2="670" y2="662" stroke="#a3401f" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arr-deny)"/>
+<text x="535.0" y="655" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#a3401f" font-weight="600">403 — outside the grant (surface it; never escalate)</text>
+<rect x="305" y="684" width="460" height="62" fill="#f6eed6" stroke="#8a6a17" stroke-opacity="0.35" rx="4"/>
+<text x="535.0" y="701" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" fill="#8a6a17">after #93: each decision becomes a DecisionRecord</text>
+<text x="535.0" y="717" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" fill="#8a6a17">{at, agent, target, mode, outcome, decidedBy}</text>
+<text x="535.0" y="733" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" fill="#8a6a17">queryable by whoever holds Control</text>
+<rect x="40" y="768" width="760" height="26" fill="#f6e4dc" rx="4"/>
+<text x="52" y="786" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" letter-spacing="0.06em" fill="#a3401f">END OF ENGAGEMENT (TODAY: DELETE .ACL · AFTER #92: VALIDUNTIL EXPIRES IT)</text>
+<line x1="130" y1="820" x2="400" y2="820" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="265.0" y="813" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">revoke: DELETE /matters/2026-114/.acl  (or wait for validUntil)</text>
+<line x1="400" y1="854" x2="130" y2="854" stroke="#2f6b3d" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arr-ok)"/>
+<text x="265.0" y="847" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#2f6b3d" font-weight="600">204</text>
+<line x1="670" y1="888" x2="400" y2="888" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="535.0" y="881" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">GET /matters/2026-114/contract.pdf</text>
+<line x1="400" y1="922" x2="670" y2="922" stroke="#a3401f" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arr-deny)"/>
+<text x="535.0" y="915" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#a3401f" font-weight="600">403 — next request, no restart, no cache</text>
+</svg>

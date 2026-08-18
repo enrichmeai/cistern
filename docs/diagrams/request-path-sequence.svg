@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1255 798" width="1255" height="798" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif">
+<defs><marker id="arr-req" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#435457"/></marker><marker id="arr-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2f6b3d"/></marker><marker id="arr-deny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a3401f"/></marker><marker id="arr-ret" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6f8083"/></marker></defs>
+<rect width="1255" height="798" fill="#ffffff"/>
+<text x="40" y="34" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" letter-spacing="0.12em" fill="#6f8083">SEQUENCE · ONE REQUEST THROUGH CISTERN (AS BUILT)</text>
+<line x1="130" y1="114" x2="130" y2="784" stroke="#c9d3d0" stroke-width="1.2"/>
+<rect x="50" y="70" width="160" height="44" rx="6" fill="#ffffff" stroke="#c9d3d0" stroke-width="1.2"/>
+<text x="130" y="89" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" font-weight="650" fill="#17262a">Caller</text>
+<text x="130" y="104" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="11" fill="#6f8083">app / browser / (later) MCP</text>
+<line x1="305" y1="114" x2="305" y2="784" stroke="#c9d3d0" stroke-width="1.2"/>
+<rect x="225" y="70" width="160" height="44" rx="6" fill="#ffffff" stroke="#c9d3d0" stroke-width="1.2"/>
+<text x="305" y="89" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" font-weight="650" fill="#17262a">AuthorizationFilter</text>
+<text x="305" y="104" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="11" fill="#6f8083">cistern-webflux</text>
+<line x1="480" y1="114" x2="480" y2="784" stroke="#c9d3d0" stroke-width="1.2"/>
+<rect x="400" y="70" width="160" height="44" rx="6" fill="#ffffff" stroke="#c9d3d0" stroke-width="1.2"/>
+<text x="480" y="89" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" font-weight="650" fill="#17262a">PrincipalResolver</text>
+<text x="480" y="104" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="11" fill="#6f8083">LocalCredential | Anonymous</text>
+<line x1="655" y1="114" x2="655" y2="784" stroke="#c9d3d0" stroke-width="1.2"/>
+<rect x="575" y="70" width="160" height="44" rx="6" fill="#ffffff" stroke="#c9d3d0" stroke-width="1.2"/>
+<text x="655" y="89" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" font-weight="650" fill="#17262a">AccessControl</text>
+<text x="655" y="104" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="11" fill="#6f8083">AclDiscovery + WacEngine</text>
+<line x1="830" y1="114" x2="830" y2="784" stroke="#c9d3d0" stroke-width="1.2"/>
+<rect x="750" y="70" width="160" height="44" rx="6" fill="#ffffff" stroke="#c9d3d0" stroke-width="1.2"/>
+<text x="830" y="89" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" font-weight="650" fill="#17262a">Handler → LdpService</text>
+<text x="830" y="104" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="11" fill="#6f8083">cistern-webflux / core</text>
+<line x1="1005" y1="114" x2="1005" y2="784" stroke="#c9d3d0" stroke-width="1.2"/>
+<rect x="925" y="70" width="160" height="44" rx="6" fill="#ffffff" stroke="#c9d3d0" stroke-width="1.2"/>
+<text x="1005" y="89" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" font-weight="650" fill="#17262a">ResourceStore</text>
+<text x="1005" y="104" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="11" fill="#6f8083">cistern-storage-file</text>
+<line x1="130" y1="136" x2="305" y2="136" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="217.5" y="129" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">HTTP request (any method, any path)</text>
+<line x1="305" y1="170" x2="480" y2="170" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="392.5" y="163" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">resolve(exchange)</text>
+<line x1="480" y1="204" x2="305" y2="204" stroke="#6f8083" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arr-ret)"/>
+<text x="392.5" y="197" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#6f8083">Agent (WebID) or ANONYMOUS</text>
+<path d="M305,238 h44 v22 h-38" fill="none" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="357" y="253" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">RequiredAccess: method + target → mode  (GET=Read · PUT/DELETE=Write · POST/PATCH=Append · .acl=Control)</text>
+<line x1="305" y1="286" x2="655" y2="286" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="480.0" y="279" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">isAllowed(method, target, agent)</text>
+<line x1="655" y1="320" x2="1005" y2="320" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="830.0" y="313" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">read &lt;target&gt;.acl, else walk up to nearest acl:default</text>
+<line x1="1005" y1="354" x2="655" y2="354" stroke="#6f8083" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arr-ret)"/>
+<text x="830.0" y="347" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#6f8083">effective ACL (fails closed if none)</text>
+<path d="M655,388 h44 v22 h-38" fill="none" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="707" y="403" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">WacEngine: evaluate Authorization triples · deny by default</text>
+<line x1="655" y1="436" x2="305" y2="436" stroke="#6f8083" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arr-ret)"/>
+<text x="480.0" y="429" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#6f8083">allow / deny (+ the deciding ACL resource)</text>
+<rect x="35" y="458" width="365" height="62" fill="#f6e4dc" stroke="#a3401f" stroke-opacity="0.35" rx="4"/>
+<text x="217.5" y="475" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" fill="#a3401f">denied + anonymous → 401  WWW-Authenticate: Bearer</text>
+<text x="217.5" y="491" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" fill="#a3401f">denied + authenticated → 403</text>
+<text x="217.5" y="507" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" fill="#a3401f">(no decision is cached: revocation lands on the next request)</text>
+<rect x="40" y="542" width="1175" height="26" fill="#e0eee2" rx="4"/>
+<text x="52" y="560" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" font-weight="600" letter-spacing="0.06em" fill="#2f6b3d">ALLOWED → THE HANDLER RUNS</text>
+<line x1="305" y1="594" x2="830" y2="594" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="567.5" y="587" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">route to handler</text>
+<path d="M830,628 h44 v22 h-38" fill="none" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="882" y="643" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">negotiation · ETag / If-Match (412) · Slug · Link</text>
+<line x1="830" y1="676" x2="1005" y2="676" stroke="#435457" stroke-width="1.6" marker-end="url(#arr-req)"/>
+<text x="917.5" y="669" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#435457">get / put / delete / children</text>
+<line x1="1005" y1="710" x2="830" y2="710" stroke="#6f8083" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arr-ret)"/>
+<text x="917.5" y="703" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#6f8083">representation (bytes + media type)</text>
+<line x1="830" y1="744" x2="130" y2="744" stroke="#2f6b3d" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arr-ok)"/>
+<text x="480.0" y="737" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="13" fill="#2f6b3d" font-weight="600">2xx + WAC-Allow / ETag / Link…  (or 4xx as RFC 9457 problem+json)</text>
+</svg>
