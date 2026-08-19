@@ -43,7 +43,40 @@ public enum WacMessage {
     UNPARSEABLE_ACL(
             "The ACL resource <%s> is not parseable RDF; denying by default rather than"
                     + " continuing the walk, since a broken ACL must not fall through to a more"
-                    + " permissive ancestor");
+                    + " permissive ancestor"),
+
+    // ---- grant authoring (T5.7) -------------------------------------------------------
+
+    /** A {@link Grantee.WebId} built from a relative reference — a caller bug. */
+    WEBID_NOT_ABSOLUTE("A WebID must be an absolute URI: <%s>"),
+
+    /** A {@link GrantRequest} with no modes — nothing would be granted, so it is a caller bug. */
+    GRANT_WITHOUT_MODES("A grant on <%s> must name at least one access mode"),
+
+    /**
+     * A grant or revoke aimed at an ACL resource itself. Access to an ACL is governed by
+     * {@code acl:Control} on the resource it protects, so an ACL's own ACL is not a thing.
+     */
+    TARGET_IS_AN_ACL(
+            "<%s> is an ACL resource; grant or revoke on the resource it governs instead"),
+
+    /**
+     * The effective ACL handed to the grant service does not govern the target: found on the
+     * target it must be the target's own, and found above it must be on an ancestor container.
+     */
+    EFFECTIVE_ACL_DOES_NOT_GOVERN(
+            "The effective ACL was found on <%s> under scope %s, which cannot govern <%s>"),
+
+    /**
+     * A revoke that would remove an authorization granting {@code acl:Control}. Refused: taking
+     * Control away is how an owner is locked out of a subtree, and the whole reason this
+     * service exists is that a resource-level ACL replaces inheritance silently. Removing
+     * Control is a deliberate edit of the ACL, not a one-line revoke.
+     */
+    REVOKE_WOULD_DROP_CONTROL(
+            "Refusing to revoke <%s> on <%s>: that authorization grants acl:Control, and revoking"
+                    + " Control could lock the owner out of the resource. Edit the ACL"
+                    + " deliberately instead");
 
     private final String template;
 
