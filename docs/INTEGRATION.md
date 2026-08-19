@@ -190,12 +190,14 @@ java -jar cistern-app/target/cistern-app-*.jar --server.port=3737
 ```
 
 Boot seeds `/.acl` granting the owner Read/Write/Append/Control with `acl:accessTo` and
-`acl:default`, and nothing to anyone else. Setting the owner is what **turns enforcement on**;
-without it the server logs `NO_OWNER_CONFIGURED` at WARN and is unprotected (deliberate, ADR
-0001; see #94).
+`acl:default`, and nothing to anyone else. Setting the owner's **WebID** is what **turns
+enforcement on**; without it the server logs `NO_OWNER_CONFIGURED` at WARN and is unprotected
+(deliberate for a laptop pod — ADR 0002 keeps ADR 0001's loopback as the development shape;
+a credential configured without the owner is refused outright, #94). The token is the local
+way in; production leaves it unset (step 8).
 
 > `docker compose up` does **not** pass the owner variables — export them into compose or use
-> the jar/k8s. `kubectl apply -k k8s/` deploys to whatever context is current: check it.
+> the jar/k8s. `kubectl apply -k k8s/overlays/local` deploys to whatever context is current: check it.
 
 ### Step 1 — Identity: who is the application?
 
@@ -240,9 +242,14 @@ first authenticated wins, else anonymous (`ChainedPrincipalResolver`):
    that fails any check authenticates **nobody** — the request proceeds as anonymous and gets
    401 where a grant was needed — and the reason is logged (`Bearer JWT rejected (EXPIRED): …`).
 
-Enforcement is still switched on by `cistern.owner.web-id` (it seeds the root ACL); the
-other two are additional ways in, not replacements. There is **no** caching of decisions:
-revoking a grant, rotating a service secret or a signing key takes effect on the next request.
+Enforcement is switched on by `cistern.owner.web-id` (it seeds the root ACL); the other
+two are additional ways in, not replacements — and since T7.7 they **require** it: an issuer
+or a service principal configured without an owner is a start-up refusal
+(`ENFORCEMENT_REQUIRES_OWNER`), because the credentials would never be asked for. The
+owner's *token* is not required: `cistern.owner.web-id` alone turns enforcement on, and in
+production the owner authenticates through 2 or 3 with the token unset (ADR 0002). There is
+**no** caching of decisions: revoking a grant, rotating a service secret or a signing key
+takes effect on the next request.
 
 **Not yet:** DPoP-bound tokens, `Authorization: DPoP`, WebID dereferencing (T4.1–T4.4); the
 (user, client) principal shape and the intersection cap (#89, taken when the MCP front door
@@ -466,10 +473,41 @@ is a report you would be happy to hand the client — because it is one, and the
 
 ### Step 8 — Deploy
 
-**Today:** private network only (ADR 0001): loopback jar, `docker-compose` bound to
-`127.0.0.1`, or the k8s manifests with a `ClusterIP` service and `port-forward`.
-**After #88 → #94:** TLS + domain, GCP via `infra/terraform` (COS + persistent disk; never
-Cloud Run + gcsfuse), backups with a restore drill, per-firm isolation, edge rate limiting.
+**Today (T7.7, #94):** the firm runs Cistern **as its own service in its own cloud org** —
+option A, [ADR 0002](adr/0002-production-posture.md); the operator's guide is
+[`deploy.md`](deploy.md). Two builds of the same posture, neither applied by EnrichMeAI:
+
+- **GCP without Kubernetes** — [`infra/terraform`](../infra/terraform/README.md): a COS
+  instance with no external IP, the pod on a persistent disk with a daily snapshot schedule,
+  a global HTTPS load balancer with a Google-managed certificate (443 only), Cloud Armor
+  per-IP rate limiting, the authentication environment from Secret Manager. `terraform
+  validate` + `plan` verified (24 resources); ValueDocs applies it in their project.
+- **Kubernetes** — [`k8s/overlays/production`](../k8s/README.md#production-k8soverlaysproduction):
+  an Ingress terminating TLS (cert-manager or your certificate), the Service still
+  `ClusterIP` behind it, a NetworkPolicy admitting only the ingress controller, one replica,
+  the authentication environment from a `cistern-auth` Secret. Rendered and
+  schema-validated; CI holds the posture.
+
+What the application needs to know about the deployment, in the order it will meet it:
+
+1. **The base URL is `https://pod.<firm>`** and it is exact: every identifier the pod hands
+   out is minted under it, every ACL and every receipt names absolute IRIs under it. Address
+   the pod by that origin and no other.
+2. **Your credential is yours alone** — a hashed service principal (step 1), or OAuth client
+   credentials at the firm's IdP. The owner's credential is the administrator's, through the
+   IdP, with `cistern.owner.token` unset; an owner token will not exist for you to borrow.
+3. **Send `X-Request-Id` on every call** (1–128 characters from `A-Za-z0-9._~:/+=-`). The
+   edge forwards it (Google LB) or mints one (ingress-nginx), Cistern echoes it and writes it
+   into the receipt; log it with every refusal you handle, so step 7's receipt and your log
+   meet on one value.
+4. **Expect `429` from the edge** as well as `401`/`403` from the pod. A `401` is not "retry".
+5. **Backups are the firm's** — `cistern.storage.root` including `.cistern/` (your receipts
+   are in there), snapshotted daily and proven by `infra/restore-drill.sh`. Do not keep an
+   authoritative copy to compensate (§5); if a restore is ever needed, the pod comes back
+   with its ACLs, its documents and its receipts.
+
+**Local, unchanged:** the jar on loopback, `docker-compose` bound to `127.0.0.1`, or
+`k8s/overlays/local` with `port-forward` — the owner token is fine there and only there.
 
 ### Step 9 — Test your integration
 
@@ -745,8 +783,8 @@ defaults to `CISTERN_TOKEN`; `--base` to `http://127.0.0.1:3737`.
 | `server.port` | — | 3000 | HTTP port (compose/k8s map 3737 → 3000) |
 | `cistern.base-url` | `CISTERN_BASE_URL` | `http://localhost:3000` | the origin resources are minted under; must match how clients address the server |
 | `cistern.storage.root` | `CISTERN_STORAGE_ROOT` | `./data` | file backend root |
-| `cistern.owner.web-id` | `CISTERN_OWNER_WEBID` | unset | pod owner; **setting it turns enforcement on** and seeds `/.acl` |
-| `cistern.owner.token` | `CISTERN_OWNER_TOKEN` | unset | the owner's bearer secret (private network only) |
+| `cistern.owner.web-id` | `CISTERN_OWNER_WEBID` | unset | pod owner; **setting it turns enforcement on** and seeds `/.acl`; required once any `cistern.auth.*` credential source is set (refused at bind time otherwise, T7.7) |
+| `cistern.owner.token` | `CISTERN_OWNER_TOKEN` | unset | the owner's local bearer secret — optional, private network only, **unset in production** (ADR 0002): the owner then authenticates through the issuer or a hashed service credential |
 | `cistern.cors.allowed-origins` / `.max-age` | — | `*` / — | CORS (T2.8) |
 | `cistern.auth.service-principals[n].web-id` / `.credential-hash` | `CISTERN_AUTH_SERVICEPRINCIPALS_n_WEBID` / `_CREDENTIALHASH` | unset | an application as its own principal; hash is `sha256:<hex>` (T4.0) |
 | `cistern.auth.oidc.issuer` | `CISTERN_AUTH_OIDC_ISSUER` | unset | trusted OIDC issuer, compared verbatim to `iss`; **setting it enables the JWT resolver** (T4.0) |

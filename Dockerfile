@@ -5,9 +5,14 @@
 #   docker build -t cistern .
 #   docker run --rm -p 3000:3000 -v cistern-data:/data cistern
 #
-# SECURITY: this image has no authentication and no access control — Phases 4 and 5
-# are not built. Anyone who can reach the port can read, write and delete every
-# resource in the pod. Publish it to localhost or a private network only.
+# SECURITY: the server enforces Web Access Control on every request (T5.1–T5.4), deny
+# by default — but only once it has an owner. Set CISTERN_OWNER_WEBID (that is what
+# turns enforcement on and seeds the root ACL); without it the pod is unprotected and
+# says so on every boot. How the owner authenticates is up to the deployment: a local
+# bearer token (CISTERN_OWNER_TOKEN — private network only; the compose file and the
+# local k8s overlay), or an OIDC issuer / hashed service credentials with NO owner
+# token, behind TLS terminated in front (docs/adr/0002-production-posture.md,
+# docs/deploy.md). Credentials configured without an owner refuse to start.
 
 # ---- build ----------------------------------------------------------------
 FROM maven:3.9-eclipse-temurin-25 AS build

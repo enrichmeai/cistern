@@ -26,6 +26,35 @@ before anything is built, deliberately.
   (default `false`) makes an unrecordable decision fail closed with 503 (new
   `CisternException.ServiceUnavailable`); by default the outcome stands and the failure is
   logged. `k8s/demo.sh` gains a sixth beat: the receipt.
+- **Enforcement guard (T7.7, #94).** A credential source — `cistern.auth.oidc.issuer` or
+  `cistern.auth.service-principals[]` — configured without `cistern.owner.web-id` now refuses
+  to start at bind time (`ENFORCEMENT_REQUIRES_OWNER`, naming the fix): enforcement is keyed on
+  the owner, so the credentials would never have been asked for and the pod would have been
+  open while its configuration read as locked. The owner's WebID and token now do different
+  jobs: the WebID alone turns enforcement on and seeds the root ACL (`Owner.isNamed()`); the
+  token only adds the local bearer resolver (`Owner.hasLocalCredential()`) — the production
+  shape is WebID set, token unset, owner authenticating via OIDC or a hashed service
+  credential. Nothing configured still starts and still warns (`NO_OWNER_CONFIGURED`, reworded:
+  enforcement is off, not "only public grants reachable"); an owner named with no way to
+  authenticate starts enforced and warns `ENFORCEMENT_WITHOUT_CREDENTIAL`.
+- **Production posture (T7.7, #94).** ADR 0002 supersedes ADR 0001: an instance may face the
+  internet under eight conditions (TLS in front; `cistern.owner.web-id` set;
+  `cistern.owner.token` unset; per-tenant isolation; backups drilled; `X-Request-Id` across the
+  edge; rate limiting at the edge; `cistern.audit.required=true`). `infra/terraform` becomes a
+  deployable GCP path: a COS instance with no external IP and Cloud NAT egress, a global HTTPS
+  load balancer with a Google-managed certificate on 443 only, a firewall admitting only the
+  load balancer's and IAP's ranges, optional Cloud Armor per-IP rate limiting, the image from
+  GHCR by pinned tag (`:latest` refused), the authentication environment from Secret Manager
+  (never in tfvars or state; `CISTERN_OWNER_TOKEN` refused by the startup script), a daily
+  disk-snapshot policy, and `outputs.tf` with the base URL. `k8s/` becomes `base` +
+  `overlays/local` (the former manifests, object-for-object) + `overlays/production` (Ingress
+  with TLS, ingress-only NetworkPolicy, resource limits, `cistern-auth` Secret with no owner
+  token, one replica); `.github/workflows/k8s.yml` validates both and holds each to its
+  posture. `docs/deploy.md` rewritten for the production topology, backups (the whole storage
+  root including `.cistern/`; the base URL is part of the data) and
+  **`infra/restore-drill.sh`** — snapshot → new volume → boot → smoke (anonymous 401, owner
+  200, root ACL byte-identical, receipts carried over and live), run locally and transcribed.
+  `docs/INTEGRATION.md` step 8 and the Dockerfile header describe the server as built.
 
 ### Fixed
 
