@@ -9,4 +9,44 @@
     <version>0.1.0-SNAPSHOT</version>
   </parent>
   <artifactId>cistern-auth</artifactId>
+  <name>Cistern :: Auth</name>
+  <description>Authentication: token validation only — Cistern is not an identity provider.
+    T4.0 (#88) lands the OIDC/JWT principal resolver behind cistern-webflux's PrincipalResolver
+    seam; Solid-OIDC proper (DPoP, WebID dereferencing) is T4.1–T4.4.</description>
+  <dependencies>
+    <!-- Implements PrincipalResolver, which is the HTTP layer's seam (docs/INTEGRATION.md §6:
+         auth → webflux, auth → core). -->
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-webflux</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!-- JWS/JWT parsing, JWK sets and signature verification. Only the crypto and the
+         parsing: key fetching is done reactively with WebClient, never with Nimbus's own
+         blocking retriever. -->
+    <dependency>
+      <groupId>com.nimbusds</groupId>
+      <artifactId>nimbus-jose-jwt</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webflux</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <!-- See cistern-webflux: Boot 4 moved WebTestClient support into its own artifact. -->
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-webtestclient</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
 </project>

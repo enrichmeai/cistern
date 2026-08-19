@@ -27,6 +27,13 @@
       <artifactId>cistern-webflux</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!-- T4.0 (#88): the OIDC/JWT principal resolver, which joins the resolver chain when
+         cistern.auth.oidc.issuer is set and is inert otherwise. -->
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-auth</artifactId>
+      <version>${project.version}</version>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-webflux</artifactId>
