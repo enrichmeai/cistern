@@ -1,0 +1,46 @@
+{
+  "header": {
+    "alg": "RS256",
+    "typ": "JWT",
+    "kid": "qjb2vhgCWilsGooMs5XpvMU4TxlQhUoCZyNEk1KsluE"
+  },
+  "claims": {
+    "exp": 1787098880,
+    "iat": 1787098580,
+    "jti": "onrtro:a65d289d-062e-2cc9-1334-a1848a2ca06b",
+    "iss": "http://keycloak:8080/realms/cistern",
+    "aud": [
+      "cistern",
+      "account"
+    ],
+    "sub": "f9a293ab-9447-40d0-8f6c-b6da8c210048",
+    "typ": "Bearer",
+    "azp": "valuedocs-legal",
+    "sid": "yOru38IogLOuZI0UzkZXNb8F",
+    "acr": "1",
+    "realm_access": {
+      "roles": [
+        "default-roles-cistern",
+        "offline_access",
+        "uma_authorization"
+      ]
+    },
+    "resource_access": {
+      "account": {
+        "roles": [
+          "manage-account",
+          "manage-account-links",
+          "view-profile"
+        ]
+      }
+    },
+    "scope": "cistern profile email",
+    "webid": "https://acme-law.example/people/alice#me",
+    "email_verified": true,
+    "name": "Alice Advocate",
+    "preferred_username": "alice",
+    "given_name": "Alice",
+    "family_name": "Advocate",
+    "email": "alice@acme-law.example"
+  }
+}

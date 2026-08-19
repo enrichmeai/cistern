@@ -109,6 +109,8 @@ against a local jar; substitute the deployment base URL later.
 
 ### Step 0 — Run a Cistern you can hit
 
+> Fastest path: [`integration-kit/`](../integration-kit/README.md) — Cistern + Keycloak (real OIDC issuer) + a seeded pod + a sample app that shows the allow/refuse sequence, in one `docker compose up` (T7.10, #102).
+
 ```bash
 export CISTERN_OWNER_WEBID='https://acme-law.example/profile#firm'      # the pod owner's WebID
 export CISTERN_OWNER_TOKEN="$(openssl rand -hex 32)"                    # today's only credential

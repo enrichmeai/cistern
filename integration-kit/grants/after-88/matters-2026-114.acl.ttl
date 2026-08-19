@@ -1,0 +1,18 @@
+# /matters/2026-114/.acl — AFTER #88 (KIT_MODE=after-88): the legal app is a named principal.
+#
+# Once Cistern resolves Keycloak JWTs, the token minted for the confidential client
+# valuedocs-legal carries webid=https://valuedocs.example/apps/legal#id, and this file grants
+# that WebID — and only it — Read on this container. Nobody anonymous gets in (401), and the
+# tax app, though authenticated, is not named here (403).
+# <OWNER-WEBID> is resolved from cistern.env when the file is applied.
+@prefix acl:  <http://www.w3.org/ns/auth/acl#> .
+
+<#owner> a acl:Authorization ;
+    acl:agent    <OWNER-WEBID> ;
+    acl:accessTo </matters/2026-114/> ; acl:default </matters/2026-114/> ;
+    acl:mode     acl:Read, acl:Write, acl:Append, acl:Control .
+
+<#legal-app> a acl:Authorization ;
+    acl:agent    <https://valuedocs.example/apps/legal#id> ;
+    acl:accessTo </matters/2026-114/> ; acl:default </matters/2026-114/> ;
+    acl:mode     acl:Read .
