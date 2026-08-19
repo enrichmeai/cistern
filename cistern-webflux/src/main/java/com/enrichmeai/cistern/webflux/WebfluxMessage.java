@@ -112,6 +112,56 @@ public enum WebfluxMessage {
     /** {@code cistern.base-url} must be usable as the base of every resource identifier. */
     BASE_URL_INVALID("cistern.base-url must be an absolute URI without a fragment: %s"),
 
+    // ---------------------------------------------------------------- authentication (T4.0)
+
+    /** {@code BearerToken} constructed with nothing in it — a caller bug, not a request fault. */
+    BEARER_TOKEN_BLANK("A bearer token cannot be blank"),
+
+    /** A service principal's credential hash is not {@code <label>:<hex>}. */
+    CREDENTIAL_HASH_MALFORMED(
+            "cistern.auth.service-principals[].credential-hash must be <algorithm>:<hex digest>,"
+                    + " e.g. sha256:<64 hex characters>; got: %s"),
+
+    /** The label before the colon names no algorithm this server implements. */
+    CREDENTIAL_HASH_UNKNOWN_ALGORITHM(
+            "cistern.auth.service-principals[].credential-hash names an unknown hash algorithm"
+                    + " '%s'; supported: %s"),
+
+    /** The hex digest is the wrong size for the algorithm named — a copy-paste error, usually. */
+    CREDENTIAL_HASH_WRONG_LENGTH(
+            "A %s credential hash must be %s bytes of digest; got %s"),
+
+    /** A service principal's WebID must be absolute: it is what {@code acl:agent} names. */
+    SERVICE_PRINCIPAL_WEBID_INVALID("A service principal's web-id must be an absolute URI: %s"),
+
+    /** Both halves of an entry are required; half an entry authenticates nobody. */
+    SERVICE_PRINCIPAL_INCOMPLETE(
+            "cistern.auth.service-principals[] entries need both web-id and credential-hash"
+                    + " (web-id: %s)"),
+
+    /** Two entries with one credential: whose is it? Refused at startup rather than guessed. */
+    SERVICE_CREDENTIAL_DUPLICATE(
+            "Two service principals share a credential hash (second is <%s>); a credential must"
+                    + " prove exactly one identity"),
+
+    /** {@code cistern.auth.oidc.issuer} must be an absolute URI: it is compared verbatim to {@code iss}. */
+    OIDC_ISSUER_INVALID("cistern.auth.oidc.issuer must be an absolute URI: %s"),
+
+    /** A resource server that accepts tokens meant for anyone accepts tokens stolen from anyone. */
+    OIDC_AUDIENCES_REQUIRED(
+            "cistern.auth.oidc.audiences must name at least one audience when"
+                    + " cistern.auth.oidc.issuer is set"),
+
+    /** Two rules for finding the WebID in a token contradict each other. */
+    OIDC_WEBID_MAPPING_AMBIGUOUS(
+            "Set cistern.auth.oidc.webid-claim or cistern.auth.oidc.webid-template, not both"),
+
+    /** Skew widens the validity window; a negative one is meaningless. */
+    OIDC_CLOCK_SKEW_NEGATIVE("cistern.auth.oidc.clock-skew must not be negative: %s"),
+
+    /** Startup: which resolvers a request will be tried against, in order. Logged at INFO. */
+    PRINCIPAL_RESOLVERS_WIRED("Principal resolvers, in order: %s"),
+
     // ---------------------------------------- RFC 9457 titles, one per problem type
 
     // Titles are the RFC 9457 title member and so must not vary between occurrences of the

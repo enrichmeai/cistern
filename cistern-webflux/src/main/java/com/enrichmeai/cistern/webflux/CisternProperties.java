@@ -6,6 +6,7 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Deployment configuration for the HTTP layer.
@@ -22,9 +23,12 @@ import java.util.List;
  * @param storage storage backend settings
  * @param cors    cross-origin sharing settings (T2.8); wide open unless narrowed
  * @param owner   the pod owner and their local credential (T5.3/T5.4)
+ * @param auth    the other ways a request proves who it is (T4.0): service principals and an
+ *                OIDC issuer whose JWTs are accepted
  */
 @ConfigurationProperties(prefix = "cistern")
-public record CisternProperties(String baseUrl, Storage storage, Cors cors, Owner owner) {
+public record CisternProperties(
+        String baseUrl, Storage storage, Cors cors, Owner owner, Auth auth) {
 
     private static final String DEFAULT_BASE_URL = "http://localhost:3000";
 
@@ -43,6 +47,7 @@ public record CisternProperties(String baseUrl, Storage storage, Cors cors, Owne
         storage = storage == null ? new Storage(null) : storage;
         cors = cors == null ? new Cors(null, null) : cors;
         owner = owner == null ? new Owner(null, null) : owner;
+        auth = auth == null ? new Auth(null, null) : auth;
     }
 
     /**
@@ -128,6 +133,131 @@ public record CisternProperties(String baseUrl, Storage storage, Cors cors, Owne
         /** Whether local authentication is configured. Both halves are required. */
         public boolean isConfigured() {
             return webId != null && token != null && !token.isBlank();
+        }
+    }
+
+    /**
+     * The other ways a request proves who it is (T4.0, #88). Every one of them produces the
+     * same {@code Agent} and is judged by the same engine; none is a bypass. See
+     * {@code ChainedPrincipalResolver} for how they combine and in what order.
+     *
+     * @param oidc              an OIDC issuer whose signed JWTs authenticate a request
+     * @param servicePrincipals applications that authenticate as themselves, each with its
+     *                          own WebID and hashed credential
+     */
+    public record Auth(Oidc oidc, List<ServicePrincipal> servicePrincipals) {
+
+        public Auth {
+            oidc = oidc == null ? new Oidc(null, null, null, null, null, null) : oidc;
+            servicePrincipals = servicePrincipals == null ? List.of() : List.copyOf(servicePrincipals);
+        }
+    }
+
+    /**
+     * An OIDC issuer whose JWTs this pod accepts as proof of identity (T4.0, #88).
+     *
+     * <p>Configured by naming the issuer; the signing keys are discovered from it
+     * ({@code {issuer}/.well-known/openid-configuration} → {@code jwks_uri}) unless
+     * {@code jwks-uri} says otherwise. A token is accepted only if its signature verifies
+     * against one of those keys, its {@code iss} is exactly this issuer, its {@code aud} names
+     * one of {@code audiences}, and it is within its {@code exp}/{@code nbf} window allowing
+     * {@code clock-skew}. Anything else authenticates nobody: the request proceeds as anonymous
+     * and WAC decides, so a bad token never causes an error, only a 401 where a grant was needed.
+     *
+     * <p>Which claim is the WebID is the one thing an issuer cannot tell us. Either
+     * {@code webid-claim} names a claim carrying an absolute URI (Solid-OIDC's {@code webid},
+     * the default), or {@code webid-template} builds one from claims — e.g.
+     * {@code {iss}/users/{sub}#me} for an issuer that mints no WebIDs of its own. Setting both
+     * is a contradiction and refused.
+     *
+     * @param issuer        the issuer identifier, compared verbatim against {@code iss}; unset
+     *                      means no OIDC resolver
+     * @param audiences     the values of which {@code aud} must contain at least one; required
+     *                      when an issuer is set — a resource server that accepts tokens meant
+     *                      for anyone accepts tokens stolen from anyone
+     * @param webidClaim    the claim carrying the WebID
+     * @param webidTemplate a template over claims, {@code {claim}} substituted, yielding the
+     *                      WebID
+     * @param clockSkew     tolerance applied to {@code exp} and {@code nbf}
+     * @param jwksUri       where the issuer publishes its keys, when discovery is not wanted
+     */
+    public record Oidc(
+            URI issuer,
+            Set<String> audiences,
+            String webidClaim,
+            String webidTemplate,
+            Duration clockSkew,
+            URI jwksUri) {
+
+        /**
+         * Solid-OIDC §5: the access token's {@code webid} claim is the WebID. The natural
+         * default for a pod server, and what a Solid-aware issuer supplies.
+         */
+        public static final String DEFAULT_WEBID_CLAIM = "webid";
+
+        /**
+         * A minute, which is what Nimbus and most validators default to: enough for the clock
+         * drift of two machines that both run NTP, not enough to make "expired" meaningless.
+         */
+        public static final Duration DEFAULT_CLOCK_SKEW = Duration.ofSeconds(60);
+
+        public Oidc {
+            audiences = audiences == null ? Set.of() : Set.copyOf(audiences);
+            clockSkew = clockSkew == null ? DEFAULT_CLOCK_SKEW : clockSkew;
+            webidClaim = blankToNull(webidClaim);
+            webidTemplate = blankToNull(webidTemplate);
+            if (issuer != null) {
+                if (!issuer.isAbsolute()) {
+                    throw new IllegalArgumentException(
+                            WebfluxMessage.OIDC_ISSUER_INVALID.format(issuer));
+                }
+                if (audiences.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            WebfluxMessage.OIDC_AUDIENCES_REQUIRED.format());
+                }
+                if (webidClaim != null && webidTemplate != null) {
+                    throw new IllegalArgumentException(
+                            WebfluxMessage.OIDC_WEBID_MAPPING_AMBIGUOUS.format());
+                }
+                if (clockSkew.isNegative()) {
+                    throw new IllegalArgumentException(
+                            WebfluxMessage.OIDC_CLOCK_SKEW_NEGATIVE.format(clockSkew));
+                }
+            }
+            if (webidClaim == null && webidTemplate == null) {
+                webidClaim = DEFAULT_WEBID_CLAIM;
+            }
+        }
+
+        /** Whether an OIDC resolver is wanted at all. */
+        public boolean isConfigured() {
+            return issuer != null;
+        }
+
+        private static String blankToNull(String value) {
+            return value == null || value.isBlank() ? null : value.trim();
+        }
+    }
+
+    /**
+     * One application that authenticates as itself (T4.0, #88; the v1 ruling on #89):
+     * {@code cistern.auth.service-principals[n]}.
+     *
+     * <p>The credential is configured <em>hashed</em> — {@code sha256:<hex>}; see
+     * {@code HashedCredential} for how to produce one — so that neither this file, nor the
+     * environment it is read from, nor a Kubernetes Secret rendered into it, holds anything an
+     * attacker can present.
+     *
+     * @param webId          the identity the application authenticates as
+     * @param credentialHash the digest of its secret, {@code <algorithm>:<hex>}
+     */
+    public record ServicePrincipal(URI webId, String credentialHash) {
+
+        public ServicePrincipal {
+            if (webId == null || credentialHash == null || credentialHash.isBlank()) {
+                throw new IllegalArgumentException(
+                        WebfluxMessage.SERVICE_PRINCIPAL_INCOMPLETE.format(webId));
+            }
         }
     }
 }

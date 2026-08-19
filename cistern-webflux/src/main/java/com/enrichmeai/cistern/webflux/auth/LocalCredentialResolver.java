@@ -6,9 +6,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Objects;
-import java.util.Optional;
 
-import org.springframework.http.HttpHeaders;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
@@ -32,8 +30,6 @@ import reactor.core.publisher.Mono;
  */
 public final class LocalCredentialResolver implements PrincipalResolver {
 
-    private static final String BEARER = "Bearer ";
-
     private final URI ownerWebId;
     private final byte[] expectedToken;
 
@@ -48,18 +44,10 @@ public final class LocalCredentialResolver implements PrincipalResolver {
 
     @Override
     public Mono<Agent> resolve(ServerWebExchange exchange) {
-        return Mono.fromSupplier(() -> bearerToken(exchange)
-                .filter(this::matches)
+        return Mono.fromSupplier(() -> BearerToken.from(exchange.getRequest())
+                .filter(token -> matches(token.value()))
                 .map(token -> Agent.of(ownerWebId))
                 .orElse(Agent.ANONYMOUS));
-    }
-
-    private Optional<String> bearerToken(ServerWebExchange exchange) {
-        String header = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-        if (header == null || !header.regionMatches(true, 0, BEARER, 0, BEARER.length())) {
-            return Optional.empty();
-        }
-        return Optional.of(header.substring(BEARER.length()).trim());
     }
 
     /**
