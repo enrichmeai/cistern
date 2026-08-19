@@ -229,7 +229,7 @@ public class CisternWebFluxConfiguration {
             ObjectProvider<ChainedPrincipalResolver.Member> contributed) {
         List<PrincipalResolver> chain = new ArrayList<>();
         CisternProperties.Owner owner = properties.owner();
-        if (owner.isConfigured()) {
+        if (owner.hasLocalCredential()) {
             chain.add(new LocalCredentialResolver(owner.webId(), owner.token()));
         }
         if (!servicePrincipals.isEmpty()) {
@@ -238,6 +238,12 @@ public class CisternWebFluxConfiguration {
         contributed.orderedStream()
                 .map(ChainedPrincipalResolver.Member::resolver)
                 .forEach(chain::add);
+        // Enforcement on, nobody able to authenticate: safe (deny by default) but inert, and
+        // said out loud here, where the whole chain is known — a contributed member counts. Not
+        // refused: a public read-only pod whose ACLs were written on disk is a legitimate shape.
+        if (owner.isNamed() && chain.isEmpty()) {
+            log.warn(WebfluxMessage.ENFORCEMENT_WITHOUT_CREDENTIAL.format());
+        }
         chain.add(new AnonymousResolver());
         log.info(WebfluxMessage.PRINCIPAL_RESOLVERS_WIRED.format(chain.stream()
                 .map(resolver -> resolver.getClass().getSimpleName())
@@ -248,17 +254,26 @@ public class CisternWebFluxConfiguration {
     /**
      * Enforcement, ahead of every handler (T5.3).
      *
-     * <p><strong>Registered only when an owner is configured.</strong> Web Access Control
-     * needs two things to be useful: a principal, and a root ACL granting that principal
-     * something. Without {@code cistern.owner.web-id} there is neither — nobody can
-     * authenticate, so the only reachable decision is "deny", and the pod would be inert
-     * rather than secure. There would also be no way in to write the ACL that would fix it.
+     * <p><strong>Registered only when an owner is named.</strong> Web Access Control needs a
+     * root ACL granting somebody Control, or the only reachable decision is "deny" and the pod
+     * is inert rather than secure — with no way in to write the ACL that would fix it.
+     * {@code cistern.owner.web-id} is who that somebody is, and {@link OwnerPodSeeder} seeds the
+     * root ACL for them; so the enforcement switch and its precondition are the same fact, and
+     * there is deliberately no second switch (a {@code cistern.enforcement=on} that could be
+     * set without an owner would only ever be a brick or a synonym — T7.7, #94).
      *
-     * <p>This is a deliberate choice with a real edge: a deployment that forgets to set an
-     * owner is unprotected, exactly as it is today. It is made visible rather than silent —
-     * {@code OwnerPodSeeder} logs {@code NO_OWNER_CONFIGURED} at WARN on every boot — and the
-     * alternative, enforcing with no way to authenticate, turns "upgrade" into "brick".
-     * ADR 0001 keeps such a deployment on loopback regardless.
+     * <p>The owner's <em>token</em> is not part of the condition. In production it is unset
+     * (ADR 0002): the owner authenticates through the OIDC issuer or a hashed service
+     * credential, and enforcement is on all the same.
+     *
+     * <p>The edge this leaves — a deployment that names no owner is unprotected — is handled
+     * in two ways. Nothing configured at all is allowed and made loud ({@code OwnerPodSeeder}
+     * warns {@code NO_OWNER_CONFIGURED} on every boot; refusing would turn "upgrade" into
+     * "brick" for a laptop pod, and ADR 0001/0002 keep such a pod off any address a stranger
+     * can reach). A credential source configured <em>without</em> an owner — the shape a
+     * production deployment could mistakenly land in — is refused at bind time
+     * ({@link CisternProperties}, {@code ENFORCEMENT_REQUIRES_OWNER}): the credentials would
+     * never be asked for, and the pod would be open while its configuration read as locked.
      */
     @Bean
     @ConditionalOnProperty(prefix = "cistern.owner", name = "web-id")

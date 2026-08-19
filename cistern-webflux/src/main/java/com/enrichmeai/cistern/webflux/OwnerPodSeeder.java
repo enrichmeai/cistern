@@ -61,10 +61,19 @@ public final class OwnerPodSeeder implements ApplicationRunner, Ordered {
         return ORDER;
     }
 
+    /**
+     * Keyed on the owner being <em>named</em>, not on the owner holding a local token: the root
+     * ACL belongs to a WebID, and how that WebID authenticates — {@code cistern.owner.token} on
+     * a laptop, an OIDC issuer or a hashed service credential in production (ADR 0002) — is the
+     * resolver chain's business, not the ACL's. A named owner with no way to authenticate is
+     * warned about where the chain is wired ({@code ENFORCEMENT_WITHOUT_CREDENTIAL}); no owner
+     * at all is warned about here, because this is where the consequence lands: nothing is
+     * seeded, and nothing is enforced.
+     */
     @Override
     public void run(ApplicationArguments args) {
         CisternProperties.Owner owner = properties.owner();
-        if (!owner.isConfigured()) {
+        if (!owner.isNamed()) {
             log.warn(WebfluxMessage.NO_OWNER_CONFIGURED.format());
             return;
         }
