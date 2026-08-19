@@ -4,6 +4,7 @@ import com.enrichmeai.cistern.core.ResourceStore;
 import com.enrichmeai.cistern.core.ldp.LdpService;
 import com.enrichmeai.cistern.wac.AccessControl;
 import com.enrichmeai.cistern.wac.AclDiscovery;
+import com.enrichmeai.cistern.wac.PodProvisioner;
 import com.enrichmeai.cistern.wac.WacEngine;
 import com.enrichmeai.cistern.webflux.auth.AnonymousResolver;
 import com.enrichmeai.cistern.webflux.auth.ChainedPrincipalResolver;
@@ -126,14 +127,36 @@ public class CisternWebFluxConfiguration {
     // ---- Authorization (T5.2/T5.1/T5.3) ---------------------------------------------
 
     /**
+     * Brings pods into being — container plus owner ACL, together, never over an existing ACL
+     * (T5.6). One instance serves the owner's root, the seeded pods, and any embedder that
+     * provisions at runtime; conditional so an embedder can supply its own.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public PodProvisioner podProvisioner(ResourceStore store) {
+        return new PodProvisioner(store);
+    }
+
+    /**
      * Seeds the root ACL on first boot (T5.4). Without it, deny-by-default plus an absent
      * root ACL means nobody can reach anything — including the owner, and including the ACL
      * they would need to write to fix it.
      */
     @Bean
     @ConditionalOnMissingBean
-    public OwnerPodSeeder ownerPodSeeder(ResourceStore store, CisternProperties properties) {
-        return new OwnerPodSeeder(store, properties);
+    public OwnerPodSeeder ownerPodSeeder(PodProvisioner provisioner, CisternProperties properties) {
+        return new OwnerPodSeeder(provisioner, properties);
+    }
+
+    /**
+     * Seeds the pods of {@code cistern.pods.seed[]} on boot (T5.6), after the owner's root and
+     * idempotently. Always registered: with nothing configured it does nothing, and a bean that
+     * appears only when a list is non-empty is a condition an operator has to know about.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public PodSeeder podSeeder(PodProvisioner provisioner, CisternProperties properties) {
+        return new PodSeeder(provisioner, properties);
     }
 
     @Bean
