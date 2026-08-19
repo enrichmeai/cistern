@@ -6,9 +6,19 @@ import com.enrichmeai.cistern.wac.AccessControl;
 import com.enrichmeai.cistern.wac.AclDiscovery;
 import com.enrichmeai.cistern.wac.WacEngine;
 import com.enrichmeai.cistern.webflux.auth.AnonymousResolver;
+import com.enrichmeai.cistern.webflux.auth.ChainedPrincipalResolver;
+import com.enrichmeai.cistern.webflux.auth.ConfiguredServicePrincipalRegistry;
 import com.enrichmeai.cistern.webflux.auth.LocalCredentialResolver;
 import com.enrichmeai.cistern.webflux.auth.PrincipalResolver;
+import com.enrichmeai.cistern.webflux.auth.ServiceCredentialResolver;
+import com.enrichmeai.cistern.webflux.auth.ServicePrincipalRegistry;
 import com.enrichmeai.cistern.storage.file.FileResourceStore;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -38,6 +48,11 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(CisternProperties.class)
 public class CisternWebFluxConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(CisternWebFluxConfiguration.class);
+
+    /** Separator for the resolver names in the {@code PRINCIPAL_RESOLVERS_WIRED} log line. */
+    private static final String RESOLVER_LIST_SEPARATOR = ", ";
 
     /**
      * Every path in a pod names a resource, so the read route matches the whole path space;
@@ -140,21 +155,63 @@ public class CisternWebFluxConfiguration {
     }
 
     /**
-     * How a request becomes an {@code Agent}. The local credential when an owner is
-     * configured, otherwise nothing authenticates — an unconfigured server must not ship a
-     * usable default credential, and "no owner set" is a clearer failure than a secret
-     * everybody knows.
-     *
-     * <p>{@code @ConditionalOnMissingBean} so cistern-auth can supply a Solid-OIDC resolver
-     * in Phase 4 without this having to know about it.
+     * The service principals of {@code cistern.auth.service-principals} (T4.0). Its own bean so
+     * that a later ticket (T5.6 provisioning) can replace the configuration-backed registry
+     * with one that learns of applications at runtime; empty when none are configured.
      */
     @Bean
     @ConditionalOnMissingBean
-    public PrincipalResolver principalResolver(CisternProperties properties) {
+    public ServicePrincipalRegistry servicePrincipalRegistry(CisternProperties properties) {
+        return ConfiguredServicePrincipalRegistry.from(properties.auth().servicePrincipals());
+    }
+
+    /**
+     * How a request becomes an {@code Agent} (T4.0, #88): a {@link ChainedPrincipalResolver}
+     * over every configured way of proving identity, first authenticated wins, else anonymous.
+     *
+     * <p>The order is fixed here and is part of the contract:
+     * <ol>
+     *   <li>the owner's local credential, when an owner is configured;</li>
+     *   <li>service-principal credentials, when any are configured;</li>
+     *   <li>whatever other modules contribute as {@link ChainedPrincipalResolver.Member}
+     *       beans — cistern-auth's OIDC JWT resolver, when an issuer is configured;</li>
+     *   <li>{@link AnonymousResolver}, always, so the chain's fallback is stated rather than
+     *       implied.</li>
+     * </ol>
+     * Secrets compared in constant time go first because they are cheap and local; a JWT
+     * costs a signature verification and, on rotation, a key fetch, and is never attempted for
+     * a request an earlier member already accepted.
+     *
+     * <p>An unconfigured server still authenticates nobody: no owner, no service principals
+     * and no issuer leaves only the anonymous member, and an unconfigured server must not
+     * ship a usable default credential.
+     *
+     * <p>{@code @ConditionalOnMissingBean} so an embedder can replace the whole chain; a module
+     * that only wants to <em>add</em> to it declares a {@code Member} instead — see that type
+     * for why the two are distinct.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public PrincipalResolver principalResolver(
+            CisternProperties properties,
+            ServicePrincipalRegistry servicePrincipals,
+            ObjectProvider<ChainedPrincipalResolver.Member> contributed) {
+        List<PrincipalResolver> chain = new ArrayList<>();
         CisternProperties.Owner owner = properties.owner();
-        return owner.isConfigured()
-                ? new LocalCredentialResolver(owner.webId(), owner.token())
-                : new AnonymousResolver();
+        if (owner.isConfigured()) {
+            chain.add(new LocalCredentialResolver(owner.webId(), owner.token()));
+        }
+        if (!servicePrincipals.isEmpty()) {
+            chain.add(new ServiceCredentialResolver(servicePrincipals));
+        }
+        contributed.orderedStream()
+                .map(ChainedPrincipalResolver.Member::resolver)
+                .forEach(chain::add);
+        chain.add(new AnonymousResolver());
+        log.info(WebfluxMessage.PRINCIPAL_RESOLVERS_WIRED.format(chain.stream()
+                .map(resolver -> resolver.getClass().getSimpleName())
+                .collect(Collectors.joining(RESOLVER_LIST_SEPARATOR))));
+        return new ChainedPrincipalResolver(chain);
     }
 
     /**
