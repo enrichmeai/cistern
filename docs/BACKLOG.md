@@ -316,14 +316,14 @@ regression.
 - [ ] **T5.5 WAC grind.** Same ratchet loop as T3.3 against the CTH WAC suite. DoD: WAC
   suite green ⇒ Milestone 3 gate 1.
 
-- [ ] **T5.6 Pod & matter provisioning API/CLI (multi-owner).** The un-built half of T5.4
+- [x] **T5.6 Pod & matter provisioning API/CLI (multi-owner).** The un-built half of T5.4
   (#34): `PodProvisioner` in `cistern-wac` creating a root/matter container + owner ACL
   (`accessTo` **and** `default`, no `foaf:Agent`), idempotent, never overwriting an existing
   ACL; exposed as `cistern pod create` (new `cistern-cli` module) and as a Control-protected
   admin call; `cistern.pods.seed[]` for boot-time seeding of several pods. DoD: N seeded pods
   on fresh boot, restart idempotent; CLI second run is a no-op; contract test on the ACL shape;
   CTH alice/bob seeding expressible by config. Issue #90.
-- [ ] **T5.7 Grant authoring — `GrantService` + `cistern grant` CLI.** Add/remove an
+- [x] **T5.7 Grant authoring — `GrantService` + `cistern grant` CLI.** Add/remove an
   `Authorization` for a WebID or `foaf:Agent` on a target, always preserving the owner's
   authorization and always writing `accessTo` + `default` on containers (the two silent-deny
   traps); performed as a normal `PUT <target>.acl` under the caller's credential so Control is
@@ -337,7 +337,7 @@ regression.
   tests active/expired/malformed/boundary; HTTP test — grant with past `--until` denied on the
   next request, future allowed, clock advance denies without restart; no CTH regression.
   Issue #92.
-- [ ] **T5.9 Decision log & receipts.** `AccessDecision` carries `decidedBy` (the effective ACL
+- [x] **T5.9 Decision log & receipts.** `AccessDecision` carries `decidedBy` (the effective ACL
   resource, already known to `EffectiveAcl`) and matched authorization IRIs; `DecisionRecord` +
   `DecisionSink` (append-only JSON Lines under `<root>/.cistern/decisions/` via `ResourceStore`;
   in-memory for tests); one record per decision from `AuthorizationFilter`, allow and deny,
@@ -431,7 +431,7 @@ regression.
   `receipts` after T5.9. Contract tests against a real server in CI (ground rule 6). DoD:
   both clients reproduce `k8s/demo.sh` end to end; ≤15-line README snippet; INTEGRATION.md
   gains "with the client" variants. Issue #101.
-- [ ] **T7.10 Integration kit.** `integration-kit/`: docker compose booting Cistern +
+- [x] **T7.10 Integration kit.** `integration-kit/`: docker compose booting Cistern +
   Keycloak (real OIDC issuer, seeded humans + `app-legal`/`app-tax` service principals) + a
   sample app that authenticates, lists a matter, reads a document, is refused on a sibling
   folder and shows its `WAC-Allow`; seed script provisions pod + grants (T5.6/T5.7 when
@@ -443,6 +443,16 @@ regression.
   residency, and whole-vault export as standard Solid data. Note + decision only; build
   lands in the commercial repo. DoD: ADR merged; INTEGRATION.md step 8 and COMMERCIAL.md
   link to it. Issue #103.
+
+- [x] **T7.14 First tagged release.** `release.yml` on `v*` tags: version from tag, full tests,
+  native amd64+arm64 images pushed by digest to `ghcr.io/enrichmeai/cistern:<version>` (+ `latest`
+  for non-prerelease), GitHub Release with jar + `SHA256SUMS` and the CHANGELOG section; OCI
+  labels; `CHANGELOG.md` with upgrade notes; README "pull it" path; k8s pinned to the tag. Issue
+  #107, PR #109. *First tag `v0.1.0` to be pushed by the owner; GHCR package must be made public
+  once.*
+- [x] **T5.3 follow-up — ACL resources require Control for every method** (#112, PR #115):
+  `RequiredAccess` maps any `.acl` target to Control on the governed resource; anonymous GET of
+  an ACL after a public Read grant went 200 → 401, authenticated non-Control → 403.
 
 ## Parked (post-milestone-3 candidates — do not start without architect approval)
 
