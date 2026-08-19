@@ -21,13 +21,16 @@ Desktop, minikube, kind — and why the Service is deliberately `ClusterIP`, nev
 `kubectl config current-context` names. Make it `docker-desktop`, `minikube` or `kind-*`
 before applying.
 
-> If you only want to run it, `docker compose up --build` is simpler. Reach for these
+> If you only want to run it, the one-line `docker run` of the published image in the
+> top-level [README](../README.md#run-it-pull-the-image) is simpler. Reach for these
 > manifests when you want to exercise it the way it will eventually be deployed.
 
 ## Quickstart
 
+The manifests pin the published release image, `ghcr.io/enrichmeai/cistern:0.1.0`
+(linux/amd64 and linux/arm64), so there is nothing to build:
+
 ```bash
-docker build -t cistern:local .          # the manifests expect this exact tag
 kubectl apply -k k8s/
 
 # Required: the owner's identity and credential. Setting these turns Web Access Control
@@ -57,6 +60,24 @@ kubectl delete namespace cistern                         # same, plus the namesp
 
 Note that `delete -k` **does** remove the PVC, because `pvc.yaml` is part of the
 kustomization. Scale to zero if you want the pod's contents to survive.
+
+### Running your own build instead
+
+The local-build path still works and is the one to use while changing the server. Build
+the image, point the kustomization at it, apply as above:
+
+```bash
+docker build -t cistern:local .
+kustomize edit set image ghcr.io/enrichmeai/cistern=cistern:local   # run inside k8s/
+kubectl apply -k k8s/
+```
+
+`kustomize edit` rewrites the `images:` block in `kustomization.yaml` (`newName: cistern`,
+`newTag: local`); don't commit that. Or edit `deployment.yaml` by hand — `image:
+cistern:local` and `imagePullPolicy: Never`, since that tag exists in no registry and
+`Never` makes a missing local image fail immediately rather than after a pull attempt. The
+comment above the `image:` line says the same. To move to a newer release, the same knob:
+`kustomize edit set image ghcr.io/enrichmeai/cistern:0.2.0`.
 
 ### The demo
 
@@ -100,9 +121,9 @@ compute this for you.
 
 ### minikube
 
-The manifests use `imagePullPolicy: Never`, since `cistern:local` exists in no registry.
-Docker Desktop shares its daemon with the cluster so a local build is immediately visible;
-minikube does not, so load it explicitly:
+The published image pulls from GHCR like anywhere else. A **local build** is different:
+Docker Desktop shares its daemon with the cluster so `cistern:local` is immediately
+visible; minikube does not, so load it explicitly before applying:
 
 ```bash
 minikube image load cistern:local

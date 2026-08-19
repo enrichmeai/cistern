@@ -37,6 +37,20 @@ RUN mvn -B -q -DskipTests package \
 # ---- runtime --------------------------------------------------------------
 FROM eclipse-temurin:25-jre
 
+# OCI image labels (https://github.com/opencontainers/image-spec/blob/main/annotations.md).
+# `source` is what makes GHCR link the package to this repository and show its README;
+# `version` is passed by release.yml (`--build-arg VERSION=0.1.0`) and stays empty for
+# an untagged local build, which is the truthful value for one.
+ARG VERSION=""
+LABEL org.opencontainers.image.title="Cistern" \
+      org.opencontainers.image.description="Open, self-hostable Solid pod server for the AI era — JVM-native, MCP-fronted, conformance-first." \
+      org.opencontainers.image.source="https://github.com/enrichmeai/cistern" \
+      org.opencontainers.image.url="https://github.com/enrichmeai/cistern" \
+      org.opencontainers.image.documentation="https://github.com/enrichmeai/cistern#readme" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.vendor="EnrichMeAI (Good Shepherd Software Consultancy Ltd)" \
+      org.opencontainers.image.version="${VERSION}"
+
 # Non-root. /data is chowned before it becomes a volume so that a *named* volume
 # inherits this ownership; a bind mount keeps the host's, which is the usual cause
 # of "read-only" surprises — see docs/deploy.md.

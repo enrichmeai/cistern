@@ -37,10 +37,14 @@ spec:
           type: RuntimeDefault
       containers:
         - name: cistern
-          image: cistern:local
-          # Never pull: this tag is built locally and does not exist in any registry.
-          # A published image would set this to IfNotPresent and pin a v* tag.
-          imagePullPolicy: Never
+          # The published release image, pinned to a version — never `latest`, which moves.
+          # For a local build instead (`docker build -t cistern:local .`), use
+          #   image: cistern:local
+          #   imagePullPolicy: Never      # the tag exists in no registry; never try to pull it
+          # or, without editing this file:  kustomize edit set image ghcr.io/enrichmeai/cistern=cistern:local
+          # (see kustomization.yaml). On minikube also `minikube image load cistern:local`.
+          image: ghcr.io/enrichmeai/cistern:0.1.0
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 3000

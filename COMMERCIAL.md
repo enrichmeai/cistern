@@ -1,7 +1,8 @@
 # Commercial support
 
 Cistern is free for any use, including commercial, under the Apache License 2.0 —
-that will not change.
+that will not change. The component itself — the published image, the jar, the source — is
+free to run; support and integration are optional contracts, never a condition of use.
 
 For organisations that want more than the licence provides:
 

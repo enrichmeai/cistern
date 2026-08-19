@@ -14,8 +14,12 @@ commonLabels:
   app.kubernetes.io/name: cistern
   app.kubernetes.io/part-of: cistern
 
-# Override the tag without editing deployment.yaml:
-#   kustomize edit set image cistern=ghcr.io/enrichmeai/cistern:v0.1.0
+# The image is pinned in deployment.yaml (the published release, by version). This
+# transformer is the knob for changing it without editing that file — a newer release:
+#   kustomize edit set image ghcr.io/enrichmeai/cistern:0.2.0
+# or a local build (`docker build -t cistern:local .`; on minikube also
+# `minikube image load cistern:local`):
+#   kustomize edit set image ghcr.io/enrichmeai/cistern=cistern:local
 images:
-  - name: cistern
-    newTag: local
+  - name: ghcr.io/enrichmeai/cistern
+    newTag: 0.1.0

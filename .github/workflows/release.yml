@@ -1,0 +1,350 @@
+name: release
+
+# T7.14: a tagged release consumable by an application team (#107).
+#
+#   git tag -s v0.1.0 -m "Cistern 0.1.0"     # or -a; the tag IS the version
+#   git push origin v0.1.0
+#
+# produces, from that one push:
+#   - ghcr.io/enrichmeai/cistern:0.1.0 (+ :latest for a non-prerelease), linux/amd64 + linux/arm64
+#   - a GitHub Release "Cistern 0.1.0" carrying cistern-app-0.1.0.jar + SHA256SUMS,
+#     whose body is the matching `## [0.1.0]` section of CHANGELOG.md
+#
+# Shape — three jobs, in order:
+#   build    version + notes check, `mvn verify` (the full suite), the jar and its checksum
+#   image    one native runner PER ARCHITECTURE (ubuntu-latest = amd64, ubuntu-24.04-arm =
+#            arm64), each building the Dockerfile for its own platform and pushing by
+#            digest. Not QEMU: the Dockerfile compiles inside the image, and Maven under
+#            user-mode emulation is 10–20x slower and not a JVM anyone tests. arm64
+#            hosted runners are free for public repositories.
+#   publish  stitch the two digests into one multi-arch index under the version tags,
+#            then create the GitHub Release with the jar from `build`.
+#
+# The version is set on the poms with versions:set for the duration of each job and never
+# committed: main stays at <next>-SNAPSHOT and the tag is the single source of truth.
+# The CHANGELOG section is required and checked FIRST — a tag without release notes fails
+# in seconds, before anything is built or published.
+#
+# workflow_dispatch is a rehearsal: `build` and both `image` legs run, nothing is pushed,
+# no Release is created. Use it to prove the pipeline on a branch before the first tag.
+#
+# One-time, after the first push: GHCR packages are PRIVATE by default and do not inherit
+# the repository's visibility. Make ghcr.io/enrichmeai/cistern public at
+# https://github.com/orgs/enrichmeai/packages/container/cistern/settings, or every
+# `docker pull` in the README fails with "denied".
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Rehearsal version (e.g. 0.1.0-rc1). Builds everything, publishes nothing.'
+        required: true
+        type: string
+
+permissions:
+  contents: write   # gh release create / upload
+  packages: write   # ghcr.io push
+
+# One release at a time per tag; never cancel a release in flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/enrichmeai/cistern
+  # Publishing happens only for a real tag push. A dispatch builds the same artefacts and
+  # stops short of the registry and the Release, so the pipeline can be rehearsed.
+  PUBLISH: ${{ github.event_name == 'push' }}
+  # Named in full so the release does not depend on prefix resolution picking a version.
+  VERSIONS_PLUGIN: org.codehaus.mojo:versions-maven-plugin:2.18.0
+
+jobs:
+  # ---- build: version, notes, tests, jar ---------------------------------------
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the tag object (and its signature) is present, and git describe /
+          # log work for anyone reading the run. Cheap on a repository this size.
+          fetch-depth: 0
+
+      - name: Derive the version from the tag
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$PUBLISH" = "true" ]; then
+            VERSION="${REF_NAME#v}"
+          else
+            VERSION="${INPUT_VERSION#v}"
+          fi
+          # SemVer, optionally with a pre-release suffix (0.1.0, 0.2.0-rc1). Anything else
+          # is a typo we do not want to publish under.
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::'$VERSION' is not a release version (expected MAJOR.MINOR.PATCH[-prerelease])"
+            exit 1
+          fi
+          PRERELEASE=false
+          case "$VERSION" in *-*) PRERELEASE=true ;; esac
+          {
+            echo "version=$VERSION"
+            echo "tag=v$VERSION"
+            echo "prerelease=$PRERELEASE"
+          } >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION prerelease=$PRERELEASE publish=$PUBLISH"
+
+      # Fail fast: no CHANGELOG section, no release. The Release body is exactly this
+      # section, so an empty or missing one would ship a release with no notes.
+      - name: Extract release notes from CHANGELOG.md
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Everything between the `## [<version>]` heading and the next `## [` heading;
+          # the link-reference definitions at the foot of the file are not notes.
+          awk -v v="$VERSION" '
+            /^## \[/       { printing = ($0 ~ "^## \\[" v "\\]"); next }
+            /^\[[^]]+\]: / { printing = 0 }
+            printing       { print }
+          ' CHANGELOG.md > "${RUNNER_TEMP}/release-notes.md"
+          if ! grep -q '[^[:space:]]' "${RUNNER_TEMP}/release-notes.md"; then
+            echo "::error::CHANGELOG.md has no '## [$VERSION]' section — add one before tagging"
+            exit 1
+          fi
+          echo "release notes for $VERSION:"
+          cat "${RUNNER_TEMP}/release-notes.md"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      # Set the version on every pom for this run only. Nothing is committed: the tag is
+      # the source of truth and main stays at <next>-SNAPSHOT.
+      - name: Set the Maven version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mvn -B -ntp "${VERSIONS_PLUGIN}:set" -DnewVersion="$VERSION" -DgenerateBackupPoms=false
+          git --no-pager diff --stat
+
+      # The full suite, not -DskipTests: a release is the one build that must never be
+      # discovered red afterwards.
+      - name: Build and test
+        run: mvn -B -ntp verify
+
+      - name: Collect the jar and checksums
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          JAR="cistern-app/target/cistern-app-${VERSION}.jar"
+          test -f "$JAR" || { echo "::error::expected $JAR after the build"; ls cistern-app/target; exit 1; }
+          mkdir -p "${RUNNER_TEMP}/dist"
+          cp "$JAR" "${RUNNER_TEMP}/dist/"
+          ( cd "${RUNNER_TEMP}/dist" && sha256sum "cistern-app-${VERSION}.jar" > SHA256SUMS && cat SHA256SUMS )
+          cp "${RUNNER_TEMP}/release-notes.md" "${RUNNER_TEMP}/dist/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: ${{ runner.temp }}/dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---- image: one native build per architecture, pushed by digest --------------------
+  image:
+    needs: build
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm   # standard hosted runner; free on public repositories
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Name this leg
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> "$GITHUB_ENV"
+
+      # The Dockerfile compiles the jar inside the image from these poms, so the image
+      # must see the same versioned poms as `build` did — otherwise it would announce
+      # itself as <next>-SNAPSHOT at boot. Maven on the host is needed for nothing else.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Set the Maven version
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: mvn -B -ntp "${VERSIONS_PLUGIN}:set" -DnewVersion="$VERSION" -DgenerateBackupPoms=false
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Labels only here (created / revision / version alongside the static OCI labels
+      # the Dockerfile sets); the tags go on the merged index in `publish`.
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},value=v${{ needs.build.outputs.version }}
+
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.build.outputs.version }}
+          # push-by-digest: no tag yet — `publish` names the multi-arch index. On a
+          # rehearsal push=false leaves the image in the builder and nothing leaves the runner.
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ env.PUBLISH == 'true' }}
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
+
+      - name: Export the digest
+        if: env.PUBLISH == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+          echo "${PLATFORM_PAIR}: ${DIGEST}"
+
+      - uses: actions/upload-artifact@v4
+        if: env.PUBLISH == 'true'
+        with:
+          name: digest-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ---- publish: multi-arch index + GitHub Release ------------------------------------
+  publish:
+    needs: [build, image]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ${{ runner.temp }}/dist
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tags: the bare version (0.1.0), and `latest` only for a non-prerelease
+      # (latest=auto). Annotations go on the index, which is what GHCR reads for a
+      # multi-arch image.
+      - uses: docker/metadata-action@v5
+        id: meta
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: index
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},value=v${{ needs.build.outputs.version }}
+          flavor: |
+            latest=auto
+
+      # One -t per tag, one --annotation per line, one image@digest per leg. Built as an
+      # array on purpose: annotation values contain spaces (the description), and the
+      # jq-in-$(...) one-liner in the docs splits them.
+      - name: Create the multi-arch index
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          ANNOTATIONS: ${{ steps.meta.outputs.annotations }}
+        run: |
+          args=()
+          while IFS= read -r t; do [ -n "$t" ] && args+=(-t "$t"); done <<< "$TAGS"
+          while IFS= read -r a; do [ -n "$a" ] && args+=(--annotation "$a"); done <<< "$ANNOTATIONS"
+          for d in *; do args+=("${IMAGE}@sha256:${d}"); done
+          printf 'docker buildx imagetools create'; printf ' %q' "${args[@]}"; echo
+          docker buildx imagetools create "${args[@]}"
+
+      - name: Inspect the published image
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: docker buildx imagetools inspect "${IMAGE}:${VERSION}"
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+          DIST: ${{ runner.temp }}/dist
+        run: |
+          NOTES="$DIST/release-notes.md"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # A re-run of the same tag: refresh assets and notes rather than fail.
+            echo "release $TAG exists — updating assets and notes"
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+              "$DIST/cistern-app-$VERSION.jar" "$DIST/SHA256SUMS"
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$NOTES"
+          else
+            EXTRA=()
+            [ "$PRERELEASE" = "true" ] && EXTRA+=(--prerelease)
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "Cistern $VERSION" \
+              --notes-file "$NOTES" \
+              "${EXTRA[@]}" \
+              "$DIST/cistern-app-$VERSION.jar" "$DIST/SHA256SUMS"
+          fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets \
+            --jq '.url, (.assets[] | "  \(.name)  \(.size) bytes")'
+
+      - name: Summary
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo "## Cistern $VERSION"
+            echo
+            echo "Published image tags (linux/amd64 + linux/arm64):"
+            echo
+            echo '```'
+            printf '%s\n' "$TAGS"
+            echo '```'
+            echo
+            echo "Release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}"
+          } >> "$GITHUB_STEP_SUMMARY"
