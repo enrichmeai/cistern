@@ -58,9 +58,6 @@ public final class PodProvisioner {
     /** Fragment naming the owner's authorization inside the ACL document: {@code <acl>#owner}. */
     static final String OWNER_AUTHORIZATION_FRAGMENT = "#owner";
 
-    /** The prefix the written Turtle declares for {@link Acl#NS}, so a human can read it back. */
-    private static final String ACL_PREFIX = "acl";
-
     /** What an owner holds: every mode there is, Control included — the modes closed over themselves. */
     static final Set<AccessMode> OWNER_MODES = Collections.unmodifiableSet(EnumSet.allOf(AccessMode.class));
 
@@ -106,24 +103,29 @@ public final class PodProvisioner {
     }
 
     /**
-     * The owner ACL for {@code spec}, serialized as Turtle: one {@code acl:Authorization},
-     * named {@code <acl>#owner}, granting {@link #OWNER_MODES} to the owner on the root
-     * ({@code acl:accessTo}) and on everything beneath it ({@code acl:default}).
-     *
-     * <p>Public and static because it is the pod's ACL <em>shape</em>, and a caller that
-     * writes it through some other channel than a {@link ResourceStore} — a command-line tool
-     * putting it over HTTP with the caller's own credential — must write the same bytes this
-     * class would, not a second rendering of them.
+     * The owner ACL for {@code spec}, serialized as Turtle — {@link #ownerAclGraph} written out.
+     * This is what {@link #provision} stores.
      */
     public static Representation ownerAcl(PodSpec spec) {
-        Objects.requireNonNull(spec, "spec");
         return RdfIo.serialize(ownerAclGraph(spec), Representation.TURTLE);
     }
 
-    /** The owner ACL as a graph, built from the {@link Acl} vocabulary rather than spelled as text. */
-    static Model ownerAclGraph(PodSpec spec) {
+    /**
+     * The owner ACL for {@code spec} as a graph: one {@code acl:Authorization}, named
+     * {@code <acl>#owner}, granting {@link #OWNER_MODES} to the owner on the root
+     * ({@code acl:accessTo}) and on everything beneath it ({@code acl:default}). Built from the
+     * {@link Acl} vocabulary rather than spelled as text.
+     *
+     * <p>Public and static because it is the pod's ACL <em>shape</em>, and a caller that
+     * writes it through some other channel than a {@link ResourceStore} — the command-line
+     * tool putting it over HTTP with the caller's own credential — must write the same graph
+     * this class would, not a second rendering of it.
+     */
+    public static Model ownerAclGraph(PodSpec spec) {
+        Objects.requireNonNull(spec, "spec");
         Model model = ModelFactory.createDefaultModel();
-        model.setNsPrefix(ACL_PREFIX, Acl.NS);
+        // Declared so a human reading the file back sees acl:Read, not the full IRI.
+        model.setNsPrefix(Acl.PREFIX, Acl.NS);
         Resource root = model.createResource(spec.root().uri().toString());
         Resource owner = model.createResource(spec.ownerWebId().toString());
         Resource authorization = model.createResource(spec.acl().uri() + OWNER_AUTHORIZATION_FRAGMENT);

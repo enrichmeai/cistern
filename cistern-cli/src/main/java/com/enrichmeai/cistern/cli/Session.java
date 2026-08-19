@@ -10,7 +10,8 @@ import reactor.core.publisher.Mono;
 
 /**
  * Everything a subcommand needs once the options are parsed: the server, the credential, the
- * editor over them, and the report writer. Built once per invocation from {@link ServerOptions}.
+ * editor and the provisioner over them, and the report writer. Built once per invocation from
+ * {@link ServerOptions}.
  *
  * <p>{@link #run} is <strong>the</strong> reactive-to-synchronous boundary of the tool. The
  * whole operation — discover, transform, write, retry — is one {@code Mono}; a command-line
@@ -22,13 +23,16 @@ final class Session {
 
     private final PodBase base;
     private final AclEditor editor;
+    private final RemotePodProvisioner provisioner;
     private final AclReport report;
     private final PrintWriter out;
     private final PrintWriter err;
 
-    Session(PodBase base, AclEditor editor, AclReport report, PrintWriter out, PrintWriter err) {
+    Session(PodBase base, AclEditor editor, RemotePodProvisioner provisioner, AclReport report,
+            PrintWriter out, PrintWriter err) {
         this.base = Objects.requireNonNull(base, "base");
         this.editor = Objects.requireNonNull(editor, "editor");
+        this.provisioner = Objects.requireNonNull(provisioner, "provisioner");
         this.report = Objects.requireNonNull(report, "report");
         this.out = Objects.requireNonNull(out, "out");
         this.err = Objects.requireNonNull(err, "err");
@@ -40,7 +44,8 @@ final class Session {
         }
         PodClient client = PodClient.connect(options.credential());
         AclEditor editor = new AclEditor(new RemoteAclDiscovery(client), client, new GrantService());
-        return new Session(options.base, editor, new AclReport(options.base), out, err);
+        return new Session(options.base, editor, new RemotePodProvisioner(client),
+                new AclReport(options.base), out, err);
     }
 
     PodBase base() {
@@ -49,6 +54,10 @@ final class Session {
 
     AclEditor editor() {
         return editor;
+    }
+
+    RemotePodProvisioner provisioner() {
+        return provisioner;
     }
 
     AclReport report() {

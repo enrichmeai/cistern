@@ -60,13 +60,13 @@ Facts an integrator relies on, all observed on 2026-08-18:
 |---|---|---|
 | `cistern-core` | built | resource model, `ResourceStore` SPI, RDF io, containment, N3 Patch, `Agent`, vocab constants (`Acl`, `Foaf`, `Pim`, `Solid`). **No Spring.** |
 | `cistern-storage-file` | built | file backend; passes `ResourceStoreContractTest` |
-| `cistern-webflux` | built | handlers, negotiation, conditional requests, error mapper, `AuthorizationFilter`, `PrincipalResolver` + `ChainedPrincipalResolver` + `LocalCredentialResolver` + `ServiceCredentialResolver` (`ServicePrincipalRegistry`, `HashedCredential`) + `AnonymousResolver`, `OwnerPodSeeder`, `CisternProperties` |
-| `cistern-wac` | built | `AclDiscovery`, `WacEngine`, `AccessControl`, `Authorization`, `AccessDecision`, `EffectiveAcl`, `RequiredAccess`, `AccessMode`, `AgentClass`, `WacMessage`; **T5.7:** `GrantService`, `GrantRequest`, `RevokeRequest`, `GrantOutcome`, `Grantee`. No Spring. |
+| `cistern-webflux` | built | handlers, negotiation, conditional requests, error mapper, `AuthorizationFilter`, `PrincipalResolver` + `ChainedPrincipalResolver` + `LocalCredentialResolver` + `ServiceCredentialResolver` (`ServicePrincipalRegistry`, `HashedCredential`) + `AnonymousResolver`, `OwnerPodSeeder` + `PodSeeder` (T5.6), `CisternProperties` |
+| `cistern-wac` | built | `AclDiscovery`, `WacEngine`, `AccessControl`, `Authorization`, `AccessDecision`, `EffectiveAcl`, `RequiredAccess`, `AccessMode`, `AgentClass`, `WacMessage`; **T5.7:** `GrantService`, `GrantRequest`, `RevokeRequest`, `GrantOutcome`, `Grantee`; **T5.6:** `PodProvisioner`, `PodSpec`, `PodProvisioned`. No Spring. |
 | `cistern-auth` | built (T4.0) | `OidcJwtPrincipalResolver`, `JwtVerifier`, `CachingJwksClient`, `WebIdMapping`, `AuthMessage`; Solid-OIDC/DPoP validation (T4.1–T4.4) still to come |
 | `cistern-mcp` | **empty** | Phase 6; not needed for an HTTP application |
 | `cistern-spring-boot-starter` | scaffold | T7.1 |
 | `cistern-app` | built | runnable server; config only |
-| `cistern-cli` | built (T5.7) | the `cistern` command: `grant`, `revoke` over HTTP with the caller's credential (picocli, shaded jar; `bin/cistern`). `pod create` arrives with #90. |
+| `cistern-cli` | built (T5.7, T5.6) | the `cistern` command: `pod create`, `grant`, `revoke` over HTTP with the caller's credential (picocli, shaded jar; `bin/cistern`). |
 | Packaging | built | Docker, `docker-compose.yml`, `k8s/`, `infra/terraform` (gated by ADR 0001) |
 
 ### 1.3 Built vs planned, for an application
@@ -77,7 +77,7 @@ Facts an integrator relies on, all observed on 2026-08-18:
 | Enforce owner-authored grants per request; scoped read/write; instant revocation | ✅ | — |
 | Many human principals (lawyers, clients) | ✅ JWTs from your OIDC issuer (T4.0, #88) | T4.1–T4.4 for Solid-OIDC proper (any IdP, DPoP) |
 | Applications as their own principals (legal ≠ tax) | ✅ service principals (T4.0, #88; #89 ruled: apps are their own WebIDs) | (user, client) shape + intersection cap when the MCP front door needs it |
-| Create pods/matters on demand | ❌ one owner at boot | **#90** T5.6 |
+| Create pods/matters on demand | ✅ T5.6 (#90): `cistern.pods.seed[]` at boot, `cistern pod create` over HTTP, `PodProvisioner` for embedders | — |
 | Author grants without hand-writing Turtle | ✅ T5.7 (#91): `cistern grant` / `revoke` + `GrantService` | — |
 | Grants that expire | ❌ | **#92** T5.8 |
 | Receipts (who read what, under which grant) | ❌ engine names the ACL, nothing logged | **#93** T5.9 |
@@ -199,7 +199,7 @@ Recommended layout, one pod per firm (or per client, if the client is the owner)
 Rules: containers end in `/`; a document never does; `.acl` next to the thing it governs;
 put machine-readable metadata in a small RDF document rather than in file names.
 
-**Today** you create this with `PUT` (intermediate containers are created for you):
+Matters and documents are plain `PUT`s (intermediate containers are created for you):
 
 ```bash
 AUTH="Authorization: Bearer $CISTERN_OWNER_TOKEN"; B=http://localhost:3737
@@ -209,8 +209,41 @@ curl -X PUT -H "$AUTH" -H 'Content-Type: application/pdf' --data-binary @contrac
   $B/matters/2026-114/contract.pdf                                                                       # 201
 ```
 
-**After #90:** `cistern pod create --root /firms/acme/ --owner <webid>` (or the admin call)
-creates the pod and its owner ACL idempotently; matters are still plain `PUT`s.
+**Pods** — a container with an owner of its own — are provisioned, not `PUT` (T5.6, #90). A
+pod is its root container **plus** an owner ACL (`acl:accessTo` and `acl:default` on the root,
+all four modes, nothing to `foaf:Agent`), created together, because a container without an
+ACL is unreachable by everyone including its owner. Three ways, one `PodProvisioner`, the same
+ACL bytes:
+
+```bash
+# 1. At boot, from configuration — N pods, N owners, idempotent on every restart:
+export CISTERN_PODS_SEED_0_ROOT=/firms/acme/   CISTERN_PODS_SEED_0_OWNERWEBID='https://acme-law.example/profile#firm'
+export CISTERN_PODS_SEED_1_ROOT=/firms/globex/ CISTERN_PODS_SEED_1_OWNERWEBID='https://globex.example/profile#firm'
+
+# 2. On a running server, over HTTP with your credential (you need Write + Control where the root goes):
+cistern pod create --root /firms/acme/ --owner 'https://acme-law.example/profile#firm' --base $B
+# Created pod /firms/acme/ owned by https://acme-law.example/profile#firm: /firms/acme/.acl grants read, write, append, control on this container and everything inside it.
+
+# 3. Embedded: new PodProvisioner(store).provision(new PodSpec(root, ownerWebId))  →  Created | AlreadyExists
+```
+
+Two consequences of "owned by", worth knowing before you script it:
+
+- **A pod is its owner's, not its creator's.** A resource-level ACL replaces inheritance
+  (§9 trap 2), so the storage-root owner who seeds `/firms/acme/` for the firm holds nothing
+  inside it afterwards — no Read, no Control. That is what makes it the firm's pod and not a
+  folder in the operator's. It also means a *second* `cistern pod create` for the same root is
+  a no-op (`Already a pod … nothing written`, exit 0) when the **owner** runs it, and a refusal
+  (403, exit 2) when the operator does: the server will not even let them read that ACL any
+  more. Boot-time seeding has no caller and is idempotent unconditionally.
+- **An existing ACL is never overwritten**, by any of the three routes. Provisioning is not a
+  request to reset permissions; a container that exists without an ACL is completed, its own
+  triples untouched.
+
+A matter provisioned *as a pod for the client* (`--root /firms/acme/matters/2026-114/ --owner
+<client>`) is therefore the client's: the firm keeps nothing inside it until the client grants
+it back (`cistern grant`). A matter the firm keeps for itself is a plain container under
+`/firms/acme/`, reached through the firm's `acl:default`.
 
 ### Step 3 — Grant: let the application in, and nothing more
 
@@ -447,17 +480,25 @@ cistern.auth.service-principals[0].web-id=https://valuedocs.co.in/apps/legal#id
 cistern.auth.service-principals[0].credential-hash=…
 ```
 
-### 6.2 Provisioning (#90)
+### 6.2 Provisioning (#90 built)
 
 ```java
-// cistern-wac
-public interface PodProvisioner { Mono<PodProvisioned> provision(PodSpec spec); }
-public record PodSpec(ResourceIdentifier root, URI ownerWebId) {}
+// cistern-wac (no Spring; I/O only through ResourceStore)
+public final class PodProvisioner {
+    public PodProvisioner(ResourceStore store) {}
+    public Mono<PodProvisioned> provision(PodSpec spec);        // container if absent + owner ACL; never over an existing ACL
+    public static Model ownerAclGraph(PodSpec spec);           // the ACL shape: <acl>#owner, accessTo + default, all modes
+    public static Representation ownerAcl(PodSpec spec);       // …serialized as Turtle — what is stored
+}
+public record PodSpec(ResourceIdentifier root, URI ownerWebId) { ResourceIdentifier acl(); }   // root must be a container; owner absolute
 public sealed interface PodProvisioned permits PodProvisioned.Created, PodProvisioned.AlreadyExists {
+    ResourceIdentifier root();
     record Created(ResourceIdentifier root, ResourceIdentifier acl) implements PodProvisioned {}
     record AlreadyExists(ResourceIdentifier root) implements PodProvisioned {}
 }
-// config: cistern.pods.seed[n].root / .owner-web-id   (boot-time; OwnerPodSeeder becomes a caller of PodProvisioner)
+// cistern-webflux: OwnerPodSeeder (cistern.owner → the storage root) and PodSeeder (cistern.pods.seed[n]) are
+// ApplicationRunners over one PodProvisioner bean; CisternProperties.Pods/Seed validate at bind time.
+// cistern-cli: RemotePodProvisioner runs the same sequence over HTTP (GET <root>.acl; If-None-Match: * on both PUTs).
 ```
 
 ### 6.3 Grants and expiry (#91 built, #92)
@@ -511,14 +552,18 @@ public interface ResourceStore { Mono<StoredResource> get(ResourceIdentifier); M
 // #95 — cistern-storage-gcs: same interface, object metadata carries media type + ETag; must pass ResourceStoreContractTest
 ```
 
-### 6.6 CLI (#90, #91 built)
+### 6.6 CLI (#90 built, #91 built)
 
 ```
-cistern pod create   --root </firms/acme/> --owner <webid>            [--base <url>] [--token <cred>]   (#90)
+cistern pod create   --root </firms/acme/> --owner <webid>                     [--base <url>] [--token <cred>]   built
 cistern grant        <webid|public> --read|--write|--append|--control <path>   [--base <url>] [--token <cred>]   built
 cistern revoke       <webid|public> <path>                                     [--base <url>] [--token <cred>]   built
 cistern receipts     <path> [--from … --to …]                            (#93)
 ```
+
+`pod create` is `GET <root>.acl` (200 → already a pod, nothing written), then `PUT <root>/`
+and `PUT <root>.acl` both under `If-None-Match: *`; the server enforces Write and Control at
+the root. Exit 0 created or already there (as the owner); 2 refused; 3 conflict.
 
 `--until <ISO-8601>` on `grant` arrives with #92. `cistern-cli` is a shaded executable jar
 (`cistern-cli/target/cistern-cli-<version>.jar`, picocli); `bin/cistern` wraps it; `--token`
@@ -542,8 +587,9 @@ defaults to `CISTERN_TOKEN`; `--base` to `http://127.0.0.1:3737`.
 | `cistern.auth.oidc.webid-claim` / `.webid-template` | … | `webid` / — | how a token names a WebID; one or the other |
 | `cistern.auth.oidc.clock-skew` | … | `60s` | tolerance on `exp`/`nbf` |
 | `cistern.auth.oidc.jwks-uri` | … | discovered | where the keys are, if not via `.well-known/openid-configuration` |
+| `cistern.pods.seed[n].root` / `.owner-web-id` | `CISTERN_PODS_SEED_n_ROOT` / `_OWNERWEBID` | unset | a pod to provision at boot: root as a container path under the base URL (`/firms/acme/`), owner as an absolute WebID; idempotent, never overwrites; refused at bind time if the root is not a container path, is listed twice, or is `/` with an owner other than `cistern.owner.web-id` (T5.6) |
 
-Planned: `cistern.pods.seed[]` (#90), `cistern.audit.*` (#93), `cistern.storage.backend` (#95).
+Planned: `cistern.audit.*` (#93), `cistern.storage.backend` (#95).
 
 ---
 

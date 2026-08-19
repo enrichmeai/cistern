@@ -21,10 +21,21 @@ sealed class CliFailure extends RuntimeException
         super(message, cause);
     }
 
-    /** 401 or 403: the server enforced {@code acl:Control} and refused. Exit {@link ExitCode#REFUSED}. */
+    /**
+     * 401 or 403: the server enforced access and refused. Exit {@link ExitCode#REFUSED}. Two
+     * constructors, because the explanation differs: an ACL is read or written under
+     * {@code acl:Control} on the resource it governs; a resource is created under
+     * {@code acl:Write}.
+     */
     static final class Refused extends CliFailure {
+        /** An ACL ({@code uri}) governing {@code target} could not be read or written. */
         Refused(PodMethod method, ResourceIdentifier uri, PodStatus status, ResourceIdentifier target) {
             super(CliMessage.REFUSED.format(method, uri.uri(), status.code(), target.uri()));
+        }
+
+        /** A resource ({@code uri}, not an ACL) could not be written. */
+        Refused(PodMethod method, ResourceIdentifier uri, PodStatus status) {
+            super(CliMessage.REFUSED_RESOURCE.format(method, uri.uri(), status.code()));
         }
     }
 
