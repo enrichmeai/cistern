@@ -1,0 +1,26 @@
+# The local overlay: Docker Desktop, minikube, kind. ClusterIP only, reached with
+# `kubectl port-forward`; the owner authenticates with a bearer token from the
+# `cistern-owner` Secret. This is ADR 0001's posture, kept unchanged as the development
+# shape — CI (.github/workflows/k8s.yml) refuses NodePort, LoadBalancer and Ingress here.
+#
+#   kubectl config use-context docker-desktop     # never a shared cluster
+#   kubectl apply -k k8s/overlays/local
+#   kubectl create secret generic cistern-owner -n cistern \
+#     --from-literal=web-id='https://you.example/profile/card#me' \
+#     --from-literal=token="$(openssl rand -hex 32)"
+#   kubectl port-forward -n cistern svc/cistern 3737:3000
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+  - networkpolicy.yaml
+
+# Same labels as the base, so the overlay's own resources (and their pod selectors) carry
+# them too — the rendered objects are exactly what the pre-overlay k8s/ produced.
+commonLabels:
+  app.kubernetes.io/name: cistern
+  app.kubernetes.io/part-of: cistern
+
+patches:
+  - path: deployment-patch.yaml

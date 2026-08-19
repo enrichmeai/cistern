@@ -51,26 +51,22 @@ spec:
           env:
             - name: CISTERN_STORAGE_ROOT
               value: /data
-            # Must be the URL clients actually call, which with `kubectl port-forward`
-            # is the LOCAL side of the forward — 3737 by default here, matching
-            # docker-compose. cistern.base-url mints Location headers and the storage
-            # description, so a mismatch makes the pod hand out unreachable URIs.
-            # Forwarding to a different local port? Change this to match.
-            - name: CISTERN_BASE_URL
-              value: http://localhost:3737
             # Respect the container memory limit instead of the host's RAM.
             - name: JAVA_OPTS
               value: "-XX:MaxRAMPercentage=75.0"
-            # Who owns this pod. Setting these two turns Web Access Control ON: the root
-            # ACL is seeded granting this WebID full access, and everything else — every
-            # anonymous request included — is denied by default. Leave them unset and the
-            # pod has no authorization layer at all, which the server warns about on boot.
-            - name: CISTERN_OWNER_WEBID
-              valueFrom:
-                secretKeyRef: {name: cistern-owner, key: web-id}
-            - name: CISTERN_OWNER_TOKEN
-              valueFrom:
-                secretKeyRef: {name: cistern-owner, key: token}
+            # Two things every overlay MUST add, because they differ by deployment and
+            # the base would be wrong for one of them:
+            #   CISTERN_BASE_URL — the URL clients actually call. It mints Location headers
+            #     and the storage description, so a mismatch makes the pod hand out
+            #     unreachable URIs. Local: the port-forward's local side; production: the
+            #     Ingress host, https.
+            #   who owns the pod — CISTERN_OWNER_WEBID (this is what turns Web Access
+            #     Control ON and seeds the root ACL) plus how the owner authenticates: the
+            #     local overlay adds CISTERN_OWNER_TOKEN from a Secret; the production
+            #     overlay adds the OIDC issuer / service credentials from a Secret and no
+            #     token at all (ADR 0002). Left unset, the pod has no authorization layer,
+            #     which the server warns about on boot; credentials configured without the
+            #     owner are refused at start-up.
           volumeMounts:
             - name: data
               mountPath: /data
@@ -104,7 +100,8 @@ spec:
             limits:
               memory: 1Gi
               # No CPU limit on purpose: a limit throttles JVM startup and buys nothing
-              # on a single-tenant local cluster.
+              # on a single-tenant cluster. The production overlay raises the memory
+              # figures; the reasoning is the same.
 
           securityContext:
             allowPrivilegeEscalation: false

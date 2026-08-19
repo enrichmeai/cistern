@@ -1,0 +1,53 @@
+# The production overlay (ADR 0002): TLS terminated at an Ingress, the Service still
+# ClusterIP behind it, a NetworkPolicy admitting only the ingress controller, resource
+# limits, and the owner/OIDC/service-credential environment from a Secret — with no owner
+# token anywhere. One replica, because the file backend is single-writer.
+#
+# Prerequisites on the cluster: an ingress controller (ingress-nginx assumed; annotations
+# below), cert-manager with a ClusterIssuer OR a pre-provisioned TLS Secret named
+# cistern-tls, a default StorageClass (with volume snapshots for backups), and a CNI that
+# enforces NetworkPolicy (Calico, Cilium, GKE Dataplane V2 — Docker Desktop does not).
+#
+# ONE thing to edit before applying: the host in ingress.yaml. The `replacements` block
+# below copies it into the TLS hosts and into CISTERN_BASE_URL, so the certificate, the
+# route and the origin every identifier is minted under cannot disagree.
+#
+#   kubectl apply -k k8s/overlays/production
+#   kubectl apply -f <your copy of auth-secret.example.yaml>      # or `kubectl create secret generic cistern-auth --from-env-file=cistern.env`
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+  - ingress.yaml
+  - networkpolicy.yaml
+
+commonLabels:
+  app.kubernetes.io/name: cistern
+  app.kubernetes.io/part-of: cistern
+
+patches:
+  - path: deployment-patch.yaml
+
+# The Ingress host is the single source of truth for the domain.
+replacements:
+  - source:
+      kind: Ingress
+      name: cistern
+      fieldPath: spec.rules.0.host
+    targets:
+      - select:
+          kind: Ingress
+          name: cistern
+        fieldPaths:
+          - spec.tls.0.hosts.0
+      - select:
+          kind: Deployment
+          name: cistern
+        fieldPaths:
+          - spec.template.spec.containers.[name=cistern].env.[name=CISTERN_BASE_URL].value
+        options:
+          # "https://pod.example.org" split on "/" is ["https:", "", "pod.example.org"];
+          # index 2 is the host, and only the host is replaced — the scheme stays https.
+          delimiter: "/"
+          index: 2
