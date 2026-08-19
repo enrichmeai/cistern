@@ -169,6 +169,69 @@ class AccessControlTest {
     }
 
     @Test
+    @DisplayName("an ACL is read with Control on the resource it governs — public Read on the container grants nothing (#112)")
+    void aclRequiresControlOnTheGovernedResource() {
+        writeAcl(ROOT + "notes/", "@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n"
+                + "<#owner> a acl:Authorization ;\n"
+                + "  acl:agent <" + ALICE + "> ;\n"
+                + "  acl:accessTo <" + ROOT + "notes/> ; acl:default <" + ROOT + "notes/> ;\n"
+                + "  acl:mode acl:Read, acl:Write, acl:Append, acl:Control .\n"
+                + "<#public> a acl:Authorization ;\n"
+                + "  acl:agentClass foaf:Agent ;\n"
+                + "  acl:accessTo <" + ROOT + "notes/> ; acl:default <" + ROOT + "notes/> ;\n"
+                + "  acl:mode acl:Read .");
+        List<AccessRequirement> readTheAcl = RequiredAccess.forRequest("GET", id(ROOT + "notes/.acl"));
+        assertEquals(List.of(new AccessRequirement(id(ROOT + "notes/"), AccessMode.CONTROL)), readTheAcl);
+
+        StepVerifier.create(accessControl.authorize(readTheAcl, Agent.ANONYMOUS))
+                .assertNext(verdict -> assertFalse(verdict.allowed(), "the public reads the notes, not the rule"))
+                .verifyComplete();
+        StepVerifier.create(accessControl.authorize(readTheAcl, BOB_AGENT))
+                .assertNext(verdict -> assertFalse(verdict.allowed(), "Bob reads the notes, not the rule"))
+                .verifyComplete();
+        StepVerifier.create(accessControl.authorize(readTheAcl, ALICE_AGENT))
+                .assertNext(verdict -> {
+                    assertTrue(verdict.allowed());
+                    assertEquals(Optional.of(id(ROOT + "notes/.acl")), verdict.decidedBy());
+                    assertEquals(id(ROOT + "notes/"), verdict.primary().requirement().target(),
+                            "the receipt lands on the governed resource");
+                    assertEquals(AccessMode.CONTROL, verdict.primary().requirement().mode());
+                })
+                .verifyComplete();
+        // Every method — a DELETE of the rule is a policy change, so it is Control too, and
+        // Bob's Read is as useless for it as it was for the GET.
+        StepVerifier.create(accessControl.isAllowed("DELETE", id(ROOT + "notes/.acl"), BOB_AGENT))
+                .expectNext(false).verifyComplete();
+        StepVerifier.create(accessControl.isAllowed("PUT", id(ROOT + "notes/.acl"), Agent.ANONYMOUS))
+                .expectNext(false).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("a document's ACL is judged by the document's effective ACL — its own, not the container's defaults (#112)")
+    void documentAclIsJudgedByTheDocumentsOwnAcl() {
+        // Bob controls the document by its own ACL; Alice's root default no longer reaches it.
+        writeAcl(ROOT + "notes/hello", "<#bob> a acl:Authorization ;\n"
+                + "  acl:agent <" + BOB + "> ;\n"
+                + "  acl:accessTo <" + ROOT + "notes/hello> ;\n"
+                + "  acl:mode acl:Control .");
+        List<AccessRequirement> readTheAcl = RequiredAccess.forRequest("GET", id(ROOT + "notes/hello.acl"));
+
+        StepVerifier.create(accessControl.authorize(readTheAcl, BOB_AGENT))
+                .assertNext(verdict -> {
+                    assertTrue(verdict.allowed(), "Control granted in the document's own ACL governs that ACL");
+                    assertEquals(Optional.of(id(ROOT + "notes/hello.acl")), verdict.decidedBy());
+                })
+                .verifyComplete();
+        StepVerifier.create(accessControl.authorize(readTheAcl, ALICE_AGENT))
+                .assertNext(verdict -> assertFalse(verdict.allowed(),
+                        "the root's acl:default is superseded by the document's own ACL, for the ACL as for the document"))
+                .verifyComplete();
+        // Control on the ACL is not Read on the document: Bob still cannot read /notes/hello.
+        StepVerifier.create(accessControl.isAllowed("GET", id(ROOT + "notes/hello"), BOB_AGENT))
+                .expectNext(false).verifyComplete();
+    }
+
+    @Test
     @DisplayName("isAllowed is authorize().allowed() — one evaluation path, two shapes of answer")
     void isAllowedIsTheVerdict() {
         StepVerifier.create(accessControl.isAllowed("GET", id(ROOT + "notes/hello"), ALICE_AGENT))

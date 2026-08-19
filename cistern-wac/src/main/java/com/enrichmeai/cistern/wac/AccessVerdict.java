@@ -25,7 +25,8 @@ import java.util.Optional;
  * read as "allowed".
  *
  * @param judgements one per requirement, in requirement order; the first is always the
- *                   request's own target
+ *                   request's own target — or, for a request addressed to an ACL resource,
+ *                   the resource that ACL governs ({@link RequiredAccess#forAcl})
  */
 public record AccessVerdict(List<Judgement> judgements) {
 
@@ -65,7 +66,10 @@ public record AccessVerdict(List<Judgement> judgements) {
      * The judgement on the request's own target — the first requirement, by
      * {@link RequiredAccess}'s ordering. This is the one a receipt describes: the record names
      * the request target and the mode required <em>there</em>, even when a second requirement
-     * (a {@code DELETE}'s parent) is what actually refused.
+     * (a {@code DELETE}'s parent) is what actually refused. For a request addressed to an ACL
+     * resource the "own target" is the resource the ACL governs, with Control required there
+     * ({@link RequiredAccess#forAcl}): the ACL is that resource's policy, and the receipt lands
+     * where the policy's owner reads receipts.
      */
     public Judgement primary() {
         return judgements.getFirst();

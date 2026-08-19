@@ -21,7 +21,19 @@ import java.util.Objects;
  *   <tr><td>{@code PATCH}</td><td>Append on the target</td></tr>
  *   <tr><td>{@code DELETE}</td><td>Write on the target <strong>and</strong> Write on its parent</td></tr>
  *   <tr><td>{@code GET}/{@code HEAD} {@code ?receipts}</td><td>Control on the target — see {@link #forReceipts} (T5.9)</td></tr>
+ *   <tr><td><em>any</em> method on an ACL resource</td><td>Control on the resource the ACL governs — see {@link #forAcl} (#112)</td></tr>
  * </table>
+ *
+ * <p><strong>The ACL row comes first</strong>: when the target is an ACL resource
+ * ({@link AclResource#isAcl}) the method is not consulted at all. WAC (Authorization
+ * Evaluation, "Reading and Writing Resources"): "when an operation requests to read and
+ * write an ACL resource, the server MUST match an Authorization allowing the
+ * {@code acl:Control} access privilege on the resource" — and its note on method mapping is
+ * blunter still: "when the target of the HTTP request is the ACL resource, the operation can
+ * only be allowed with the {@code acl:Control} access mode". Without this row a public Read
+ * on a container made its ACL publicly readable, disclosing who holds access, and Write on
+ * the container let a non-controller delete the ACL — which is not a deletion but a
+ * silent widening, since the resource then inherits its parent's defaults.
  *
  * <p><strong>DELETE requiring the parent is the row that is easy to miss</strong>, and the
  * harness is unambiguous about it: with Write on the resource but nothing on its container
@@ -69,6 +81,9 @@ public final class RequiredAccess {
         Objects.requireNonNull(method, "method");
         Objects.requireNonNull(target, "target");
 
+        if (AclResource.isAcl(target)) {
+            return forAcl(target);
+        }
         return switch (method.toUpperCase(java.util.Locale.ROOT)) {
             case "GET", "HEAD", "OPTIONS" -> List.of(new AccessRequirement(target, AccessMode.READ));
             case "PUT" -> List.of(new AccessRequirement(target, AccessMode.WRITE));
@@ -77,6 +92,36 @@ public final class RequiredAccess {
             case "DELETE" -> deleteRequirements(target);
             default -> List.of(new AccessRequirement(target, AccessMode.WRITE));
         };
+    }
+
+    /**
+     * What any request targeting an ACL resource requires: <strong>Control on the resource the
+     * ACL governs</strong>, whatever the method (#112).
+     *
+     * <p>On the governed resource, not on the ACL itself, and that is not a nicety. An ACL has
+     * no ACL of its own — WAC's discovery walk, asked about {@code /notes/hello.acl}, would find
+     * nothing at {@code /notes/hello.acl.acl} and ascend to the <em>container's</em> defaults,
+     * skipping {@code /notes/hello.acl} entirely — so a requirement stated on the ACL would be
+     * judged by the wrong policy: an agent granted Control in the document's own ACL could not
+     * read it, and one holding only the container's default could. Stated on the governed
+     * resource, the requirement is judged by exactly the effective ACL that governs it, which
+     * is what the spec means by "the resource" in "Control on the resource".
+     *
+     * <p>Every method, including {@code DELETE} and {@code POST}. WAC defines control
+     * operations as "view, create, delete, or modify ACL resources": deleting an ACL is a
+     * policy change (the resource falls back to inherited defaults), not a containment edit,
+     * so the parent-Write rule for {@code DELETE} does not apply; and a {@code POST} to an ACL
+     * — which no handler will accept, an ACL not being a container — is refused here for
+     * anyone without Control rather than letting the method table decide it needs only Append.
+     *
+     * @param acl the ACL resource the request targets; must satisfy {@link AclResource#isAcl}
+     * @return the single requirement: Control on {@link AclResource#governedBy}
+     * @throws IllegalArgumentException if {@code acl} is not an ACL resource — a caller bug,
+     *     since {@link #forRequest} routes here only for one
+     */
+    public static List<AccessRequirement> forAcl(ResourceIdentifier acl) {
+        Objects.requireNonNull(acl, "acl");
+        return List.of(new AccessRequirement(AclResource.governedBy(acl), AccessMode.CONTROL));
     }
 
     /**
