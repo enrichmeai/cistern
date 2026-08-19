@@ -1,0 +1,42 @@
+# What the production overlay adds to the base Deployment: the public base URL, receipts
+# required, the authentication environment from the `cistern-auth` Secret, and production
+# resource figures. Still one replica and still `Recreate` (from the base): the file
+# backend is single-writer, so there is nothing to spread and no PodDisruptionBudget to
+# write — a PDB with minAvailable 1 on a single-replica Deployment would only block node
+# drains without buying availability.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cistern
+  namespace: cistern
+spec:
+  template:
+    spec:
+      containers:
+        - name: cistern
+          # Everything that says WHO may use this pod, from one Secret with env-var-named
+          # keys: CISTERN_OWNER_WEBID (turns enforcement on), CISTERN_AUTH_OIDC_*,
+          # CISTERN_AUTH_SERVICEPRINCIPALS_n_*. See auth-secret.example.yaml. It carries
+          # NO CISTERN_OWNER_TOKEN (ADR 0002 condition 3): the owner authenticates through
+          # the issuer or a hashed service credential. Without the Secret the pod will not
+          # start; with credentials but no owner it refuses to start (the enforcement guard).
+          envFrom:
+            - secretRef:
+                name: cistern-auth
+          env:
+            # The public origin: what clients call and what every identifier is minted
+            # under. The HOST PART IS REPLACED from the Ingress host by kustomization.yaml;
+            # only the scheme here matters, and it is https because TLS is in front.
+            - name: CISTERN_BASE_URL
+              value: https://pod.example.org
+            # ADR 0002 condition 8: a decision the log cannot record is not acted on (503).
+            - name: CISTERN_AUDIT_REQUIRED
+              value: "true"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 768Mi
+            limits:
+              memory: 1536Mi
+              # No CPU limit, as in the base: it throttles the JVM and buys nothing on a
+              # single-tenant node. Memory is what a JVM must be told about (JAVA_OPTS).

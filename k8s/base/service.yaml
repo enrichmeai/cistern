@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cistern
+  namespace: cistern
+  labels:
+    app.kubernetes.io/name: cistern
+spec:
+  # ClusterIP in every overlay, deliberately never NodePort or LoadBalancer. Locally,
+  # `kubectl port-forward` is the cluster equivalent of the 127.0.0.1 binding in
+  # docker-compose.yml (ADR 0001 posture, kept for development). In production the
+  # Ingress terminates TLS in front of this Service and is the only way in (ADR 0002);
+  # exposing the pod's plain-HTTP port directly would bypass that.
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: cistern
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

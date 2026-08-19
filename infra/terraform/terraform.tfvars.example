@@ -1,17 +1,29 @@
 # Copy to terraform.tfvars and fill in. Everything not listed has a safe default.
+# Nothing secret goes in this file: the owner's WebID, the OIDC issuer and the service
+# principals' credential hashes live in Secret Manager (README, "The authentication
+# environment"), never here and never in state.
 
-project_id = "cistern-503016"
-zone       = "europe-west2-a"
+project_id = "valuedocs-cistern"          # YOUR project, not EnrichMeAI's
+region     = "asia-south1"                # closest to the firm; snapshots stay in this region
+zone       = "asia-south1-a"
 
-# Pin a published tag rather than :latest, so a redeploy is reproducible.
-# image = "ghcr.io/enrichmeai/cistern:v0.1.0"
+# The public hostname. The managed certificate is issued for it, cistern.base-url is
+# https://<domain>, and after apply its A record must point at `terraform output
+# load_balancer_ip`.
+domain = "pod.valuedocs.co.in"
 
-# Reaching the pod through the IAP tunnel makes localhost:3000 the client-visible
-# origin, and cistern.base-url has to match it or every URI the pod mints names an
-# origin nobody called.
-# base_url = "http://localhost:3000"
+# Pinned tag from https://github.com/enrichmeai/cistern/pkgs/container/cistern.
+# :latest and untagged are refused by a variable validation. To upgrade: change, apply,
+# then `terraform output upgrade_command`.
+# image = "ghcr.io/enrichmeai/cistern:0.1.0"
 
-# Leave these alone until Phase 5. There is no authorization layer yet: an
-# anonymous caller can create and delete resources. 0.0.0.0/0 is rejected outright.
-# enable_external_ip    = false
-# allowed_ingress_cidrs = ["203.0.113.4/32"]
+# Requests per minute per client IP before the load balancer answers 429. 0 switches the
+# Cloud Armor policy off (and its cost) — only behind an allowlist you control.
+# rate_limit_per_minute = 300
+
+# Daily snapshot of the data disk: hour (UTC) and how many days to keep.
+# snapshot_start_hour     = 3
+# snapshot_retention_days = 14
+
+# ADR 0002 condition 8: a decision the log cannot record is not acted on (503). Keep true.
+# audit_required = true

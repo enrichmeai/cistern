@@ -10,9 +10,11 @@ import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Deployment configuration for the HTTP layer.
@@ -28,7 +30,8 @@ import java.util.Set;
  *                slash is insignificant and stripped
  * @param storage storage backend settings
  * @param cors    cross-origin sharing settings (T2.8); wide open unless narrowed
- * @param owner   the pod owner and their local credential (T5.3/T5.4)
+ * @param owner   the pod owner — naming one turns enforcement on (T5.3/T5.4) — and,
+ *                optionally, their local credential
  * @param auth    the other ways a request proves who it is (T4.0): service principals and an
  *                OIDC issuer whose JWTs are accepted
  * @param pods    further pods, each with its own owner, provisioned at boot (T5.6)
@@ -43,6 +46,9 @@ public record CisternProperties(
 
     /** Insignificant on the base URL: every request path already supplies its own leading one. */
     private static final String TRAILING_SEPARATOR = "/";
+
+    /** Joins the configured credential sources when the enforcement guard names them. */
+    private static final String CREDENTIAL_SOURCE_SEPARATOR = " and ";
 
     public CisternProperties {
         baseUrl = (baseUrl == null || baseUrl.isBlank()) ? DEFAULT_BASE_URL : baseUrl.trim();
@@ -59,10 +65,22 @@ public record CisternProperties(
         auth = auth == null ? new Auth(null, null) : auth;
         pods = pods == null ? new Pods(null) : pods;
         audit = audit == null ? new Audit(false, null) : audit;
+        // The enforcement guard (T7.7, #94). Enforcement is keyed on the owner's WebID (see
+        // CisternWebFluxConfiguration#cisternAuthorizationFilter); a credential source without
+        // one is a pod that is open to everyone while its configuration reads as locked. Refused
+        // at bind time, so the server never comes up in that state. Nothing configured at all is
+        // still allowed and still loud (OwnerPodSeeder warns NO_OWNER_CONFIGURED).
+        Set<Auth.CredentialSource> sources = auth.credentialSources();
+        if (!owner.isNamed() && !sources.isEmpty()) {
+            throw new IllegalArgumentException(WebfluxMessage.ENFORCEMENT_REQUIRES_OWNER.format(
+                    sources.stream()
+                            .map(Auth.CredentialSource::property)
+                            .collect(Collectors.joining(CREDENTIAL_SOURCE_SEPARATOR))));
+        }
         // Bind-time, not boot-time: a seed that cannot be provisioned is a configuration error
         // and should fail the start, not surface as a stack trace from a runner.
         for (PodSpec seeded : pods.specsUnder(baseUrl)) {
-            if (owner.webId() != null && seeded.root().isStorageRoot()
+            if (owner.isNamed() && seeded.root().isStorageRoot()
                     && !seeded.ownerWebId().equals(owner.webId())) {
                 throw new IllegalArgumentException(WebfluxMessage.POD_SEED_ROOT_CONTRADICTS_OWNER
                         .format(seeded.ownerWebId(), owner.webId()));
@@ -165,24 +183,39 @@ public record CisternProperties(
     }
 
     /**
-     * Who owns this pod, and the secret that proves it.
+     * Who owns this pod, and — optionally — a local secret that proves it.
      *
-     * <p>Both must be set for local authentication to work at all. An unconfigured server
-     * therefore has no credential that authenticates anyone — the safe default, given that
-     * the alternative is a well-known token shipping in the jar.
+     * <p>The two halves do different jobs. {@code web-id} names the owner of the storage root:
+     * setting it is what turns Web Access Control <strong>on</strong> (the enforcement filter is
+     * registered on it) and what the root ACL is seeded for. {@code token} is one way for that
+     * WebID to authenticate — a shared bearer secret, plaintext at rest, for a private network.
+     * A production deployment leaves the token unset (ADR 0002): the owner authenticates through
+     * {@code cistern.auth.oidc} or a hashed service credential carrying the same WebID, and the
+     * root ACL is seeded for them all the same.
      *
-     * <p>This is not Solid-OIDC and is not a substitute for it (Phase 4). It is the minimum
-     * that lets the owner of a pod on their own machine be somebody, so that WAC has a
-     * principal to evaluate. See {@code docs/ideas/first-user-path.md}.
+     * <p>Neither half is a default. An unconfigured server names no owner and ships no
+     * credential — the safe default, given that the alternative is a well-known token in the jar
+     * — and says so on every boot ({@code NO_OWNER_CONFIGURED}). A credential source configured
+     * without an owner is refused at bind time ({@code ENFORCEMENT_REQUIRES_OWNER}, T7.7).
      *
-     * @param webId the owner's WebID; also the agent granted full access by the seeded root ACL
-     * @param token shared secret presented as {@code Authorization: Bearer <token>}
+     * <p>The token is not Solid-OIDC and is not a substitute for it (Phase 4). It is the minimum
+     * that lets the owner of a pod on their own machine be somebody, so that WAC has a principal
+     * to evaluate. See {@code docs/ideas/first-user-path.md}.
+     *
+     * @param webId the owner's WebID; the enforcement switch, and the agent granted full access
+     *              by the seeded root ACL
+     * @param token shared secret presented as {@code Authorization: Bearer <token>}; optional
      */
     public record Owner(URI webId, String token) {
 
-        /** Whether local authentication is configured. Both halves are required. */
-        public boolean isConfigured() {
-            return webId != null && token != null && !token.isBlank();
+        /** Whether an owner is named — the fact enforcement and the root ACL are keyed on. */
+        public boolean isNamed() {
+            return webId != null;
+        }
+
+        /** Whether the owner can authenticate with a local bearer token. Both halves required. */
+        public boolean hasLocalCredential() {
+            return isNamed() && token != null && !token.isBlank();
         }
     }
 
@@ -200,6 +233,39 @@ public record CisternProperties(
         public Auth {
             oidc = oidc == null ? new Oidc(null, null, null, null, null, null) : oidc;
             servicePrincipals = servicePrincipals == null ? List.of() : List.copyOf(servicePrincipals);
+        }
+
+        /**
+         * The ways, other than the owner's local token, that this configuration lets a request
+         * prove who it is. Each names the property that switches it on, which is what the
+         * enforcement guard quotes back when one is set without an owner.
+         */
+        public enum CredentialSource {
+            OIDC_ISSUER("cistern.auth.oidc.issuer"),
+            SERVICE_PRINCIPALS("cistern.auth.service-principals[]");
+
+            private final String property;
+
+            CredentialSource(String property) {
+                this.property = property;
+            }
+
+            /** The configuration property that enables this source. */
+            public String property() {
+                return property;
+            }
+        }
+
+        /** The credential sources this configuration enables, in declaration order; empty when none. */
+        public Set<CredentialSource> credentialSources() {
+            Set<CredentialSource> sources = EnumSet.noneOf(CredentialSource.class);
+            if (oidc.isConfigured()) {
+                sources.add(CredentialSource.OIDC_ISSUER);
+            }
+            if (!servicePrincipals.isEmpty()) {
+                sources.add(CredentialSource.SERVICE_PRINCIPALS);
+            }
+            return sources;
         }
     }
 
@@ -327,7 +393,9 @@ public record CisternProperties(
      * {@code cistern.auth.oidc}, and a seeded owner who cannot authenticate simply owns a pod
      * nobody can enter yet. And it does not turn enforcement on: that is still keyed on
      * {@code cistern.owner.web-id}, so a server with seeds and no owner has ACLs nothing
-     * consults.
+     * consults — allowed, because seeding without an owner is a provisioning step, not a
+     * credential; the moment a credential source is configured the enforcement guard requires
+     * the owner (T7.7).
      *
      * @param seed the pods, in configuration order; empty when none are configured
      */

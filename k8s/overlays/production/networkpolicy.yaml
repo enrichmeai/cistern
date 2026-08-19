@@ -1,0 +1,36 @@
+# Only the ingress controller may reach the pod (ADR 0002 condition 1). Everything else in
+# the cluster — another namespace, a compromised sidecar, a curious pod — is refused at the
+# network, before it can even present a credential.
+#
+# Enforcement depends on the CNI: Calico, Cilium and GKE Dataplane V2 enforce it; Docker
+# Desktop's default networking does not (verified, k8s/README.md). Deploy production on a
+# cluster that does, and verify once with a pod in another namespace: `curl` from it must
+# hang, not answer.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cistern-ingress-only
+  namespace: cistern
+  labels:
+    app.kubernetes.io/name: cistern
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cistern
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        # ingress-nginx, in its conventional namespace. If your controller lives elsewhere,
+        # change the label value; if you use a different controller, select its namespace.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        # GKE Ingress (the Google load balancer) and its health checks arrive from Google's
+        # proxy ranges rather than from a pod. Harmless elsewhere; delete if you prefer.
+        - ipBlock:
+            cidr: 130.211.0.0/22
+        - ipBlock:
+            cidr: 35.191.0.0/16
+      ports:
+        - protocol: TCP
+          port: 3000

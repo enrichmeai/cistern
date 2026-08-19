@@ -1,0 +1,50 @@
+# TLS in front (ADR 0002 condition 1). The Ingress is the only way in: the Service behind
+# it stays ClusterIP, and the NetworkPolicy admits only the ingress controller's pods.
+#
+# EDIT THE HOST below — once. kustomization.yaml copies it into spec.tls.hosts and into
+# CISTERN_BASE_URL, so the three cannot drift.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cistern
+  namespace: cistern
+  annotations:
+    # --- certificate -----------------------------------------------------------------
+    # cert-manager issues and renews the certificate into the `cistern-tls` Secret. If you
+    # provision the certificate yourself instead, delete this annotation and create the
+    # Secret: kubectl create secret tls cistern-tls -n cistern --cert=fullchain.pem --key=privkey.pem
+    cert-manager.io/cluster-issuer: letsencrypt-production
+
+    # --- ingress-nginx ---------------------------------------------------------------
+    # Plain HTTP never reaches a client: 308 to https.
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Rate limiting at the edge (ADR 0002 condition 7): requests per second per client
+    # IP, with a burst. ingress-nginx answers 503 above the limit unless the controller's
+    # ConfigMap sets `limit-req-status-code: "429"` — set it, so applications can tell a
+    # slow-down (429) from a refusal (401/403) and from an outage (503).
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    # Document uploads: raise if the firm's PDFs are larger.
+    nginx.ingress.kubernetes.io/proxy-body-size: 64m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    # X-Request-Id (ADR 0002 condition 6): ingress-nginx forwards a client's X-Request-ID
+    # and mints one when absent (its `enable-request-id` default), and Cistern honours a
+    # well-formed one — so the controller's access log line and the pod's receipt share
+    # one value. Nothing to configure; noted so nobody switches it off.
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - pod.example.org        # replaced from spec.rules[0].host by kustomization.yaml
+      secretName: cistern-tls
+  rules:
+    - host: pod.example.org      # <-- THE ONE PLACE TO EDIT
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cistern
+                port:
+                  name: http

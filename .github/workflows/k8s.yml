@@ -1,8 +1,9 @@
 name: k8s
 
-# Renders and validates the manifests against real Kubernetes API schemas. Needs no
-# cluster and no credentials, so it runs on every PR — the point is that a broken
-# manifest fails review rather than failing in someone's terminal.
+# Renders and validates both overlays against real Kubernetes API schemas, then holds each
+# to its posture. Needs no cluster and no credentials, so it runs on every PR — the point
+# is that a broken manifest, or a manifest that quietly loosens a posture, fails review
+# rather than failing in someone's terminal.
 
 on:
   pull_request:
@@ -24,27 +25,80 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Render
-        run: kubectl kustomize k8s/ | tee /tmp/rendered.yaml
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C /tmp kubeconform
+
+      - name: Render both overlays
+        run: |
+          kubectl kustomize k8s/overlays/local      | tee /tmp/local.yaml
+          kubectl kustomize k8s/overlays/production | tee /tmp/production.yaml
 
       # Schema validation without a cluster. -strict rejects unknown fields, which is what
       # catches a typo'd key the API would otherwise silently ignore.
       - name: Validate against Kubernetes schemas
         run: |
-          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
-            | tar -xz -C /tmp kubeconform
-          /tmp/kubeconform -strict -summary -output text /tmp/rendered.yaml
+          /tmp/kubeconform -strict -summary -output text /tmp/local.yaml
+          /tmp/kubeconform -strict -summary -output text /tmp/production.yaml
 
-      # The security posture these manifests exist to hold. Cistern has no authorization
-      # layer yet (ADR 0001), so an exposed Service type is a defect, not a preference.
-      - name: Refuse externally-reachable Service types
+      # Both overlays: the Service stays ClusterIP. Locally it is what keeps the pod
+      # unreachable (ADR 0001 posture, kept for development); in production the Ingress
+      # terminates TLS in front of it and exposing the plain-HTTP port would bypass that
+      # (ADR 0002). And the image is a pinned tag: :latest moves, a rollback would be a guess.
+      - name: Both overlays — ClusterIP only, pinned image
         run: |
-          if grep -nE '^\s*type:\s*(NodePort|LoadBalancer)' /tmp/rendered.yaml; then
-            echo "::error::Service must stay ClusterIP until Phase 5 — see k8s/README.md and ADR 0001."
+          for f in /tmp/local.yaml /tmp/production.yaml; do
+            if grep -nE '^\s*type:\s*(NodePort|LoadBalancer)' "$f"; then
+              echo "::error::$f: Service must stay ClusterIP — see k8s/README.md."
+              exit 1
+            fi
+            if grep -nE '^\s*image:' "$f" | grep -vE ':[A-Za-z0-9._-]+$'; then
+              echo "::error::$f: image must carry a pinned tag."
+              exit 1
+            fi
+            if grep -nE '^\s*image:.*:latest$' "$f"; then
+              echo "::error::$f: image must not be :latest."
+              exit 1
+            fi
+          done
+          echo "Service is ClusterIP and the image is pinned in both overlays."
+
+      # The local overlay is the development posture: no Ingress, no TLS, port-forward only.
+      - name: Local overlay — no Ingress
+        run: |
+          if grep -qiE '^\s*kind:\s*Ingress' /tmp/local.yaml; then
+            echo "::error::k8s/overlays/local must not contain an Ingress — it is reached by port-forward only (k8s/README.md)."
             exit 1
           fi
-          if grep -qiE '^\s*kind:\s*Ingress' /tmp/rendered.yaml; then
-            echo "::error::No Ingress before Phase 5 — it would expose an unauthenticated store."
+          echo "Local overlay has no Ingress."
+
+      # The production overlay is ADR 0002's posture: an Ingress WITH TLS, a NetworkPolicy,
+      # IfNotPresent on the pinned tag, one replica, and no owner token anywhere.
+      - name: Production overlay — Ingress with TLS, NetworkPolicy, no owner token
+        run: |
+          if ! grep -qiE '^\s*kind:\s*Ingress' /tmp/production.yaml; then
+            echo "::error::k8s/overlays/production must contain an Ingress (ADR 0002 condition 1)."
             exit 1
           fi
-          echo "Service stays ClusterIP; no Ingress."
+          if ! grep -qE '^\s*tls:' /tmp/production.yaml; then
+            echo "::error::the production Ingress must terminate TLS (spec.tls) — ADR 0002 condition 1."
+            exit 1
+          fi
+          if ! grep -qiE '^\s*kind:\s*NetworkPolicy' /tmp/production.yaml; then
+            echo "::error::k8s/overlays/production must carry a NetworkPolicy admitting only the ingress controller."
+            exit 1
+          fi
+          if ! grep -qE '^\s*imagePullPolicy:\s*IfNotPresent' /tmp/production.yaml; then
+            echo "::error::production must pull the pinned tag with IfNotPresent."
+            exit 1
+          fi
+          if ! grep -qE '^\s*replicas:\s*1$' /tmp/production.yaml; then
+            echo "::error::the file backend is single-writer: production stays at one replica."
+            exit 1
+          fi
+          if grep -n 'CISTERN_OWNER_TOKEN' /tmp/production.yaml; then
+            echo "::error::the production overlay must not reference CISTERN_OWNER_TOKEN (ADR 0002 condition 3)."
+            exit 1
+          fi
+          echo "Production overlay: Ingress with TLS, NetworkPolicy, IfNotPresent, one replica, no owner token."

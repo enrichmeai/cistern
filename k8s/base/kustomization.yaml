@@ -1,3 +1,9 @@
+# The base: what every Cistern deployment shares — namespace (restricted PSS), RWO PVC,
+# single-replica Deployment, ClusterIP Service. It is not meant to be applied on its own:
+# it sets no CISTERN_BASE_URL and no credentials. Apply an overlay:
+#
+#   kubectl apply -k k8s/overlays/local         # port-forward only, owner token (ADR 0001 posture)
+#   kubectl apply -k k8s/overlays/production    # Ingress + TLS, OIDC/service credentials (ADR 0002)
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -8,14 +14,14 @@ resources:
   - pvc.yaml
   - deployment.yaml
   - service.yaml
-  - networkpolicy.yaml
 
 commonLabels:
   app.kubernetes.io/name: cistern
   app.kubernetes.io/part-of: cistern
 
 # The image is pinned in deployment.yaml (the published release, by version). This
-# transformer is the knob for changing it without editing that file — a newer release:
+# transformer is the knob for changing it without editing that file — run it inside the
+# overlay you deploy, and don't commit the result. A newer release:
 #   kustomize edit set image ghcr.io/enrichmeai/cistern:0.2.0
 # or a local build (`docker build -t cistern:local .`; on minikube also
 # `minikube image load cistern:local`):

@@ -254,11 +254,48 @@ public enum WebfluxMessage {
 
     PROBLEM_MEMBER_REQUIRED("RFC 9457 member '%s' must not be null"),
 
-    /** Startup: no owner configured, so nothing can authenticate. Logged, never thrown. */
+    /**
+     * Startup: no owner is named, so enforcement is off (T5.3) — the pod is unprotected, and it
+     * says so on every boot. Logged, never thrown: refusing to start would turn "upgrade" into
+     * "brick" for a laptop pod that has never had an owner, and ADR 0001/0002 keep such a pod
+     * off any address a stranger can reach.
+     */
     NO_OWNER_CONFIGURED(
-            "cistern.owner.web-id / cistern.owner.token are not set: no credential"
-                    + " authenticates anyone, so only what the ACLs grant the public is"
-                    + " reachable. Set both to use this pod as its owner."),
+            "cistern.owner.web-id is not set: Web Access Control is OFF and every request,"
+                    + " anonymous included, is served without a decision. Set it to the WebID"
+                    + " that owns the storage root; enforcement then denies by default and the"
+                    + " root ACL is seeded for that owner (cistern.owner.token is optional: it"
+                    + " is one way for the owner to authenticate, for a private network)."),
+
+    /**
+     * Bind-time refusal (T7.7, #94): a credential source is configured but no owner is named,
+     * so enforcement would be off and the credential would never be asked for — the pod would
+     * be open to everyone while looking, in its configuration, as if it were locked. Thrown,
+     * never merely logged: the deployment this describes is a production one, and a production
+     * pod that starts unprotected has already failed.
+     */
+    ENFORCEMENT_REQUIRES_OWNER(
+            "Credentials are configured (%s) but cistern.owner.web-id is not, so Web Access"
+                    + " Control would be OFF and no credential would ever be asked for: anyone"
+                    + " could read, write and delete without one. Set cistern.owner.web-id to"
+                    + " the WebID that owns the storage root — that is what turns enforcement on"
+                    + " and seeds the root ACL. cistern.owner.token is not required: leave it"
+                    + " unset where the owner authenticates through the OIDC issuer or a service"
+                    + " credential (docs/adr/0002-production-posture.md)."),
+
+    /**
+     * Startup: enforcement is on (an owner is named) but no resolver can authenticate anyone —
+     * no local token, no issuer, no service principals, nothing contributed. Every request is
+     * anonymous, so only what the ACLs grant the public is reachable, the owner included. Logged
+     * at WARN, not thrown: a public read-only pod whose ACLs were written on disk is a legitimate
+     * shape, and an embedder may replace the resolver chain outright.
+     */
+    ENFORCEMENT_WITHOUT_CREDENTIAL(
+            "cistern.owner.web-id is set, so Web Access Control is ON, but nothing"
+                    + " authenticates anyone: no cistern.owner.token, no cistern.auth.oidc.issuer,"
+                    + " no cistern.auth.service-principals[] and no contributed resolver. Every"
+                    + " request is anonymous and only what the ACLs grant the public is"
+                    + " reachable — the owner included."),
 
     /** Startup: a fresh pod was given a root ACL granting its owner full access. */
     SEEDED_ROOT_ACL("Seeded root ACL <%s> granting full access to owner <%s>"),

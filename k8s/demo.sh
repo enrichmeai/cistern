@@ -3,9 +3,8 @@
 # back — enforced at the store, revoked on the very next request.
 #
 # Against a local cluster:
-#   docker build -t cistern:local .
 #   kubectl config use-context docker-desktop        # never a shared cluster
-#   kubectl apply -k k8s/
+#   kubectl apply -k k8s/overlays/local
 #   kubectl create secret generic cistern-owner -n cistern \
 #     --from-literal=web-id='https://you.example/profile/card#me' \
 #     --from-literal=token="$(openssl rand -hex 32)"
@@ -15,6 +14,13 @@
 # Against the bare jar (no cluster needed):
 #   CISTERN_OWNER_WEBID=… CISTERN_OWNER_TOKEN=… java -jar cistern-app/target/cistern-app-*.jar --server.port=3737 &
 #   CISTERN_TOKEN=… ./k8s/demo.sh
+#
+# Against a production instance (k8s/overlays/production or infra/terraform), over TLS:
+#   CISTERN_BASE=https://pod.example.org CISTERN_OWNER_WEBID=<owner WebID> CISTERN_TOKEN=<the owner's credential> ./k8s/demo.sh
+# where the credential is whatever authenticates the owner there — a JWT from the firm's
+# issuer, or the plain secret of a hashed service-principal entry carrying the owner's
+# WebID (ADR 0002). There is no owner token in production; the script does not care which
+# kind of bearer it is given.
 #
 # What it shows is a NEGATIVE, which is the whole point: an agent tried something and was
 # stopped by a rule the owner wrote, held in the owner's own storage, enforced at the
