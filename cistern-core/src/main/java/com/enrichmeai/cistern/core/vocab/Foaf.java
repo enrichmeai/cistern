@@ -15,6 +15,9 @@ public final class Foaf {
     /** The FOAF namespace, {@value}. */
     public static final String NS = "http://xmlns.com/foaf/0.1/";
 
+    /** The conventional prefix label for {@link #NS}, {@value}, for graphs this server writes. */
+    public static final String PREFIX = "foaf";
+
     /**
      * {@code foaf:Agent} — as an {@code acl:agentClass} value, WAC's spelling of "the public":
      * it matches every requester, authenticated or not.

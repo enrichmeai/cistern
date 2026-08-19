@@ -23,6 +23,7 @@ COPY cistern-wac/pom.xml                 cistern-wac/
 COPY cistern-mcp/pom.xml                 cistern-mcp/
 COPY cistern-spring-boot-starter/pom.xml cistern-spring-boot-starter/
 COPY cistern-app/pom.xml                 cistern-app/
+COPY cistern-cli/pom.xml                 cistern-cli/
 # No BuildKit cache mount here on purpose: `--mount=type=cache` makes the image
 # unbuildable on the legacy builder, and a self-hostable server should build on
 # whatever Docker its operator already has. The pom-first COPY above is what

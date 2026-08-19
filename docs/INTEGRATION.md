@@ -61,11 +61,12 @@ Facts an integrator relies on, all observed on 2026-08-18:
 | `cistern-core` | built | resource model, `ResourceStore` SPI, RDF io, containment, N3 Patch, `Agent`, vocab constants (`Acl`, `Foaf`, `Pim`, `Solid`). **No Spring.** |
 | `cistern-storage-file` | built | file backend; passes `ResourceStoreContractTest` |
 | `cistern-webflux` | built | handlers, negotiation, conditional requests, error mapper, `AuthorizationFilter`, `PrincipalResolver` + `ChainedPrincipalResolver` + `LocalCredentialResolver` + `ServiceCredentialResolver` (`ServicePrincipalRegistry`, `HashedCredential`) + `AnonymousResolver`, `OwnerPodSeeder`, `CisternProperties` |
-| `cistern-wac` | built | `AclDiscovery`, `WacEngine`, `AccessControl`, `Authorization`, `AccessDecision`, `EffectiveAcl`, `RequiredAccess`, `AccessMode`, `AgentClass`, `WacMessage`. No Spring. |
+| `cistern-wac` | built | `AclDiscovery`, `WacEngine`, `AccessControl`, `Authorization`, `AccessDecision`, `EffectiveAcl`, `RequiredAccess`, `AccessMode`, `AgentClass`, `WacMessage`; **T5.7:** `GrantService`, `GrantRequest`, `RevokeRequest`, `GrantOutcome`, `Grantee`. No Spring. |
 | `cistern-auth` | built (T4.0) | `OidcJwtPrincipalResolver`, `JwtVerifier`, `CachingJwksClient`, `WebIdMapping`, `AuthMessage`; Solid-OIDC/DPoP validation (T4.1–T4.4) still to come |
 | `cistern-mcp` | **empty** | Phase 6; not needed for an HTTP application |
 | `cistern-spring-boot-starter` | scaffold | T7.1 |
 | `cistern-app` | built | runnable server; config only |
+| `cistern-cli` | built (T5.7) | the `cistern` command: `grant`, `revoke` over HTTP with the caller's credential (picocli, shaded jar; `bin/cistern`). `pod create` arrives with #90. |
 | Packaging | built | Docker, `docker-compose.yml`, `k8s/`, `infra/terraform` (gated by ADR 0001) |
 
 ### 1.3 Built vs planned, for an application
@@ -77,7 +78,7 @@ Facts an integrator relies on, all observed on 2026-08-18:
 | Many human principals (lawyers, clients) | ✅ JWTs from your OIDC issuer (T4.0, #88) | T4.1–T4.4 for Solid-OIDC proper (any IdP, DPoP) |
 | Applications as their own principals (legal ≠ tax) | ✅ service principals (T4.0, #88; #89 ruled: apps are their own WebIDs) | (user, client) shape + intersection cap when the MCP front door needs it |
 | Create pods/matters on demand | ❌ one owner at boot | **#90** T5.6 |
-| Author grants without hand-writing Turtle | ❌ | **#91** T5.7 `GrantService` + CLI |
+| Author grants without hand-writing Turtle | ✅ T5.7 (#91): `cistern grant` / `revoke` + `GrantService` | — |
 | Grants that expire | ❌ | **#92** T5.8 |
 | Receipts (who read what, under which grant) | ❌ engine names the ACL, nothing logged | **#93** T5.9 |
 | Internet-facing deployment | ❌ ADR 0001 | **#94** T7.7 after #88 |
@@ -214,8 +215,35 @@ creates the pod and its owner ACL idempotently; matters are still plain `PUT`s.
 ### Step 3 — Grant: let the application in, and nothing more
 
 A grant is `PUT <container>.acl` by someone holding **Control** on that container (the
-owner does, via `acl:default` from the root). This is the whole file for "the legal app may
-read matter 2026-114 for the engagement" — **today** written by hand:
+owner does, via `acl:default` from the root). **Today** it is one command (T5.7, #91):
+
+```bash
+export CISTERN_TOKEN="$CISTERN_OWNER_TOKEN"                     # or --token; the caller's own credential
+bin/cistern grant https://valuedocs.co.in/apps/legal#id --read /matters/2026-114/ --base http://localhost:3737
+# Granted: https://valuedocs.co.in/apps/legal#id may now read /matters/2026-114/ and everything inside it.
+# /matters/2026-114/.acl now holds:
+#   - https://valuedocs.co.in/apps/legal#id: read — this container and everything inside it
+#   - https://acme-law.example/profile#firm: read, write, append, control — this container and everything inside it
+bin/cistern revoke https://valuedocs.co.in/apps/legal#id /matters/2026-114/                # take it back
+```
+
+`cistern grant <webid|public> --read|--write|--append|--control <path>` and
+`cistern revoke <webid|public> <path>` (`java -jar cistern-cli/target/cistern-cli-*.jar …`;
+`bin/cistern` wraps it). The tool does exactly what an owner editing the file by hand would do
+— `GET <target>.acl` (walking up to the nearest ancestor's when there is none, as the engine
+does), compute the new ACL, `PUT` it back under `If-Match` (or `If-None-Match: *` when
+creating; one automatic re-read and retry on 412) — **with the caller's credential, so the
+server enforces Control**. Exit codes: 0 ok · 1 failure · 2 refused (401/403, or a revoke that
+would drop Control) · 3 conflict (the ACL kept changing; nothing written). What it writes is the
+file below, and it is property-tested never to drop an authorization that grants Control, to
+write `acl:accessTo` **and** `acl:default` on a container, and never `acl:default` on a
+document. Grants merge (`--read` then `--write` yields one authorization); a revoke removes
+only that grantee's authority on that resource. Inherited authorizations *without* Control are
+not carried into a new resource-level ACL — the grant is scoped to the container, and the tool
+prints what now applies so the narrowing is visible. Applications embedding Cistern call
+`GrantService` (cistern-wac, pure) directly and persist the outcome themselves.
+
+The same file, written by hand — the shape the CLI produces for you:
 
 ```turtle
 @prefix acl:  <http://www.w3.org/ns/auth/acl#> .
@@ -231,15 +259,12 @@ read matter 2026-114 for the engagement" — **today** written by hand:
     acl:mode     acl:Read .                                          # read, not write; this container, not the pod
 ```
 
-Two traps, both of which fail *silently into denial* and both of which #91 removes:
+Two traps, both of which fail *silently into denial* and both of which the CLI removes:
 
 - **`acl:default` names the container**; omit it and everything inside is unreachable.
 - **A resource-level `.acl` replaces inheritance**; omit the owner's authorization and the
   owner is locked out of that subtree (Control from the root no longer applies there).
 
-**After #91:** `cistern grant https://valuedocs.co.in/apps/legal#id --read /matters/2026-114/`
-(and `GrantService.grant(...)` for the application) writes the file above correctly and is
-property-tested to always keep the owner's Control.
 **After #92:** add `--until 2026-12-31T00:00:00Z`; the engine treats the authorization as
 absent after that instant, fail-closed, without a scheduler.
 
@@ -370,8 +395,8 @@ catalogue per module; no Spring in `cistern-core`/`cistern-wac`).
 
 Dependency rule, unchanged: `webflux → wac → core`; `auth → webflux` (it implements a
 webflux interface) and `auth → core`; storage backends `→ core` only; `cli → wac, core`
-(talks HTTP to a server for grant/pod operations, or embeds `GrantService` for offline
-authoring — decide in #91).
+(talks HTTP to a server for grant/pod operations with the caller's credential, so the server
+enforces Control — decided in #91; `GrantService` stays pure so an application can embed it).
 
 ### 6.1 Identity (#88, #89)
 
@@ -435,21 +460,23 @@ public sealed interface PodProvisioned permits PodProvisioned.Created, PodProvis
 // config: cistern.pods.seed[n].root / .owner-web-id   (boot-time; OwnerPodSeeder becomes a caller of PodProvisioner)
 ```
 
-### 6.3 Grants and expiry (#91, #92)
+### 6.3 Grants and expiry (#91 built, #92)
 
 ```java
-// cistern-wac
-public interface GrantService {
-    Mono<GrantOutcome> grant(GrantRequest request);
-    Mono<GrantOutcome> revoke(RevokeRequest request);
+// cistern-wac — built (T5.7). Pure: no I/O; the caller persists the outcome (the CLI over HTTP,
+// an embedding application against its ResourceStore). Input is the effective ACL as AclDiscovery
+// finds it — the target's own, or an ancestor's under AclScope.INHERITED.
+public final class GrantService {
+    public GrantOutcome grant(EffectiveAcl current, GrantRequest request);
+    public GrantOutcome revoke(EffectiveAcl current, RevokeRequest request);   // Conflict if it would drop Control
 }
-public record GrantRequest(ResourceIdentifier target, Grantee grantee, Set<AccessMode> modes, Optional<Instant> validUntil) {}
+public record GrantRequest(ResourceIdentifier target, Grantee grantee, Set<AccessMode> modes) {}   // closed under implication; validUntil is #92
 public record RevokeRequest(ResourceIdentifier target, Grantee grantee) {}
 public sealed interface Grantee permits Grantee.WebId, Grantee.Public {
     record WebId(URI webId) implements Grantee {}
-    record Public() implements Grantee {}                                     // foaf:Agent
+    record Public() implements Grantee {}                                     // acl:agentClass foaf:Agent; Grantee.PUBLIC
 }
-public record GrantOutcome(ResourceIdentifier aclResource, Set<Authorization> authorizations) {}
+public record GrantOutcome(ResourceIdentifier aclResource, Set<Authorization> authorizations, Model aclGraph, boolean changed) {}
 
 // #92 — cistern-core vocab
 public final class Cistern { public static final String NS = "https://enrichmeai.com/ns/cistern#"; public static final Property VALID_UNTIL = …; }
@@ -484,14 +511,18 @@ public interface ResourceStore { Mono<StoredResource> get(ResourceIdentifier); M
 // #95 — cistern-storage-gcs: same interface, object metadata carries media type + ETag; must pass ResourceStoreContractTest
 ```
 
-### 6.6 CLI (#90, #91)
+### 6.6 CLI (#90, #91 built)
 
 ```
-cistern pod create   --root </firms/acme/> --owner <webid>            [--base <url>] [--token <cred>]
-cistern grant        <webid|public> --read|--write|--append|--control <path> [--until <ISO-8601>]
-cistern revoke       <webid|public> <path>
+cistern pod create   --root </firms/acme/> --owner <webid>            [--base <url>] [--token <cred>]   (#90)
+cistern grant        <webid|public> --read|--write|--append|--control <path>   [--base <url>] [--token <cred>]   built
+cistern revoke       <webid|public> <path>                                     [--base <url>] [--token <cred>]   built
 cistern receipts     <path> [--from … --to …]                            (#93)
 ```
+
+`--until <ISO-8601>` on `grant` arrives with #92. `cistern-cli` is a shaded executable jar
+(`cistern-cli/target/cistern-cli-<version>.jar`, picocli); `bin/cistern` wraps it; `--token`
+defaults to `CISTERN_TOKEN`; `--base` to `http://127.0.0.1:3737`.
 
 ---
 
@@ -534,7 +565,7 @@ Planned: `cistern.pods.seed[]` (#90), `cistern.audit.*` (#93), `cistern.storage.
 
 ---
 
-## 9. ACL template and the two traps (until #91)
+## 9. ACL template and the two traps (what `cistern grant` writes for you)
 
 ```turtle
 @prefix acl:  <http://www.w3.org/ns/auth/acl#> .

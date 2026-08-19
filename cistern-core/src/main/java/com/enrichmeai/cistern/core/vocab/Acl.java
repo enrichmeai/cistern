@@ -24,6 +24,9 @@ public final class Acl {
     /** The Web Access Control namespace, {@value}. */
     public static final String NS = "http://www.w3.org/ns/auth/acl#";
 
+    /** The conventional prefix label for {@link #NS}, {@value}, for graphs this server writes. */
+    public static final String PREFIX = "acl";
+
     // ---- the Authorization class ------------------------------------------------------
 
     /** {@code acl:Authorization} — the class every authorization statement belongs to. */

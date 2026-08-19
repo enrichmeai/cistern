@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.enrichmeai.cistern</groupId>
+    <artifactId>cistern-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>cistern-cli</artifactId>
+  <name>Cistern :: CLI</name>
+  <description>The `cistern` command: authors grants and revocations against a running server over HTTP, with the caller's own credential.</description>
+
+  <properties>
+    <cli.main-class>com.enrichmeai.cistern.cli.CisternCli</cli.main-class>
+    <!-- 3.6.2 (2026-03-05): latest stable maven-shade-plugin at 2026-08-19. Declared here rather
+         than in the parent: this is the only module that ships a fat jar. -->
+    <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
+  </properties>
+
+  <dependencies>
+    <!-- GrantService, AclResource, EffectiveAcl, WacEngine: the CLI does not re-implement any
+         authoring or ACL-walking rule; it feeds the pure service what it read over HTTP. -->
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-wac</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>info.picocli</groupId>
+      <artifactId>picocli</artifactId>
+    </dependency>
+    <!-- Reactor is how the HTTP round trips are composed (discover → transform → write, retry
+         once on 412); the one reactive-to-synchronous boundary is the command's call(). -->
+    <dependency>
+      <groupId>io.projectreactor</groupId>
+      <artifactId>reactor-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+    <!-- Jena and the WAC engine log through SLF4J; a CLI without a binding prints SLF4J's own
+         "no providers" warning on every run. Simple binding, WARN and above to stderr. -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-core</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <!-- Real-first (ground rule 6): the end-to-end test boots the actual HTTP stack — handlers,
+         AuthorizationFilter, OwnerPodSeeder, file store — in-process on a free port and drives
+         the command against it. Test scope only; the shipped jar carries no Spring. -->
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-webflux</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+      <exclusions>
+        <!-- The CLI's own SLF4J binding (slf4j-simple) is on the test classpath too; Boot's
+             Logback would fight it. Boot then logs through java.util.logging. -->
+        <exclusion>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-starter-logging</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webflux</artifactId>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-starter-logging</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>${maven-shade-plugin.version}</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <!-- One runnable jar: `java -jar cistern-cli/target/cistern-cli-<version>.jar grant …`.
+                   Service files are merged (Jena bootstraps its subsystems through
+                   ServiceLoader and breaks silently if the last jar's file wins); signature files
+                   and per-jar module descriptors are dropped because neither survives shading. -->
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>${cli.main-class}</mainClass>
+                  <manifestEntries>
+                    <Implementation-Title>${project.name}</Implementation-Title>
+                    <Implementation-Version>${project.version}</Implementation-Version>
+                  </manifestEntries>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer"/>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
+                  <addHeader>false</addHeader>
+                </transformer>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                    <exclude>module-info.class</exclude>
+                    <exclude>META-INF/versions/*/module-info.class</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

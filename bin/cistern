@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# The `cistern` command: `cistern grant <webid|public> --read <path>`, `cistern revoke …`.
+#
+# Runs the executable jar built by `mvn -pl cistern-cli -am package` (or the whole build).
+# Override the jar with CISTERN_CLI_JAR; the credential comes from --token or CISTERN_TOKEN;
+# the server from --base (default http://127.0.0.1:3737). Exit codes: 0 ok, 1 failure,
+# 2 refused (401/403 — the server enforces Control), 3 conflict (ACL changed; nothing written).
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+jar="${CISTERN_CLI_JAR:-}"
+if [[ -z "$jar" ]]; then
+  # Newest matching jar in the module's target directory; the shade plugin names it without a classifier.
+  jar="$(ls -t "$here"/../cistern-cli/target/cistern-cli-*.jar 2>/dev/null | grep -v '/original-' | head -n 1 || true)"
+fi
+if [[ -z "$jar" || ! -f "$jar" ]]; then
+  echo "cistern: no CLI jar found; build it with 'mvn -pl cistern-cli -am package' or set CISTERN_CLI_JAR" >&2
+  exit 1
+fi
+exec java -jar "$jar" "$@"

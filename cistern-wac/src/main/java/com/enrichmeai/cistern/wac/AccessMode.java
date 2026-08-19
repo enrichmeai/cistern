@@ -45,15 +45,22 @@ public enum AccessMode {
     /** {@code acl:Control} — read and write the resource's ACL. Implies no access to the resource. */
     CONTROL(Acl.CONTROL);
 
+    private final Resource term;
     private final String iri;
 
     AccessMode(Resource term) {
+        this.term = term;
         this.iri = term.getURI();
     }
 
     /** The {@code acl:} IRI naming this mode. */
     public String iri() {
         return iri;
+    }
+
+    /** The {@code acl:} term naming this mode — what an {@code acl:mode} triple's object is. */
+    public Resource term() {
+        return term;
     }
 
     /**
