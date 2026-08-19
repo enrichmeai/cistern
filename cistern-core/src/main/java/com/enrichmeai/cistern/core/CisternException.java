@@ -33,6 +33,7 @@ public abstract sealed class CisternException extends RuntimeException
                 CisternException.NotAcceptable,
                 CisternException.NotFound,
                 CisternException.PreconditionFailed,
+                CisternException.ServiceUnavailable,
                 CisternException.UnprocessableEntity,
                 CisternException.UnsupportedMediaType {
 
@@ -164,5 +165,21 @@ public abstract sealed class CisternException extends RuntimeException
     /** Authenticated agent lacks the required access mode → 403 (or 401 if unauthenticated). */
     public static final class AccessDenied extends CisternException {
         public AccessDenied(String message) { super(message); }
+    }
+
+    /**
+     * The server cannot serve this request right now, and retrying later may succeed → 503
+     * (RFC 9110 §15.6.4).
+     *
+     * <p>Raised when the request was otherwise sound but a dependency the server refuses to
+     * proceed without is unavailable — the decision log, when {@code cistern.audit.required}
+     * makes an unrecordable decision one that must not be acted on (T5.9). It is neither the
+     * client's fault (4xx would say retry with a different request) nor a defect (500 would
+     * say nothing the client does will help): the same request, later, is the right thing to
+     * try. Distinct from {@link AccessDenied}, deliberately — a client told 403 is told not to
+     * retry, and this is exactly the case where it should.
+     */
+    public static final class ServiceUnavailable extends CisternException {
+        public ServiceUnavailable(String message) { super(message); }
     }
 }

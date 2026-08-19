@@ -7,24 +7,33 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
- * One {@code acl:Authorization} lifted out of an ACL graph: who it names, what it grants, and
- * which resources it covers.
+ * One {@code acl:Authorization} lifted out of an ACL graph: which rule it is, who it names,
+ * what it grants, and which resources it covers.
  *
  * <p>A record rather than a bag of maps (ground rule 7) so the shape is checkable at a glance,
  * and immutable so an authorization cannot be widened after it was parsed.
  *
+ * @param subject      the IRI of the authorization's subject — {@code <#owner>}, say — so a
+ *                     decision can name the rule that granted it (T5.9); empty when the subject
+ *                     is a blank node, which WAC permits and which then has no name to record
  * @param modes        granted modes, already closed under implication by {@link AccessMode#withImplied()}
  * @param agents       WebIDs named by {@code acl:agent}
  * @param agentClasses classes named by {@code acl:agentClass}
  * @param targets      resources named by the predicate matching the scope this was parsed under
  */
 public record Authorization(
-        Set<AccessMode> modes, Set<URI> agents, Set<AgentClass> agentClasses, Set<URI> targets) {
+        Optional<URI> subject,
+        Set<AccessMode> modes,
+        Set<URI> agents,
+        Set<AgentClass> agentClasses,
+        Set<URI> targets) {
 
     public Authorization {
+        Objects.requireNonNull(subject, "subject");
         Objects.requireNonNull(modes, "modes");
         Objects.requireNonNull(agents, "agents");
         Objects.requireNonNull(agentClasses, "agentClasses");
@@ -37,6 +46,12 @@ public record Authorization(
                 : Collections.unmodifiableSet(EnumSet.copyOf(agentClasses));
         agents = Collections.unmodifiableSet(new LinkedHashSet<>(agents));
         targets = Collections.unmodifiableSet(new LinkedHashSet<>(targets));
+    }
+
+    /** An authorization with no name — the shape a blank-node subject, or a builder that has not minted one, produces. */
+    public Authorization(
+            Set<AccessMode> modes, Set<URI> agents, Set<AgentClass> agentClasses, Set<URI> targets) {
+        this(Optional.empty(), modes, agents, agentClasses, targets);
     }
 
     /**

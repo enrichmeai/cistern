@@ -70,7 +70,13 @@ enum AllowedRequestHeader {
      * by Fetch, but §8.1 says to list it anyway: "Servers SHOULD also explicitly list
      * {@code Accept} under {@code Access-Control-Allow-Headers}".
      */
-    ACCEPT(HttpHeaders.ACCEPT);
+    ACCEPT(HttpHeaders.ACCEPT),
+
+    /**
+     * A client's own correlation identifier for the request (T5.9), honoured when well-formed
+     * so the receipt the owner queries carries the same id the client logged.
+     */
+    X_REQUEST_ID(HttpConstants.X_REQUEST_ID);
 
     private static final List<String> FIELD_NAMES =
             Arrays.stream(values()).map(AllowedRequestHeader::fieldName).toList();

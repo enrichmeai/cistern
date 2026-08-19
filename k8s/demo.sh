@@ -63,4 +63,9 @@ printf '   owner DELETE /notes/.acl -> %s\n' "$(code -X DELETE -H "$AUTH" "$BASE
 printf '   agent GET    /notes/week -> %s   (the very next request)\n' "$(code "$BASE/notes/week")"
 printf '   owner GET    /notes/week -> %s   (the owner is unaffected)\n' "$(code -H "$AUTH" "$BASE/notes/week")"
 
-say "Before T5.3 the agent's DELETE returned 204 and the note was gone."
+say "6. The receipt — what happened to /notes/week, under which rule (T5.9)"
+echo   "   owner GET /notes/week?receipts   (Control on the resource; the agent gets 401)"
+curl -s -H "$AUTH" "$BASE/notes/week?receipts" | sed 's/^/   /'
+printf '   agent GET /notes/week?receipts -> %s   (receipts need Control, not Read)\n' "$(code "$BASE/notes/week?receipts")"
+
+say "Before T5.3 the agent's DELETE returned 204 and the note was gone. Now every decision is a receipt."

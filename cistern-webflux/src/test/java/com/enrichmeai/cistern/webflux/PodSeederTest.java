@@ -55,7 +55,7 @@ class PodSeederTest {
     }
 
     private static CisternProperties properties(CisternProperties.Owner owner, CisternProperties.Pods pods) {
-        return new CisternProperties(BASE, null, null, owner, null, pods);
+        return new CisternProperties(BASE, null, null, owner, null, pods, null);
     }
 
     /** One "boot": a fresh store over the directory, both seeders run in their order. */

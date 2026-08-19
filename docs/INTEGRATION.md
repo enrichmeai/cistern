@@ -25,12 +25,15 @@ request
   │
   ▼
 AuthorizationFilter (WebFilter, cistern-webflux)         ← registered only when cistern.owner.web-id is set
+  │  0. X-Request-Id: honoured if well-formed, else minted; echoed on every response
   │  1. PrincipalResolver.resolve(exchange)  → Agent      (ChainedPrincipalResolver: LocalCredential → ServiceCredential → OidcJwt → Anonymous; first authenticated wins)
-  │  2. RequiredAccess: method + target state → AccessMode (GET=Read, PUT/DELETE=Write, POST=Append, PATCH=Append, .acl=Control)
-  │  3. AccessControl.isAllowed(method, target, agent)
+  │  2. RequiredAccess: method + target state → AccessMode (GET=Read, PUT/DELETE=Write, POST=Append, PATCH=Append, .acl=Control, GET ?receipts=Control)
+  │  3. AccessControl.authorize(requirements, agent) → AccessVerdict   (the only decision point; nothing cached)
   │       AclDiscovery: target's own .acl, else walk up to nearest acl:default   (fails closed)
-  │       WacEngine:    evaluate Authorization graphs, deny by default
-  │  4. denied + anonymous → 401 (WWW-Authenticate: Bearer realm="cistern")
+  │       WacEngine:    evaluate Authorization graphs, deny by default; the decision names the ACL and the rules that granted
+  │  4. DecisionSink.record(DecisionRecord)   ← exactly one receipt per decision, allow and deny, BEFORE the response
+  │       sink failure: outcome unchanged (default) · fail closed 503 if cistern.audit.required=true
+  │  5. denied + anonymous → 401 (WWW-Authenticate: Bearer realm="cistern")
   │     denied + authenticated → 403
   ▼
 handler (ResourceRead/Write/Create/Delete/Patch/Options, cistern-webflux)
@@ -52,6 +55,8 @@ Facts an integrator relies on, all observed on 2026-08-18:
 | Conditional writes | `If-Match` mismatch → 412; `If-None-Match: *` for create-only |
 | Discovery | `Link: <…ldp#Resource>; rel="type"`, `Link: <…/.well-known/solid>; rel="…storageDescription"`, `Allow`, `Accept-Put`, `Accept-Patch: text/n3` |
 | Authorization state | `WAC-Allow: user="…",public="…"` on GET/HEAD |
+| Correlation | `X-Request-Id` on every response — the client's own if well-formed, else a UUID; the same value is in the receipt (T5.9) |
+| Receipts | `GET <resource>?receipts` (Control) → `application/x-ndjson`, one decision per line; `GET /?receipts&agent=<webid>` (Control on the root) for one agent across the pod (T5.9) |
 | Errors | RFC 9457 problem details, one mapper (`ProblemType` enum) |
 
 ### 1.2 Modules
@@ -60,8 +65,8 @@ Facts an integrator relies on, all observed on 2026-08-18:
 |---|---|---|
 | `cistern-core` | built | resource model, `ResourceStore` SPI, RDF io, containment, N3 Patch, `Agent`, vocab constants (`Acl`, `Foaf`, `Pim`, `Solid`). **No Spring.** |
 | `cistern-storage-file` | built | file backend; passes `ResourceStoreContractTest` |
-| `cistern-webflux` | built | handlers, negotiation, conditional requests, error mapper, `AuthorizationFilter`, `PrincipalResolver` + `ChainedPrincipalResolver` + `LocalCredentialResolver` + `ServiceCredentialResolver` (`ServicePrincipalRegistry`, `HashedCredential`) + `AnonymousResolver`, `OwnerPodSeeder` + `PodSeeder` (T5.6), `CisternProperties` |
-| `cistern-wac` | built | `AclDiscovery`, `WacEngine`, `AccessControl`, `Authorization`, `AccessDecision`, `EffectiveAcl`, `RequiredAccess`, `AccessMode`, `AgentClass`, `WacMessage`; **T5.7:** `GrantService`, `GrantRequest`, `RevokeRequest`, `GrantOutcome`, `Grantee`; **T5.6:** `PodProvisioner`, `PodSpec`, `PodProvisioned`. No Spring. |
+| `cistern-webflux` | built | handlers, negotiation, conditional requests, error mapper, `AuthorizationFilter`, `PrincipalResolver` + `ChainedPrincipalResolver` + `LocalCredentialResolver` + `ServiceCredentialResolver` (`ServicePrincipalRegistry`, `HashedCredential`) + `AnonymousResolver`, `OwnerPodSeeder` + `PodSeeder` (T5.6), `ReceiptsHandler` + `ReceiptsRequest` (T5.9), `CisternProperties` |
+| `cistern-wac` | built | `AclDiscovery`, `WacEngine`, `AccessControl`, `Authorization`, `AccessDecision`, `EffectiveAcl`, `RequiredAccess`, `AccessMode`, `AgentClass`, `WacMessage`; **T5.7:** `GrantService`, `GrantRequest`, `RevokeRequest`, `GrantOutcome`, `Grantee`; **T5.6:** `PodProvisioner`, `PodSpec`, `PodProvisioned`; **T5.9:** `AccessVerdict`, `DecisionRecord`, `Outcome`, `RequestId`, `DecisionSink`, `DecisionQuery`, `DecisionLog`, `JsonLinesDecisionSink`, `JsonLinesDecisionQuery`, `DecisionRecordJson`. No Spring. |
 | `cistern-auth` | built (T4.0) | `OidcJwtPrincipalResolver`, `JwtVerifier`, `CachingJwksClient`, `WebIdMapping`, `AuthMessage`; Solid-OIDC/DPoP validation (T4.1–T4.4) still to come |
 | `cistern-mcp` | **empty** | Phase 6; not needed for an HTTP application |
 | `cistern-spring-boot-starter` | scaffold | T7.1 |
@@ -80,7 +85,7 @@ Facts an integrator relies on, all observed on 2026-08-18:
 | Create pods/matters on demand | ✅ T5.6 (#90): `cistern.pods.seed[]` at boot, `cistern pod create` over HTTP, `PodProvisioner` for embedders | — |
 | Author grants without hand-writing Turtle | ✅ T5.7 (#91): `cistern grant` / `revoke` + `GrantService` | — |
 | Grants that expire | ❌ | **#92** T5.8 |
-| Receipts (who read what, under which grant) | ❌ engine names the ACL, nothing logged | **#93** T5.9 |
+| Receipts (who read what, under which grant) | ✅ T5.9 (#93): every decision recorded with the deciding ACL; `GET ?receipts` for the Control holder | — |
 | Internet-facing deployment | ❌ ADR 0001 | **#94** T7.7 after #88 |
 | Object storage backend | ❌ file only | **#95** T1.6 |
 
@@ -98,8 +103,9 @@ Five sentences that fix the shape of every integration:
    `acl:Authorization` triples. The application is *granted*; it never grants itself.
 4. **Every request is decided fresh.** No decision outlives the request that produced it, so
    revocation is one request away — and so is expiry once #92 lands.
-5. **Every decision will leave a receipt** (#93). Design the application as if it already
-   does: never do anything with pod data you would not want to see in the log.
+5. **Every decision leaves a receipt** (#93). Allow and deny alike, with the ACL that granted
+   it and the request id you sent: never do anything with pod data you would not want to see
+   in the log, because it is in the log.
 
 ---
 
@@ -329,8 +335,10 @@ trying and catching.
 | **412** | your `If-Match`/`If-None-Match` failed | re-read, merge, retry with the new ETag |
 | **404** | never used to hide a denial — 401/403 come first | treat as genuinely absent |
 
-Refusal is the product working. Log it on your side with the request id (#93 will let the
-owner match it to the receipt).
+Refusal is the product working. Log it on your side with the request id: send your own
+`X-Request-Id` (letters, digits, `- _ . ~ : / + =`, up to 128 characters) and the receipt the
+owner queries carries the same value; send none and the response's `X-Request-Id` is the
+minted one, which the receipt also carries.
 
 ### Step 6 — Revoke, and later expire
 
@@ -339,13 +347,59 @@ refused (verified: `DELETE /trips/.acl` → next agent `GET` → 401). No restar
 reissue, no cache to purge — there is none.
 **After #92:** grants carry `cistern:validUntil` and stop working at that instant.
 
-### Step 7 — Receipts (after #93)
+### Step 7 — Receipts (T5.9, #93)
 
-`AccessDecision` will carry the deciding ACL; every decision through `AuthorizationFilter`
-becomes a `DecisionRecord {at, agent, target, mode, outcome, decidedBy, requestId}`; the
-owner (Control) queries per resource or per agent. Design your application now so that
-"which app read which document, under which permission, when" is a report you would be
-happy to hand the client — because it will be one.
+Every decision `AuthorizationFilter` takes — allow and deny, every method — is one
+`DecisionRecord {at, agent, target, required, outcome, decidedBy, requestId}`, written before
+the response is sent, so a receipts query issued after a response always sees the decision that
+produced it. `decidedBy` is the ACL resource whose authorization granted the request; a denial
+names none (WAC has no deny rule — nothing decided a refusal, a rule merely failed to grant).
+
+**Ask for them** with `?receipts` on the resource, holding **Control** on it (the owner does;
+the application whose access is reported does not — Read on a document must not become a view of
+everyone else's traffic to it):
+
+```bash
+curl -H "$AUTH" "$B/matters/2026-114/contract.pdf?receipts"                    # 200, application/x-ndjson, one decision per line
+curl -H "$AUTH" "$B/matters/2026-114/contract.pdf?receipts&from=2026-08-19T00:00:00Z&to=2026-08-20T00:00:00Z"
+curl -H "$AUTH" "$B/?receipts&agent=https%3A%2F%2Fvaluedocs.co.in%2Fapps%2Flegal%23id"  # everything the legal app did, anywhere (Control on the root)
+curl -H "$APP"  "$B/matters/2026-114/contract.pdf?receipts"                    # 403: the app reads the document; it does not control it
+```
+
+One line per decision, every field present, `null` where absent — observed on 2026-08-19
+against the jar after `k8s/demo.sh`:
+
+```
+{"at":"2026-08-19T02:05:54.175149Z","agent":null,"target":"http://127.0.0.1:3737/notes/week","required":"READ","outcome":"DENIED_UNAUTHENTICATED","decidedBy":null,"requestId":"244a679e-…"}
+{"at":"2026-08-19T02:05:54.200669Z","agent":null,"target":"http://127.0.0.1:3737/notes/week","required":"READ","outcome":"ALLOWED","decidedBy":"http://127.0.0.1:3737/notes/.acl","requestId":"afe30ced-…"}
+{"at":"2026-08-19T02:05:54.244018Z","agent":null,"target":"http://127.0.0.1:3737/notes/week","required":"WRITE","outcome":"DENIED_UNAUTHENTICATED","decidedBy":null,"requestId":"6405b7a4-…"}
+```
+
+`outcome` is `ALLOWED`, `DENIED_UNAUTHENTICATED` (401 — a scanner or a misconfigured client)
+or `DENIED_FORBIDDEN` (403 — a named agent outside its grant, the line the owner wants to see);
+`required` is the `AccessMode` the request needed on `target`. The interval is half-open,
+`[from, to)`, ISO 8601 instants; both default to the whole log. The query is itself a decision
+(Control on the resource) and appears in the log like any other. Records are read back in the
+order they were taken.
+
+**Where the log lives.** JSON Lines, one file per UTC day —
+`<cistern.storage.root>/.cistern/decisions/YYYY-MM-DD.jsonl` (`cistern.audit.root` moves it) —
+written through the storage SPI, but **not pod content**: it is a second store rooted beside the
+pod's, in its own `cistern-audit:` URI space, never listed by a container, not addressable by any
+HTTP path (`GET /.cistern/…` is a 404 to the owner), readable only through `?receipts`, which
+returns decisions and never bytes. The append is read-modify-write of the day file (the SPI has
+no append), serialized in-process so overlapping requests cannot drop each other's lines; the
+response waits for it — one asynchronous store write, never a blocked event loop.
+
+**If the log cannot be written.** `AuditPolicy` (cistern-wac) is the closed set of two answers,
+applied around the sink at wiring. `BEST_EFFORT`, the default: the decision stands and the
+failure is logged at WARN with the request id (`DECISION_NOT_RECORDED_OUTCOME_STANDS`).
+`REQUIRED` (`cistern.audit.required=true`): a decision that cannot be recorded is not acted on
+— the request fails closed with **503** through the one error mapper
+(`type: …/problems/service-unavailable`) — retry later, unlike a 403.
+
+Design your application so that "which app read which document, under which permission, when"
+is a report you would be happy to hand the client — because it is one, and the owner can run it.
 
 ### Step 8 — Deploy
 
@@ -406,14 +460,16 @@ catalogue per module; no Spring in `cistern-core`/`cistern-wac`).
                  │        │                    ├─ ServiceCredentialResolver   (#88, uses ↓)    │
                  │        │                    └─ OidcJwtPrincipalResolver    (#88, cistern-auth)
                  │        ▼                                                                    │
-                 │   AccessControl.isAllowed ──► DecisionSink.record   (#93)                   │
+                 │   AccessControl.authorize ──► DecisionSink.record   (built, #93)            │
+                 │   ReceiptsHandler ◄── DecisionQuery                  (built, #93)            │
                  └───────┬──────────────────────────────────────────────────────────────────────┘
                          ▼
    ┌───────────── cistern-wac (no Spring) ─────────────┐   ┌──────── cistern-auth ────────┐
    │ AclDiscovery · WacEngine · Authorization(+validUntil #92) │   │ OidcIssuer · JwksClient       │
-   │ AccessDecision(+decidedBy #93) · EffectiveAcl        │   │ WebIdMapping · AuthMessage    │
+   │ AccessDecision(decidedBy, authorizations) · EffectiveAcl │   │ WebIdMapping · AuthMessage    │
    │ GrantService (#91) · PodProvisioner (#90)            │   │ ServicePrincipalRegistry (#88)│
-   │ DecisionRecord · DecisionSink · DecisionQuery (#93)  │   └───────────────────────────────┘
+   │ AccessVerdict · DecisionRecord · DecisionSink ·       │   └───────────────────────────────┘
+   │ DecisionQuery · DecisionLog · JsonLines* (built, #93) │
    └───────────────────────┬────────────────────────────┘
                            ▼
    ┌── cistern-core (no Spring) ──┐   ┌── cistern-storage-file ──┐  ┌── cistern-storage-gcs (#95) ──┐
@@ -528,20 +584,65 @@ public record Authorization(…, Optional<Instant> validUntil) { public boolean 
 Invariant (tested): after any sequence of `grant`/`revoke`, the owner still holds Control on
 the target; container grants always carry `accessTo` and `default`.
 
-### 6.4 Receipts (#93)
+### 6.4 Receipts (#93, built — T5.9)
 
 ```java
-// cistern-wac
-public record AccessDecision(Set<AccessMode> modes, Optional<ResourceIdentifier> decidedBy, Set<URI> authorizations) {…}
+// cistern-wac — the decision carries its policy
+public record AccessDecision(Set<AccessMode> modes, Optional<ResourceIdentifier> decidedBy, Set<URI> authorizations) {
+    static final AccessDecision DENIED;                       // no modes ⇒ no decidedBy, no authorizations (enforced)
+    static AccessDecision of(Set<AccessMode>, ResourceIdentifier decidedBy, Set<URI> authorizations);
+}
+public record Authorization(Optional<URI> subject, Set<AccessMode> modes, Set<URI> agents, Set<AgentClass> agentClasses, Set<URI> targets) {}
+public record AccessVerdict(List<Judgement> judgements) {    // one per AccessRequirement, in RequiredAccess order
+    record Judgement(AccessRequirement requirement, AccessDecision decision) { boolean satisfied(); }
+    boolean allowed(); Judgement primary(); Optional<ResourceIdentifier> decidedBy();   // decidedBy: empty on any denial
+}
+public final class AccessControl { Mono<AccessVerdict> authorize(List<AccessRequirement>, Agent); Mono<Boolean> isAllowed(String, ResourceIdentifier, Agent); … }
+public final class RequiredAccess { static List<AccessRequirement> forRequest(String method, ResourceIdentifier target);
+                                    static List<AccessRequirement> forReceipts(ResourceIdentifier target); }   // Control
+
+// cistern-wac — the receipt
 public record DecisionRecord(Instant at, Agent agent, ResourceIdentifier target, AccessMode required,
-                             Outcome outcome, Optional<ResourceIdentifier> decidedBy, String requestId) {}
+                             Outcome outcome, Optional<ResourceIdentifier> decidedBy, RequestId requestId) {
+    static DecisionRecord of(Instant at, Agent agent, AccessVerdict verdict, RequestId requestId);
+}
 public enum Outcome { ALLOWED, DENIED_UNAUTHENTICATED, DENIED_FORBIDDEN }
-public interface DecisionSink  { Mono<Void> record(DecisionRecord record); }
+public record RequestId(String value) { static Optional<RequestId> parse(String); static RequestId generate(); }   // [A-Za-z0-9._~:/+=-]{1,128}
+public interface DecisionSink  { Mono<Void> record(DecisionRecord record); }                       // completes when durable
 public interface DecisionQuery { Flux<DecisionRecord> forResource(ResourceIdentifier target, Instant from, Instant to);
-                                 Flux<DecisionRecord> forAgent(URI webId, Instant from, Instant to); }
-// first impl: JSON Lines under <storage root>/.cistern/decisions/ via ResourceStore; in-memory for tests
-// property: cistern.audit.required=false   (true ⇒ a failed write denies the request)
+                                 Flux<DecisionRecord> forAgent(URI webId, Instant from, Instant to); }   // [from, to)
+public record DecisionLog(ResourceStore store, ResourceIdentifier root) {   // cistern-audit:///decisions/YYYY-MM-DD.jsonl
+    static DecisionLog in(ResourceStore store); ResourceIdentifier fileFor(Instant at); …
+}
+public final class JsonLinesDecisionSink implements DecisionSink, AutoCloseable   // read-modify-write append, single in-process drain
+public final class JsonLinesDecisionQuery implements DecisionQuery                // day-pruned scan, line order
+public enum DecisionField { AT, AGENT, TARGET, REQUIRED, OUTCOME, DECIDED_BY, REQUEST_ID }   // the JSON member names
+public final class DecisionRecordJson { static String toLine(DecisionRecord); static Optional<DecisionRecord> parse(String line); }
+// test-jar: InMemoryDecisionSink implements DecisionSink, DecisionQuery
+
+// cistern-core
+public static final class CisternException.ServiceUnavailable   // → 503, ProblemType.SERVICE_UNAVAILABLE
+
+// cistern-webflux
+public enum AuditPolicy { BEST_EFFORT, REQUIRED; static AuditPolicy of(boolean required); DecisionSink guard(DecisionSink delegate); }   // cistern-wac
+AuthorizationFilter(PrincipalResolver, AccessControl, RequestPaths, DecisionSink guardedByPolicy, Clock)   // cistern-webflux
+public final class ReceiptsHandler { Mono<ServerResponse> receipts(ServerRequest); }   // GET ?receipts, application/x-ndjson, Cache-Control: no-store
+record ReceiptsRequest(Instant from, Instant to, Optional<URI> agent) { static boolean isRequested(MultiValueMap<String,String>); static ReceiptsRequest parse(…); }
+enum ReceiptsParameter { RECEIPTS("receipts"), FROM("from"), TO("to"), AGENT("agent") }
+// beans: DecisionLog (FileResourceStore at cistern.audit.root, default <storage root>/.cistern) · DecisionSink · DecisionQuery — all @ConditionalOnMissingBean;
+//        the receipts route is registered under the same condition as the filter (cistern.owner.web-id) and never bypasses it
+// config: cistern.audit.required=false (true ⇒ an unrecordable decision fails closed, 503) · cistern.audit.root
 ```
+
+Decisions taken here, for the record: a **denial names no policy** (`decidedBy` empty on every
+`DENIED_*`, even when the effective ACL granted some *other* mode) — WAC has no deny rule, so
+there is nothing to blame a refusal on; the receipt describes the **request target** and the mode
+required there (a `DELETE` refused on its *parent's* Write is still recorded against the
+resource, `required=WRITE`); the response **waits** for the append, so "if you got an answer
+there is a receipt" holds without a race; **NDJSON** rather than a JSON array because it is the
+log's own format and streams; the log is a **second store outside the pod's URI space** rather
+than an excluded subtree of the pod's, so no storage-layer code had to learn what an audit log
+is and no HTTP path can reach it.
 
 ### 6.5 Storage (#95)
 
@@ -558,7 +659,7 @@ public interface ResourceStore { Mono<StoredResource> get(ResourceIdentifier); M
 cistern pod create   --root </firms/acme/> --owner <webid>                     [--base <url>] [--token <cred>]   built
 cistern grant        <webid|public> --read|--write|--append|--control <path>   [--base <url>] [--token <cred>]   built
 cistern revoke       <webid|public> <path>                                     [--base <url>] [--token <cred>]   built
-cistern receipts     <path> [--from … --to …]                            (#93)
+cistern receipts     <path> [--from … --to …]                            not built — GET <path>?receipts is the surface today (#93)
 ```
 
 `pod create` is `GET <root>.acl` (200 → already a pod, nothing written), then `PUT <root>/`
@@ -589,7 +690,10 @@ defaults to `CISTERN_TOKEN`; `--base` to `http://127.0.0.1:3737`.
 | `cistern.auth.oidc.jwks-uri` | … | discovered | where the keys are, if not via `.well-known/openid-configuration` |
 | `cistern.pods.seed[n].root` / `.owner-web-id` | `CISTERN_PODS_SEED_n_ROOT` / `_OWNERWEBID` | unset | a pod to provision at boot: root as a container path under the base URL (`/firms/acme/`), owner as an absolute WebID; idempotent, never overwrites; refused at bind time if the root is not a container path, is listed twice, or is `/` with an owner other than `cistern.owner.web-id` (T5.6) |
 
-Planned: `cistern.audit.*` (#93), `cistern.storage.backend` (#95).
+| `cistern.audit.required` | `CISTERN_AUDIT_REQUIRED` | `false` | `true` ⇒ a decision the log cannot record is not acted on: 503, retry later (T5.9) |
+| `cistern.audit.root` | `CISTERN_AUDIT_ROOT` | `<cistern.storage.root>/.cistern` | directory of the JSON Lines decision log (`decisions/YYYY-MM-DD.jsonl`); not pod content wherever it is (T5.9) |
+
+Planned: `cistern.storage.backend` (#95).
 
 ---
 
@@ -608,6 +712,9 @@ Planned: `cistern.audit.*` (#93), `cistern.storage.backend` (#95).
 | `DELETE` a resource without Write on its **parent** container as well | **403** (removing a child edits the parent's containment) |
 | `OPTIONS` | **204** + `Allow`, `Accept-Put`, `Accept-Patch` |
 | `GET` with a grant | **200** + `WAC-Allow: user="read",public="…"` |
+| `GET ?receipts` holding Control | **200** `application/x-ndjson`, `Cache-Control: no-store`; without Control **401**/**403** as above; malformed `from`/`to`/`agent` **400** |
+| any request, `cistern.audit.required=true`, decision log unwritable | **503** `application/problem+json` (`type: …/problems/service-unavailable`); nothing was served or written |
+| every response through the filter | `X-Request-Id: <yours if well-formed, else a UUID>` |
 
 ---
 

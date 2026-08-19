@@ -5,10 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.enrichmeai.cistern.core.Agent;
+import com.enrichmeai.cistern.core.ResourceIdentifier;
 
 import java.io.StringReader;
 import java.net.URI;
 import java.util.EnumSet;
+import java.util.Optional;
 import java.util.Set;
 
 import org.apache.jena.rdf.model.Model;
@@ -388,6 +390,82 @@ class WacEngineTest {
         AccessDecision decision = decideFor(agentAcl(modes), Agent.of(URI.create(ALICE)));
 
         assertEquals(expected, decision.toHeaderModes());
+    }
+
+    // ---- the decision names its policy (T5.9) -----------------------------------------
+
+    @Nested
+    @DisplayName("A decision names the ACL and the rules that granted it (T5.9)")
+    class NamesItsPolicy {
+
+        @Test
+        @DisplayName("a grant names the ACL resource of the subject it was evaluated for")
+        void grantNamesTheAcl() {
+            AccessDecision decision = decideFor(agentAcl("acl:Read"), Agent.of(URI.create(ALICE)));
+
+            assertEquals(Optional.of(AclResource.of(new ResourceIdentifier(URI.create(RESOURCE)))),
+                    decision.decidedBy());
+        }
+
+        @Test
+        @DisplayName("every matching rule is named, in the order it was read")
+        void allMatchingRulesAreNamed() {
+            Model acl = acl("<" + CONTAINER + ".acl#a> a acl:Authorization ;\n"
+                    + "  acl:agent <" + ALICE + "> ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Read .\n"
+                    + "<" + CONTAINER + ".acl#b> a acl:Authorization ;\n"
+                    + "  acl:agentClass foaf:Agent ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Append .\n"
+                    + "<" + CONTAINER + ".acl#c> a acl:Authorization ;\n"
+                    + "  acl:agent <" + BOB + "> ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Write .");
+
+            AccessDecision decision = decideFor(acl, Agent.of(URI.create(ALICE)));
+
+            assertEquals(Set.of(URI.create(CONTAINER + ".acl#a"), URI.create(CONTAINER + ".acl#b")),
+                    decision.authorizations(),
+                    "the two rules that matched Alice, and not Bob's");
+        }
+
+        @Test
+        @DisplayName("a denial names no policy — WAC has no deny rule")
+        void denialNamesNothing() {
+            AccessDecision decision = decideFor(agentAcl("acl:Read"), Agent.of(URI.create(BOB)));
+
+            assertTrue(decision.isDenied());
+            assertTrue(decision.decidedBy().isEmpty());
+            assertTrue(decision.authorizations().isEmpty());
+            assertEquals(AccessDecision.DENIED, decision);
+        }
+
+        @Test
+        @DisplayName("a blank-node authorization grants, but has no name to record")
+        void blankNodeRuleGrantsAnonymously() {
+            Model acl = acl("[] a acl:Authorization ;\n"
+                    + "  acl:agent <" + ALICE + "> ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Read .");
+
+            AccessDecision decision = decideFor(acl, Agent.of(URI.create(ALICE)));
+
+            assertTrue(decision.allows(AccessMode.READ), "a blank-node subject is legal WAC");
+            assertTrue(decision.decidedBy().isPresent(), "the ACL is still known");
+            assertTrue(decision.authorizations().isEmpty(), "but the rule has no IRI");
+        }
+
+        @Test
+        @DisplayName("the EffectiveAcl overload names the same ACL resource as EffectiveAcl.aclResource()")
+        void overloadsAgree() {
+            ResourceIdentifier resource = new ResourceIdentifier(URI.create(RESOURCE));
+            EffectiveAcl effective = new EffectiveAcl(agentAcl("acl:Read"), AclScope.ACCESS_TO, resource);
+
+            AccessDecision decision = engine.decide(effective, Agent.of(URI.create(ALICE)));
+
+            assertEquals(Optional.of(effective.aclResource()), decision.decidedBy());
+        }
     }
 
     // ---- invariants -------------------------------------------------------------------

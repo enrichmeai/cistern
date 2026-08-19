@@ -20,6 +20,7 @@ import java.util.Objects;
  *   <tr><td>{@code POST}</td><td>Append on the target container</td></tr>
  *   <tr><td>{@code PATCH}</td><td>Append on the target</td></tr>
  *   <tr><td>{@code DELETE}</td><td>Write on the target <strong>and</strong> Write on its parent</td></tr>
+ *   <tr><td>{@code GET}/{@code HEAD} {@code ?receipts}</td><td>Control on the target — see {@link #forReceipts} (T5.9)</td></tr>
  * </table>
  *
  * <p><strong>DELETE requiring the parent is the row that is easy to miss</strong>, and the
@@ -76,6 +77,29 @@ public final class RequiredAccess {
             case "DELETE" -> deleteRequirements(target);
             default -> List.of(new AccessRequirement(target, AccessMode.WRITE));
         };
+    }
+
+    /**
+     * What reading the decision log for {@code target} requires: <strong>Control</strong> on
+     * the resource whose receipts are asked for (T5.9).
+     *
+     * <p>Not Read, deliberately. Receipts say who reached a resource, when, and under which
+     * grant — the same class of information as the ACL itself, so they take the ACL's mode. In
+     * particular the agent whose access is being reported holds Read at most, and Read on a
+     * document must not become a view of everyone else's traffic to it. Control alone, on the
+     * other hand, does <em>not</em> reveal the content — the query returns decisions, never
+     * bytes — so the mode fits in both directions.
+     *
+     * <p>The per-agent query at a pod root asks the same thing of the root: Control there is
+     * what governs the whole pod's policy by {@code acl:default}, so it is what may see the
+     * whole pod's receipts.
+     *
+     * @param target the resource (or pod root) whose receipts are requested
+     * @return the single requirement: Control on {@code target}
+     */
+    public static List<AccessRequirement> forReceipts(ResourceIdentifier target) {
+        Objects.requireNonNull(target, "target");
+        return List.of(new AccessRequirement(target, AccessMode.CONTROL));
     }
 
     /**

@@ -90,8 +90,11 @@ It shows a **negative**, which is the point. An agent with no grant is refused; 
 writes a rule — a file in the pod: *read `/notes/`, nothing else*; the agent can now read
 the note but not delete it and not reach `/private/`; the owner deletes the rule and the
 agent's very next request is refused again — no restart, no token reissued — while the
-owner is unaffected. Before T5.3 an anonymous `DELETE` returned `204` and the note was
-gone. A demo whose climax is *successful* access is a file browser; see
+owner is unaffected. Then the owner asks for the **receipt** (T5.9): `GET /notes/week?receipts`
+lists every decision about the note — the allow naming `/notes/.acl` as the rule that granted
+it, the denies naming no rule — while the agent's own attempt to read the receipts is refused,
+because receipts take Control, not Read. Before T5.3 an anonymous `DELETE` returned `204` and
+the note was gone. A demo whose climax is *successful* access is a file browser; see
 `docs/demo/walkthrough.md`.
 
 The script needs no cluster: point `CISTERN_BASE` at any running Cistern (the jar on

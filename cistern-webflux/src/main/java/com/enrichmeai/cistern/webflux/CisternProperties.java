@@ -32,10 +32,12 @@ import java.util.Set;
  * @param auth    the other ways a request proves who it is (T4.0): service principals and an
  *                OIDC issuer whose JWTs are accepted
  * @param pods    further pods, each with its own owner, provisioned at boot (T5.6)
+ * @param audit   the decision log (T5.9): whether an unrecordable decision fails the request,
+ *                and where the log lives
  */
 @ConfigurationProperties(prefix = "cistern")
 public record CisternProperties(
-        String baseUrl, Storage storage, Cors cors, Owner owner, Auth auth, Pods pods) {
+        String baseUrl, Storage storage, Cors cors, Owner owner, Auth auth, Pods pods, Audit audit) {
 
     private static final String DEFAULT_BASE_URL = "http://localhost:3000";
 
@@ -56,6 +58,7 @@ public record CisternProperties(
         owner = owner == null ? new Owner(null, null) : owner;
         auth = auth == null ? new Auth(null, null) : auth;
         pods = pods == null ? new Pods(null) : pods;
+        audit = audit == null ? new Audit(false, null) : audit;
         // Bind-time, not boot-time: a seed that cannot be provisioned is a configuration error
         // and should fail the start, not surface as a stack trace from a runner.
         for (PodSpec seeded : pods.specsUnder(baseUrl)) {
@@ -76,6 +79,36 @@ public record CisternProperties(
 
         public Storage {
             root = root == null ? DEFAULT_ROOT : root;
+        }
+    }
+
+    /**
+     * The decision log (T5.9): {@code cistern.audit.*}.
+     *
+     * <p>{@code required} is the one switch that changes an authorization outcome for a reason
+     * other than policy. Off (the default), a receipt that cannot be written is logged and the
+     * request proceeds as decided — availability over completeness of the trail. On, the request
+     * is refused (503, retry later) — no decision is acted on that cannot be accounted for. A
+     * deployment whose whole point is the receipt turns it on; a deployment on a laptop leaves
+     * it off.
+     *
+     * <p>{@code root} is where the JSON Lines files go on the file backend. Unset means
+     * {@code {cistern.storage.root}/.cistern}, beside the pod's data on the same volume so one
+     * backup carries both; set it to put the trail on its own disk. Wherever it is, it is not
+     * pod content: the file backend never lists a dot-prefixed directory, and no HTTP path can
+     * address it (see {@code DecisionLog}).
+     *
+     * @param required whether a failed append fails the request closed
+     * @param root     directory of the decision log; unset derives it from the storage root
+     */
+    public record Audit(boolean required, Path root) {
+
+        /** The subdirectory of the storage root that holds the decision log by default. */
+        public static final String DEFAULT_DIRECTORY = ".cistern";
+
+        /** The log's directory: {@code root} if set, else {@code {storage root}/.cistern}. */
+        public Path rootOrDefault(Storage storage) {
+            return root != null ? root : storage.root().resolve(DEFAULT_DIRECTORY);
         }
     }
 

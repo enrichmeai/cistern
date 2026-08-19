@@ -30,7 +30,7 @@ class CisternPropertiesPodsTest {
     @Test
     @DisplayName("nothing configured: no pods, no error")
     void unconfiguredDefaults() {
-        CisternProperties properties = new CisternProperties(null, null, null, null, null, null);
+        CisternProperties properties = new CisternProperties(null, null, null, null, null, null, null);
         assertTrue(properties.pods().seed().isEmpty());
         assertTrue(properties.pods().specsUnder(properties.baseUrl()).isEmpty());
     }
@@ -108,7 +108,7 @@ class CisternPropertiesPodsTest {
         CisternProperties.Pods pods = new CisternProperties.Pods(
                 List.of(seed("/alice/", ALICE), seed("/alice/", ACME)));
         assertThrows(IllegalArgumentException.class,
-                () -> new CisternProperties(BASE, null, null, null, null, pods));
+                () -> new CisternProperties(BASE, null, null, null, null, pods, null));
     }
 
     @Test
@@ -118,7 +118,7 @@ class CisternPropertiesPodsTest {
         CisternProperties.Pods contradiction = new CisternProperties.Pods(List.of(seed("/", ALICE)));
 
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> new CisternProperties(BASE, null, null, owner, null, contradiction));
+                () -> new CisternProperties(BASE, null, null, owner, null, contradiction, null));
         assertEquals(WebfluxMessage.POD_SEED_ROOT_CONTRADICTS_OWNER.format(ALICE, OPERATOR), e.getMessage());
     }
 
@@ -128,7 +128,7 @@ class CisternPropertiesPodsTest {
         CisternProperties.Owner owner = new CisternProperties.Owner(OPERATOR, "token");
         CisternProperties.Pods restated = new CisternProperties.Pods(List.of(seed("/", OPERATOR)));
 
-        CisternProperties properties = new CisternProperties(BASE, null, null, owner, null, restated);
+        CisternProperties properties = new CisternProperties(BASE, null, null, owner, null, restated, null);
 
         assertEquals(1, properties.pods().seed().size());
     }
@@ -138,7 +138,7 @@ class CisternPropertiesPodsTest {
     void storageRootSeedWithoutOwner() {
         CisternProperties.Pods pods = new CisternProperties.Pods(List.of(seed("/", ALICE)));
 
-        CisternProperties properties = new CisternProperties(BASE, null, null, null, null, pods);
+        CisternProperties properties = new CisternProperties(BASE, null, null, null, null, pods, null);
 
         assertTrue(properties.pods().specsUnder(BASE).get(0).root().isStorageRoot());
     }

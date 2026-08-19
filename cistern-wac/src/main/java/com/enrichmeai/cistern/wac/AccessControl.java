@@ -35,6 +35,10 @@ public final class AccessControl {
      * <p><strong>Every</strong> requirement must hold, not any — a {@code DELETE} needs Write
      * on both the resource and its parent, and satisfying one is not satisfying the request.
      *
+     * <p>A convenience over {@link #authorize}: same evaluation, boolean answer. Callers that
+     * must record the decision (T5.9) use {@code authorize} directly, so that the policy that
+     * decided is not thrown away and re-derived.
+     *
      * @return true only if all requirements are granted; false if any is not, including when
      *     no ACL governs the resource at all
      */
@@ -43,15 +47,34 @@ public final class AccessControl {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(agent, "agent");
 
-        List<AccessRequirement> requirements = RequiredAccess.forRequest(method, target);
+        return authorize(RequiredAccess.forRequest(method, target), agent)
+                .map(AccessVerdict::allowed);
+    }
+
+    /**
+     * Evaluate every requirement for {@code agent}, in order, and report each answer.
+     *
+     * <p>This is <strong>the</strong> decision point: every path that decides whether a request
+     * proceeds — {@link #isAllowed}, the HTTP filter, later the MCP front-end — ends here, and
+     * nothing here is cached. A decision does not outlive the request that produced it, which
+     * is what makes revocation one request away.
+     *
+     * <p>Requirements are evaluated sequentially rather than in parallel: the common case is
+     * one requirement, the worst case ({@code DELETE}) is two, and the discovery walk for a
+     * child and its parent shares most of its lookups, so concurrency would buy nothing.
+     *
+     * @param requirements what must hold, from {@link RequiredAccess}; never empty
+     * @return one judgement per requirement, in the same order
+     */
+    public Mono<AccessVerdict> authorize(List<AccessRequirement> requirements, Agent agent) {
+        Objects.requireNonNull(requirements, "requirements");
+        Objects.requireNonNull(agent, "agent");
+
         return Flux.fromIterable(requirements)
                 .concatMap(requirement -> grantedFor(requirement.target(), agent)
-                        .map(decision -> decision.allows(requirement.mode())))
-                // all(), so one unsatisfied requirement fails the request. An empty decision
-                // stream cannot occur — grantedFor always emits — but all() over empty is
-                // true, so this is stated rather than relied on.
-                .all(Boolean::booleanValue)
-                .defaultIfEmpty(false);
+                        .map(decision -> new AccessVerdict.Judgement(requirement, decision)))
+                .collectList()
+                .map(AccessVerdict::new);
     }
 
     /**

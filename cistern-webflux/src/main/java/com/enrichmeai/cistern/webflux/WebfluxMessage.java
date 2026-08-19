@@ -227,6 +227,8 @@ public enum WebfluxMessage {
     TITLE_PRECONDITION_FAILED("Precondition failed"),
     TITLE_AUTHENTICATION_REQUIRED("Authentication required"),
     TITLE_ACCESS_DENIED("Access denied"),
+    /** RFC 9110 §15.6.4; raised for an unrecordable decision under {@code cistern.audit.required}. */
+    TITLE_SERVICE_UNAVAILABLE("Service unavailable"),
 
     // ---------------------------------------------------------------- problem details
 
@@ -270,7 +272,22 @@ public enum WebfluxMessage {
      */
     POD_ALREADY_PROVISIONED(
             "Pod <%s> already has an ACL; left as it is (a restart is not a request to reset"
-                    + " permissions)");
+                    + " permissions)"),
+
+    // ---------------------------------------------------------------- receipts (T5.9)
+
+    /** Startup: which sink and which log root receipts go to, and under which policy. */
+    AUDIT_WIRED("Decision log: %s at <%s>; audit policy %s"),
+
+    /** {@code ?receipts&from=}/{@code &to=} that is not an ISO 8601 instant. */
+    RECEIPTS_INSTANT_MALFORMED(
+            "Receipts parameter '%s' must be an ISO 8601 instant such as 2026-08-19T00:00:00Z: %s"),
+
+    /** {@code ?receipts&from=}/{@code &to=} that do not describe an interval. */
+    RECEIPTS_INTERVAL_EMPTY("Receipts interval is empty: from %s is not before to %s"),
+
+    /** {@code ?receipts&agent=} that is not an absolute WebID. */
+    RECEIPTS_AGENT_MALFORMED("Receipts parameter 'agent' must be an absolute WebID URI: %s");
 
     private final String template;
 

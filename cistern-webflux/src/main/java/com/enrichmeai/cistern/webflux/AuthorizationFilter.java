@@ -3,12 +3,22 @@ package com.enrichmeai.cistern.webflux;
 import com.enrichmeai.cistern.core.Agent;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.wac.AccessControl;
+import com.enrichmeai.cistern.wac.AccessDecision;
+import com.enrichmeai.cistern.wac.AccessRequirement;
+import com.enrichmeai.cistern.wac.AccessVerdict;
+import com.enrichmeai.cistern.wac.DecisionRecord;
+import com.enrichmeai.cistern.wac.DecisionSink;
+import com.enrichmeai.cistern.wac.RequestId;
+import com.enrichmeai.cistern.wac.RequiredAccess;
 import com.enrichmeai.cistern.webflux.auth.PrincipalResolver;
 
+import java.time.Clock;
+import java.util.List;
 import java.util.Objects;
 
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.web.server.ServerWebExchange;
@@ -17,11 +27,12 @@ import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
 /**
- * Enforces Web Access Control before any handler runs (T5.3).
+ * Enforces Web Access Control before any handler runs (T5.3), and leaves a receipt for every
+ * decision (T5.9).
  *
  * <p>A filter rather than a check inside each handler, because "deny by default" is only true
  * if there is no path that forgets to ask. Adding a handler must not be a way to add an
- * unprotected route.
+ * unprotected route — and, since T5.9, must not be a way to add an unrecorded one either.
  *
  * <p>The two refusals are different and the conformance harness distinguishes them everywhere:
  *
@@ -36,6 +47,31 @@ import reactor.core.publisher.Mono;
  * <p>Returning 403 to an anonymous request would tell an unauthenticated client that
  * authenticating is pointless, and returning 401 to an authenticated one would invite a
  * credential retry loop.
+ *
+ * <h2>Receipts (T5.9)</h2>
+ * Every request that reaches the decision yields <strong>exactly one</strong>
+ * {@link DecisionRecord} — allow and deny, every method — handed to the {@link DecisionSink}
+ * <em>before</em> the request proceeds or is refused. The order is deliberate: the response
+ * is not sent until the receipt is durable, so a receipts query issued after a response always
+ * sees the decision that produced it, and "if you got an answer there is a receipt" holds
+ * without a race. The cost is one asynchronous append on the store's scheduler; the event
+ * loop is never blocked.
+ *
+ * <p>What a sink failure means is not decided here: the sink this filter is given already
+ * carries the deployment's {@code AuditPolicy} ({@code cistern.audit.required}) — best-effort,
+ * where the decision stands and the failure is logged, or required, where the request fails
+ * closed with {@code CisternException.ServiceUnavailable} (503, retry later) through the one
+ * error mapper. Neither touches the authorization result: {@link AccessControl} remains the
+ * only decision point, and nothing here caches what it said.
+ *
+ * <p>The request's correlation identifier ({@code X-Request-Id}) is honoured when the client
+ * sent a well-formed one and minted otherwise, echoed on every response this filter sees, and
+ * written into the receipt — so a refusal an application logged on its side can be matched to
+ * the receipt on this side.
+ *
+ * <p>A {@code GET ?receipts} is recognised here and requires <strong>Control</strong> on the
+ * resource ({@link RequiredAccess#forReceipts}) rather than Read; the handler that answers it
+ * is reachable only through this filter.
  */
 public final class AuthorizationFilter implements WebFilter, Ordered {
 
@@ -57,12 +93,24 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
     private final PrincipalResolver principals;
     private final AccessControl accessControl;
     private final RequestPaths paths;
+    private final DecisionSink sink;
+    private final Clock clock;
 
+    /**
+     * @param sink where receipts go — already wrapped in the deployment's {@code AuditPolicy},
+     *             so that what a failure to record means was decided at wiring, not here
+     */
     public AuthorizationFilter(
-            PrincipalResolver principals, AccessControl accessControl, RequestPaths paths) {
+            PrincipalResolver principals,
+            AccessControl accessControl,
+            RequestPaths paths,
+            DecisionSink sink,
+            Clock clock) {
         this.principals = Objects.requireNonNull(principals, "principals");
         this.accessControl = Objects.requireNonNull(accessControl, "accessControl");
         this.paths = Objects.requireNonNull(paths, "paths");
+        this.sink = Objects.requireNonNull(sink, "sink");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     @Override
@@ -72,27 +120,48 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
-        if (isCorsPreflight(exchange.getRequest())) {
+        ServerHttpRequest request = exchange.getRequest();
+        if (isCorsPreflight(request)) {
             // A preflight carries no credentials by definition — the browser sends it before
             // it will attach any. Requiring authorization here would make every cross-origin
             // request fail at the first hop, including ones that would have been permitted.
             return chain.filter(exchange);
         }
 
-        ResourceIdentifier target = paths.identifierFor(exchange.getRequest().getPath().value());
-        String method = exchange.getRequest().getMethod().name();
+        // Correlation first, so that every response below — allowed, refused, or failed
+        // closed by the error mapper — carries the same identifier the receipt does.
+        RequestId requestId = RequestId.parse(request.getHeaders().getFirst(HttpConstants.X_REQUEST_ID))
+                .orElseGet(RequestId::generate);
+        exchange.getResponse().getHeaders().set(HttpConstants.X_REQUEST_ID, requestId.value());
+
+        ResourceIdentifier target = paths.identifierFor(request.getPath().value());
+        List<AccessRequirement> requirements = requirementsFor(request, target);
 
         return principals.resolve(exchange)
-                .flatMap(agent -> accessControl.isAllowed(method, target, agent)
-                        .flatMap(allowed -> allowed
-                                ? proceed(exchange, chain, agent, target)
-                                : refuse(exchange, agent)));
+                .flatMap(agent -> accessControl.authorize(requirements, agent)
+                        .flatMap(verdict -> sink.record(DecisionRecord.of(clock.instant(), agent, verdict, requestId))
+                                .then(Mono.defer(() -> verdict.allowed()
+                                        ? proceed(exchange, chain, agent, target, verdict)
+                                        : refuse(exchange, agent)))));
+    }
+
+    /**
+     * What this request must be granted. A {@code GET}/{@code HEAD} carrying {@code ?receipts}
+     * is a query of the decision log, not a read of the resource, and requires Control; every
+     * other request is what {@link RequiredAccess#forRequest} says of its method.
+     */
+    private static List<AccessRequirement> requirementsFor(ServerHttpRequest request, ResourceIdentifier target) {
+        if (isReadMethod(request) && ReceiptsRequest.isRequested(request.getQueryParams())) {
+            return RequiredAccess.forReceipts(target);
+        }
+        return RequiredAccess.forRequest(request.getMethod().name(), target);
     }
 
     /** Publish the agent for downstream readers, advertise WAC-Allow, then continue. */
     private Mono<Void> proceed(
-            ServerWebExchange exchange, WebFilterChain chain, Agent agent, ResourceIdentifier target) {
-        return wacAllow(exchange, agent, target)
+            ServerWebExchange exchange, WebFilterChain chain, Agent agent,
+            ResourceIdentifier target, AccessVerdict verdict) {
+        return wacAllow(exchange, agent, target, verdict)
                 .then(Mono.defer(() -> chain.filter(exchange)
                         .contextWrite(context -> context.put(AGENT_CONTEXT_KEY, agent))));
     }
@@ -100,42 +169,40 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
     /**
      * Emit {@code WAC-Allow: user="...",public="..."} on GET and HEAD.
      *
-     * <p>WAC defines the two groups as the modes held by the requester and by the public, so
-     * this costs a second evaluation — once for the agent, once for {@link Agent#ANONYMOUS}.
-     * That is a real cost, taken deliberately: a browser app that cannot see what the user may
-     * do has to discover it by attempting writes and reading the failures.
+     * <p>WAC defines the two groups as the modes held by the requester and by the public. The
+     * requester's modes are already in hand — the verdict's primary judgement is exactly
+     * {@code grantedFor(target, agent)}, so it is reused rather than evaluated again — and the
+     * public's cost one further evaluation, for {@link Agent#ANONYMOUS}. That is a real cost,
+     * taken deliberately: a browser app that cannot see what the user may do has to discover
+     * it by attempting writes and reading the failures.
      *
-     * <p>Skipped for an anonymous requester's {@code user} group being recomputed: when the
-     * agent already <em>is</em> anonymous the two decisions are identical, so the second
-     * evaluation is skipped rather than repeated.
+     * <p>When the requester already <em>is</em> anonymous the two groups are identical, so the
+     * second evaluation is skipped rather than repeated.
      *
      * <p>Set on the response before the chain runs, because a handler that has begun writing
      * its body has already committed the headers.
      */
-    private Mono<Void> wacAllow(ServerWebExchange exchange, Agent agent, ResourceIdentifier target) {
+    private Mono<Void> wacAllow(
+            ServerWebExchange exchange, Agent agent, ResourceIdentifier target, AccessVerdict verdict) {
         if (!isReadMethod(exchange.getRequest())) {
             return Mono.empty();
         }
-        return accessControl.grantedFor(target, agent)
-                .flatMap(user -> agent.isAuthenticated()
-                        ? accessControl.grantedFor(target, Agent.ANONYMOUS)
-                                .map(publicModes -> header(user, publicModes))
-                        : Mono.just(header(user, user)))
-                .doOnNext(value -> exchange.getResponse().getHeaders()
-                        .set(HttpConstants.WAC_ALLOW, value))
+        AccessDecision user = verdict.primary().decision();
+        Mono<String> header = agent.isAuthenticated()
+                ? accessControl.grantedFor(target, Agent.ANONYMOUS).map(publicModes -> header(user, publicModes))
+                : Mono.just(header(user, user));
+        return header
+                .doOnNext(value -> exchange.getResponse().getHeaders().set(HttpConstants.WAC_ALLOW, value))
                 .then();
     }
 
-    private static String header(
-            com.enrichmeai.cistern.wac.AccessDecision user,
-            com.enrichmeai.cistern.wac.AccessDecision publicModes) {
+    private static String header(AccessDecision user, AccessDecision publicModes) {
         return HttpConstants.WAC_ALLOW_USER + "=\"" + user.toHeaderModes() + "\","
                 + HttpConstants.WAC_ALLOW_PUBLIC + "=\"" + publicModes.toHeaderModes() + "\"";
     }
 
     private static boolean isReadMethod(ServerHttpRequest request) {
-        return org.springframework.http.HttpMethod.GET.equals(request.getMethod())
-                || org.springframework.http.HttpMethod.HEAD.equals(request.getMethod());
+        return HttpMethod.GET.equals(request.getMethod()) || HttpMethod.HEAD.equals(request.getMethod());
     }
 
     /**
@@ -156,7 +223,7 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
     }
 
     private static boolean isCorsPreflight(ServerHttpRequest request) {
-        return org.springframework.http.HttpMethod.OPTIONS.equals(request.getMethod())
+        return HttpMethod.OPTIONS.equals(request.getMethod())
                 && request.getHeaders().getAccessControlRequestMethod() != null;
     }
 }

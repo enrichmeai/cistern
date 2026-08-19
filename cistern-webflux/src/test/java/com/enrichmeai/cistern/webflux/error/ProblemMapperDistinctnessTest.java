@@ -49,6 +49,7 @@ class ProblemMapperDistinctnessTest {
             new CisternException.NotAcceptable("not acceptable"),
             new CisternException.NotFound("not found"),
             new CisternException.PreconditionFailed("precondition failed"),
+            new CisternException.ServiceUnavailable("service unavailable"),
             new CisternException.UnprocessableEntity("unprocessable entity"),
             new CisternException.UnsupportedMediaType("unsupported media type"));
 

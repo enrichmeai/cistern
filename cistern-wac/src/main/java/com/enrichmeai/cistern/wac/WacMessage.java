@@ -85,7 +85,73 @@ public enum WacMessage {
      * container's ACL can carry the {@code acl:default} that makes the subtree inherit.
      */
     POD_ROOT_NOT_A_CONTAINER(
-            "A pod root must be a container (URI path ending in '/'): <%s>");
+            "A pod root must be a container (URI path ending in '/'): <%s>"),
+
+    /**
+     * An {@code acl:Authorization} subject IRI that is not a syntactically valid URI. The rule
+     * still applies; it simply cannot be named in a receipt.
+     */
+    MALFORMED_AUTHORIZATION_IRI(
+            "The acl:Authorization subject <%s> is not a valid URI; the rule applies but cannot"
+                    + " be named in the decision log"),
+
+    // ---------------------------------------------------------------- decisions (T5.9)
+
+    /** {@code AccessDecision} invariant: a denial grants nothing, so it can name no policy. */
+    DENIAL_NAMES_A_POLICY(
+            "A denial names no policy: a decision with no modes must carry no decidedBy and no"
+                    + " authorizations (WAC has no deny rule — nothing decided a refusal)"),
+
+    /** {@code AccessDecision} invariant: a grant came from somewhere. */
+    GRANT_NAMES_NO_POLICY(
+            "A grant names its policy: a decision with modes must say which ACL resource"
+                    + " decided it"),
+
+    /** {@code AccessVerdict} invariant: a request always requires something on its own target. */
+    VERDICT_WITHOUT_REQUIREMENTS(
+            "A verdict answers at least one requirement; an empty verdict would read as allowed"),
+
+    /** A client-supplied request identifier outside the admissible alphabet or length. */
+    REQUEST_ID_MALFORMED(
+            "Not a well-formed request identifier (1-" + RequestId.MAX_LENGTH
+                    + " characters from A-Z a-z 0-9 - _ . ~ : / + =): %s"),
+
+    /** The decision log's root must be a container. A caller bug, not a runtime condition. */
+    DECISION_LOG_ROOT_NOT_CONTAINER(
+            "The decision log root must be a container identifier (trailing slash): <%s>"),
+
+    /** A day file line missing a required member. */
+    DECISION_FIELD_MISSING("Decision record is missing the '%s' member"),
+
+    /** A day file line whose member is not a JSON string (or null where permitted). */
+    DECISION_FIELD_NOT_A_STRING("Decision record member '%s' is not a string"),
+
+    /** The sink's queue did not take a record — closed, most likely. Never dropped silently. */
+    DECISION_SINK_REFUSED(
+            "The decision log did not accept the receipt for request %s: %s"),
+
+    /** The store refused an append. Logged here; whether it fails the request is the caller's call. */
+    DECISION_APPEND_FAILED(
+            "Could not append to the decision log <%s> for request %s"),
+
+    /** A day file line that is not a record. Logged and skipped by the query, never thrown. */
+    DECISION_LINE_UNREADABLE(
+            "Decision log <%s>: skipping unreadable line %d, which is not a decision record"),
+
+    /** {@code AuditPolicy.BEST_EFFORT}: the receipt was lost, the decision stood. Logged at WARN. */
+    DECISION_NOT_RECORDED_OUTCOME_STANDS(
+            "Receipt for request %s not recorded; the %s decision on <%s> stands"
+                    + " (cistern.audit.required=false)"),
+
+    /** {@code AuditPolicy.REQUIRED}: the receipt was lost, so the request was refused. Logged at WARN. */
+    DECISION_NOT_RECORDED_FAILED_CLOSED(
+            "Receipt for request %s not recorded; the %s decision on <%s> was not acted on and the"
+                    + " request was refused (cistern.audit.required=true)"),
+
+    /** {@code AuditPolicy.REQUIRED}: what the client is told, as the 503 problem detail. */
+    DECISION_NOT_RECORDED(
+            "The decision for request %s could not be recorded and cistern.audit.required is set;"
+                    + " the request was not acted on. Retry later.");
 
     private final String template;
 
