@@ -10,7 +10,9 @@ import java.util.Objects;
  *
  * <p>A pair rather than a bare mode because a single HTTP request can require access to more
  * than one resource. {@code DELETE} is the case that forces it — see
- * {@link RequiredAccess#forRequest}.
+ * {@link RequiredAccess#forRequest} — and a request for an ACL resource is the case where the
+ * one resource required is not the one addressed: Control on the resource the ACL governs
+ * ({@link RequiredAccess#forAcl}).
  *
  * @param target the resource the mode is required on, which is not always the request's target
  * @param mode   the mode required there

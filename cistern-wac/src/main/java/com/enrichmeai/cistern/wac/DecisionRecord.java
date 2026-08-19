@@ -21,7 +21,9 @@ import java.util.Optional;
  *
  * @param at        when the decision was taken
  * @param agent     who asked; {@link Agent#ANONYMOUS} when the request proved no identity
- * @param target    the request's own target — not, for a {@code DELETE}, its parent
+ * @param target    the request's own target — not, for a {@code DELETE}, its parent; for a
+ *                  request addressed to an ACL resource, the resource that ACL governs, since
+ *                  that is where Control was required ({@link RequiredAccess#forAcl})
  * @param required  the mode the request needed on {@code target}
  * @param outcome   how it ended
  * @param decidedBy the ACL resource whose authorizations granted it, when it was allowed;

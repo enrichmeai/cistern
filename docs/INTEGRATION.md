@@ -27,7 +27,7 @@ request
 AuthorizationFilter (WebFilter, cistern-webflux)         ← registered only when cistern.owner.web-id is set
   │  0. X-Request-Id: honoured if well-formed, else minted; echoed on every response
   │  1. PrincipalResolver.resolve(exchange)  → Agent      (ChainedPrincipalResolver: LocalCredential → ServiceCredential → OidcJwt → Anonymous; first authenticated wins)
-  │  2. RequiredAccess: method + target state → AccessMode (GET=Read, PUT/DELETE=Write, POST=Append, PATCH=Append, .acl=Control, GET ?receipts=Control)
+  │  2. RequiredAccess: method + target → requirements (GET=Read, PUT/DELETE=Write, POST=Append, PATCH=Append, GET ?receipts=Control; any method on <x>.acl = Control on <x>, #112)
   │  3. AccessControl.authorize(requirements, agent) → AccessVerdict   (the only decision point; nothing cached)
   │       AclDiscovery: target's own .acl, else walk up to nearest acl:default   (fails closed)
   │       WacEngine:    evaluate Authorization graphs, deny by default; the decision names the ACL and the rules that granted
@@ -55,6 +55,7 @@ Facts an integrator relies on, all observed on 2026-08-18:
 | Conditional writes | `If-Match` mismatch → 412; `If-None-Match: *` for create-only |
 | Discovery | `Link: <…ldp#Resource>; rel="type"`, `Link: <…/.well-known/solid>; rel="…storageDescription"`, `Allow`, `Accept-Put`, `Accept-Patch: text/n3` |
 | Authorization state | `WAC-Allow: user="…",public="…"` on GET/HEAD |
+| ACL resources | `<x>.acl` takes **Control on `<x>`** for every method (GET/HEAD/OPTIONS/PUT/PATCH/DELETE) — a public or per-agent Read on a container reads its members, never its rule; anonymous 401, authenticated without Control 403 (#112) |
 | Correlation | `X-Request-Id` on every response — the client's own if well-formed, else a UUID; the same value is in the receipt (T5.9) |
 | Receipts | `GET <resource>?receipts` (Control) → `application/x-ndjson`, one decision per line; `GET /?receipts&agent=<webid>` (Control on the root) for one agent across the pod (T5.9) |
 | Errors | RFC 9457 problem details, one mapper (`ProblemType` enum) |
@@ -710,6 +711,7 @@ Planned: `cistern.storage.backend` (#95).
 | malformed RDF body | **400** `application/problem+json` (`type: …/problems/bad-input`) |
 | `DELETE` non-empty container | **409** |
 | `DELETE` a resource without Write on its **parent** container as well | **403** (removing a child edits the parent's containment) |
+| any method on an `.acl` resource (`GET`/`HEAD`/`OPTIONS`/`PUT`/`PATCH`/`DELETE`) without **Control on the resource it governs** | anonymous **401** / authenticated **403** — Read or Write on the resource is not enough (#112) |
 | `OPTIONS` | **204** + `Allow`, `Accept-Put`, `Accept-Patch` |
 | `GET` with a grant | **200** + `WAC-Allow: user="read",public="…"` |
 | `GET ?receipts` holding Control | **200** `application/x-ndjson`, `Cache-Control: no-store`; without Control **401**/**403** as above; malformed `from`/`to`/`agent` **400** |

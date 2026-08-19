@@ -27,6 +27,17 @@ before anything is built, deliberately.
   `CisternException.ServiceUnavailable`); by default the outcome stands and the failure is
   logged. `k8s/demo.sh` gains a sixth beat: the receipt.
 
+### Fixed
+
+- **WAC: an ACL resource requires `acl:Control` on the resource it governs, for every method
+  (#112).** `RequiredAccess` mapped `.acl` resources by HTTP method like any other resource, so
+  after a public (or per-agent) Read grant on a container, `GET <container>.acl` returned 200
+  to anyone the grant covered — disclosing who holds access — and Write on the container was
+  enough to replace or delete its ACL. Now any request addressed to `<x>.acl` requires Control
+  on `<x>` (anonymous 401, authenticated without Control 403), judged by `<x>`'s effective ACL,
+  which is what WAC's "Control on the resource" means. The receipt for an ACL access is recorded
+  on the governed resource with `required: CONTROL`.
+
 ## [0.1.0] - 2026-08-19
 
 First tagged release: everything built between the scaffold (2026-07-17) and the Java 25
