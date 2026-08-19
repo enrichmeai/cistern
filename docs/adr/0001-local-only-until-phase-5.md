@@ -1,6 +1,8 @@
 # ADR 0001 — Cistern runs locally only until the authority plane exists
 
-- **Status:** accepted
+- **Status:** superseded by [ADR 0002](0002-production-posture.md) (2026-08-19) — the
+  authority plane it waited for exists; the local posture it describes is kept unchanged as
+  the development shape
 - **Date:** 2026-07-20
 - **Deciders:** project owner
 
