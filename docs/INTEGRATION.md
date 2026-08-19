@@ -93,7 +93,7 @@ Facts an integrator relies on, all observed on 2026-08-18:
 | Author grants without hand-writing Turtle | ✅ T5.7 (#91): `cistern grant` / `revoke` + `GrantService` | — |
 | Grants that expire | ❌ | **#92** T5.8 |
 | Receipts (who read what, under which grant) | ✅ T5.9 (#93): every decision recorded with the deciding ACL; `GET ?receipts` for the Control holder | — |
-| Internet-facing deployment | ❌ ADR 0001 | **#94** T7.7 after #88 |
+| Internet-facing deployment | ✅ T7.7 (#94): ADR 0002 conditions, enforcement guard, Terraform HTTPS-LB path, k8s production overlay, backups + restore drill (`deploy.md`) — built and validated, not yet applied by EnrichMeAI | a first ValueDocs instance over TLS (their project); hosted model #103 |
 | Object storage backend | ❌ file only | **#95** T1.6 |
 
 ---
@@ -127,18 +127,18 @@ not yet offered). There is no phone-home, no telemetry, no copy anywhere else.
 
 | Topology | Who runs the server | Where the bytes are | Who is accountable for the data | Status |
 |---|---|---|---|---|
-| **Self-hosted by an organisation** (a firm, a business, a public body) | The organisation's own ops, on its own machines or cloud account | Under `cistern.storage.root` on a volume the organisation controls (file backend); an object-storage bucket the organisation owns after #95 | The organisation — it is the data controller/fiduciary; the person is the owner of the pod within it | **Available today** (private network; internet-facing posture in #94) |
+| **Self-hosted by an organisation** (a firm, a business, a public body) | The organisation's own ops, on its own machines or cloud account | Under `cistern.storage.root` on a volume the organisation controls (file backend); an object-storage bucket the organisation owns after #95 | The organisation — it is the data controller/fiduciary; the person is the owner of the pod within it | **Available today** — private network, or internet-facing under [ADR 0002](adr/0002-production-posture.md)'s conditions (T7.7: TLS in front, owner set, no owner token, backups drilled; `deploy.md`) |
 | **Hosted by a provider** (EnrichMeAI or a hosting partner) | The provider | In the provider's region of choice — SG and IN first, per the ADR to be written | Provider as processor; the tenant organisation as controller; the person as pod owner | **Not yet** — #103 decides the model |
 | **Personal** (a person runs their own) | The person | Their machine or their cloud account | The person | Available today, developer audience only |
 
 Within any topology:
 
-- **One pod per person (or per client, per firm — your choice), one folder per matter/purpose.** Isolation between pods is enforced by the WAC engine on every request; nothing is reachable through Cistern without a grant. Storage-level isolation between *tenants* (separate roots or buckets per firm) is an ops decision documented in #94.
+- **One pod per person (or per client, per firm — your choice), one folder per matter/purpose.** Isolation between pods is enforced by the WAC engine on every request; nothing is reachable through Cistern without a grant. Storage-level isolation between *tenants* is one instance per firm by default — its own volume, namespace or project, IAM and owner (ADR 0002 condition 4; `deploy.md`); separate roots on one instance only where every firm trusts the operator, whose WebID holds Control over the storage root.
 - **What is stored:** the resources exactly as written (documents byte-for-byte; RDF as parsed graphs), the `.acl` permission files, and metadata sidecars. The append-only decision log (T5.9, #93) lives under `cistern.audit.root` (default `<storage root>/.cistern/decisions/`), outside the pod's URI space.
 - **What is *not* stored anywhere else:** the application must not keep an authoritative copy (§5, derived-data rule). This is a rule for the integrator, and it is the difference between governance and theatre.
-- **In transit:** TLS is terminated in front of Cistern (#94); today the posture is loopback/private network only (ADR 0001).
+- **In transit:** TLS is terminated in front of Cistern — the Terraform HTTPS load balancer or the Kubernetes Ingress (`infra/terraform`, `k8s/overlays/production`, ADR 0002); Cistern itself speaks plain HTTP on a listener only the terminator reaches. Local development stays on loopback (ADR 0001's shape, kept).
 - **At rest:** the file backend writes plain files. Encryption at rest is the volume's or bucket's (disk/KMS encryption on the host or cloud) — Cistern does not encrypt content itself today. State this in your own DPIA rather than assuming otherwise.
-- **Backups and export:** backups are the operator's (schedule + restore drill in #94). Export is inherent — a pod is standard Solid data and can be moved to any conformant server; that portability is part of the pitch and must stay true in any hosted offering (#103).
+- **Backups and export:** backups are the operator's — the whole of `cistern.storage.root` including `.cistern/` (the receipts), on a snapshot schedule and proven by `infra/restore-drill.sh` (`deploy.md`, T7.7). Export is inherent — a pod is standard Solid data and can be moved to any conformant server; that portability is part of the pitch and must stay true in any hosted offering (#103).
 - **Who can see what:** the pod owner (Control) sees everything in their pod and, after #93, the receipts; a granted application sees only its granted folders; the operator can read the disk — as with any self-hosted system — which is why the operator is the accountable party in the table above.
 
 ## 2b. Integration hurdles, and how much work it is
@@ -151,7 +151,7 @@ Being straight about the effort is what makes the rest of this document credible
 |---|---|---|---|
 | **An AI assistant** (Claude Desktop, ChatGPT, an in-house agent) | Connects over MCP; the person grants it a folder | Not yet possible — the MCP front door is Phase 6 | **Near zero**: the assistant already speaks MCP; the company integrates nothing |
 | **An application** (ValueDocs, a firm's DMS, a consumer app) | Authenticates as a principal, reads/writes under a grant, handles refusal, keeps no authoritative copy | Days: OIDC/JWT + service principals (T4.0), `cistern grant` / `GrantService` (T5.7), `cistern pod create` (T5.6), receipts (T5.9) and the integration kit (T7.10) are all on `main`; plain HTTP per §3 | Hours, once the thin clients (T7.9) exist; EnrichMeAI does it alongside the first partners (Shape A) |
-| **An operator / hoster** | Runs Cistern for tenants | Private network (ADR 0001); jar / Docker / k8s / tagged GHCR image (T7.14) exist | Production posture in #94 (ADR 0002); hosted model after #103 |
+| **An operator / hoster** | Runs Cistern for tenants | Jar / Docker / k8s / tagged GHCR image (T7.14); production posture built (T7.7, ADR 0002): Terraform HTTPS-LB path and the k8s production overlay, neither yet applied by EnrichMeAI | Hosted model after #103 |
 
 **The hurdles, named** — each with where it is on the board:
 
@@ -161,7 +161,7 @@ Being straight about the effort is what makes the rest of this document credible
 4. **Provisioning at scale.** **Done (T5.6):** `cistern.pods.seed[]` at boot and `cistern pod create` on demand, idempotent.
 5. **Receipts.** **Done (T5.9):** every decision is logged naming the deciding ACL; `GET <resource>?receipts` is Control-protected.
 6. **Time-limited grants.** Not in WAC. After **#92**: `cistern:validUntil`, fail-closed.
-7. **Operations.** Private network today; **#94** (in progress) adds TLS, backups + restore drill, tenant isolation, ADR 0002; **#103** decides hosting.
+7. **Operations.** **Done (T7.7, ADR 0002):** TLS in front (Terraform HTTPS load balancer / k8s Ingress), the enforcement guard, backups + `infra/restore-drill.sh`, per-tenant isolation, edge rate limiting, `X-Request-Id` across the edge — `deploy.md`. Remaining: **#103** decides hosting.
 8. **Client code.** Today: read §8 and write HTTP. After **T7.9**: thin Java/TS clients that make the common mistakes impossible.
 
 **So: is it easy?** For an assistant, it will be trivial once the MCP door exists — that is the strategic point. For an application, it is honest engineering — days now that identity, grants, provisioning, receipts and the kit are on `main`; hours once the thin clients land — and a product decision either way about where the data lives. That is why the first integration is our own (ValueDocs) and the next two are done *with* partners rather than handed a document.
