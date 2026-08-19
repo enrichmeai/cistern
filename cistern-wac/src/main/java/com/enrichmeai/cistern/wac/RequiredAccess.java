@@ -79,6 +79,29 @@ public final class RequiredAccess {
     }
 
     /**
+     * What reading the decision log for {@code target} requires: <strong>Control</strong> on
+     * the resource whose receipts are asked for (T5.9).
+     *
+     * <p>Not Read, deliberately. Receipts say who reached a resource, when, and under which
+     * grant — the same class of information as the ACL itself, so they take the ACL's mode. In
+     * particular the agent whose access is being reported holds Read at most, and Read on a
+     * document must not become a view of everyone else's traffic to it. Control alone, on the
+     * other hand, does <em>not</em> reveal the content — the query returns decisions, never
+     * bytes — so the mode fits in both directions.
+     *
+     * <p>The per-agent query at a pod root asks the same thing of the root: Control there is
+     * what governs the whole pod's policy by {@code acl:default}, so it is what may see the
+     * whole pod's receipts.
+     *
+     * @param target the resource (or pod root) whose receipts are requested
+     * @return the single requirement: Control on {@code target}
+     */
+    public static List<AccessRequirement> forReceipts(ResourceIdentifier target) {
+        Objects.requireNonNull(target, "target");
+        return List.of(new AccessRequirement(target, AccessMode.CONTROL));
+    }
+
+    /**
      * Write on the resource, and Write on the container it will be removed from.
      *
      * <p>The storage root has no parent, so it yields the resource-side check alone — and it

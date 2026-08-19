@@ -41,4 +41,25 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <!-- Publish src/test as a test-jar, as cistern-core does: InMemoryDecisionSink (T5.9)
+             is the reference DecisionSink/DecisionQuery for tests in higher layers, so the
+             HTTP tests observe receipts without touching disk. Consume with
+             <type>test-jar</type> + <scope>test</scope>. -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+        <executions>
+          <execution>
+            <id>wac-test-kit</id>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

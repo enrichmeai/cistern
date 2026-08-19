@@ -1,6 +1,7 @@
 package com.enrichmeai.cistern.wac;
 
 import com.enrichmeai.cistern.core.Agent;
+import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.vocab.Acl;
 
 import java.net.URI;
@@ -10,6 +11,7 @@ import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 import org.apache.jena.rdf.model.Model;
@@ -72,11 +74,19 @@ public final class WacEngine {
      * when the ACL was the resource's own, and as the ancestor when inherited. So the correct
      * value is always {@code EffectiveAcl.source()}.
      *
+     * <p>The decision names its policy (T5.9): the ACL resource is {@link AclResource#of} the
+     * subject — the same derivation {@link EffectiveAcl#aclResource()} makes, so the two
+     * overloads cannot name different resources for the same evaluation — and the matched
+     * authorizations are the {@code acl:Authorization} subjects whose rules applied, unioned in
+     * the order they were read. Nothing matched is {@link AccessDecision#DENIED}, which names
+     * nothing: WAC has no deny rule, so there is no rule to blame a refusal on.
+     *
      * @param effectiveAcl the ACL graph, as located by ACL discovery
      * @param aclSubject   the resource the ACL is attached to
      * @param agent        the requester; {@link Agent#ANONYMOUS} for an unauthenticated request
      * @param scope        whether the ACL was found on the resource or inherited from an ancestor
-     * @return the granted modes, closed under implication; {@link AccessDecision#DENIED} if none
+     * @return the granted modes, closed under implication, with the ACL and rules that granted
+     *     them; {@link AccessDecision#DENIED} if none
      */
     public AccessDecision decide(Model effectiveAcl, URI aclSubject, Agent agent, AclScope scope) {
         Objects.requireNonNull(effectiveAcl, "effectiveAcl");
@@ -84,16 +94,25 @@ public final class WacEngine {
         Objects.requireNonNull(agent, "agent");
         Objects.requireNonNull(scope, "scope");
 
-        AccessDecision decision = AccessDecision.DENIED;
+        // Additive: matching authorizations are unioned ("granted by one or more
+        // Authorizations"), so a second rule can only ever widen the result — and every rule
+        // that contributed is named, not just the first.
+        Set<AccessMode> granted = EnumSet.noneOf(AccessMode.class);
+        Set<URI> matched = new LinkedHashSet<>();
         for (Authorization authorization : parse(effectiveAcl, scope)) {
             if (authorization.covers(aclSubject) && authorization.matches(agent)) {
-                decision = decision.union(new AccessDecision(authorization.modes()));
+                granted.addAll(authorization.modes());
+                authorization.subject().ifPresent(matched::add);
             }
         }
-        if (decision.isDenied() && log.isDebugEnabled()) {
-            log.debug(WacMessage.NO_APPLICABLE_AUTHORIZATION.format(aclSubject, scope));
+        if (granted.isEmpty()) {
+            if (log.isDebugEnabled()) {
+                log.debug(WacMessage.NO_APPLICABLE_AUTHORIZATION.format(aclSubject, scope));
+            }
+            return AccessDecision.DENIED;
         }
-        return decision;
+        return AccessDecision.of(
+                granted, AclResource.of(new ResourceIdentifier(aclSubject)), matched);
     }
 
     /**
@@ -133,9 +152,30 @@ public final class WacEngine {
                         // a malformed ACL public.
                         return;
                     }
-                    authorizations.add(new Authorization(modes, agents, agentClasses, targets));
+                    authorizations.add(new Authorization(
+                            subjectIri(subject), modes, agents, agentClasses, targets));
                 });
         return authorizations;
+    }
+
+    /**
+     * The authorization's own IRI, if it has one. A blank-node subject is legal WAC and grants
+     * exactly as a named one does; it simply cannot be named in a receipt. A subject IRI that
+     * does not parse as a {@link URI} is treated the same way — the rule still applies, its name
+     * is just not recordable — because refusing to evaluate it would let a syntactic quirk in a
+     * fragment identifier deny access the owner meant to grant.
+     */
+    private static Optional<URI> subjectIri(Resource subject) {
+        if (!subject.isURIResource()) {
+            return Optional.empty();
+        }
+        String iri = subject.getURI();
+        try {
+            return Optional.of(new URI(iri));
+        } catch (URISyntaxException e) {
+            log.debug(WacMessage.MALFORMED_AUTHORIZATION_IRI.format(iri));
+            return Optional.empty();
+        }
     }
 
     /** Granted modes, expanded so that Write carries Append (see {@link AccessMode}). */
