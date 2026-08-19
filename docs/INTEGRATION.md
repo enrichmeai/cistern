@@ -25,7 +25,7 @@ request
   │
   ▼
 AuthorizationFilter (WebFilter, cistern-webflux)         ← registered only when cistern.owner.web-id is set
-  │  1. PrincipalResolver.resolve(exchange)  → Agent      (LocalCredentialResolver | AnonymousResolver)
+  │  1. PrincipalResolver.resolve(exchange)  → Agent      (ChainedPrincipalResolver: LocalCredential → ServiceCredential → OidcJwt → Anonymous; first authenticated wins)
   │  2. RequiredAccess: method + target state → AccessMode (GET=Read, PUT/DELETE=Write, POST=Append, PATCH=Append, .acl=Control)
   │  3. AccessControl.isAllowed(method, target, agent)
   │       AclDiscovery: target's own .acl, else walk up to nearest acl:default   (fails closed)
@@ -60,9 +60,9 @@ Facts an integrator relies on, all observed on 2026-08-18:
 |---|---|---|
 | `cistern-core` | built | resource model, `ResourceStore` SPI, RDF io, containment, N3 Patch, `Agent`, vocab constants (`Acl`, `Foaf`, `Pim`, `Solid`). **No Spring.** |
 | `cistern-storage-file` | built | file backend; passes `ResourceStoreContractTest` |
-| `cistern-webflux` | built | handlers, negotiation, conditional requests, error mapper, `AuthorizationFilter`, `PrincipalResolver` + `LocalCredentialResolver` + `AnonymousResolver`, `OwnerPodSeeder`, `CisternProperties` |
+| `cistern-webflux` | built | handlers, negotiation, conditional requests, error mapper, `AuthorizationFilter`, `PrincipalResolver` + `ChainedPrincipalResolver` + `LocalCredentialResolver` + `ServiceCredentialResolver` (`ServicePrincipalRegistry`, `HashedCredential`) + `AnonymousResolver`, `OwnerPodSeeder`, `CisternProperties` |
 | `cistern-wac` | built | `AclDiscovery`, `WacEngine`, `AccessControl`, `Authorization`, `AccessDecision`, `EffectiveAcl`, `RequiredAccess`, `AccessMode`, `AgentClass`, `WacMessage`. No Spring. |
-| `cistern-auth` | **empty** | intended home of Solid-OIDC/DPoP validation (T4.1–T4.4) and of the JWT/service-principal resolver (#88) |
+| `cistern-auth` | built (T4.0) | `OidcJwtPrincipalResolver`, `JwtVerifier`, `CachingJwksClient`, `WebIdMapping`, `AuthMessage`; Solid-OIDC/DPoP validation (T4.1–T4.4) still to come |
 | `cistern-mcp` | **empty** | Phase 6; not needed for an HTTP application |
 | `cistern-spring-boot-starter` | scaffold | T7.1 |
 | `cistern-app` | built | runnable server; config only |
@@ -74,8 +74,8 @@ Facts an integrator relies on, all observed on 2026-08-18:
 |---|---|---|
 | Store documents and metadata per matter | ✅ | — |
 | Enforce owner-authored grants per request; scoped read/write; instant revocation | ✅ | — |
-| Many human principals (lawyers, clients) | ❌ one owner token | **#88** T4.0 (OIDC/JWT resolver); T4.1–T4.4 for Solid-OIDC proper |
-| Applications as their own principals (legal ≠ tax) | ❌ | **#88** service principals; **#89** decides (user, client) shape |
+| Many human principals (lawyers, clients) | ✅ JWTs from your OIDC issuer (T4.0, #88) | T4.1–T4.4 for Solid-OIDC proper (any IdP, DPoP) |
+| Applications as their own principals (legal ≠ tax) | ✅ service principals (T4.0, #88; #89 ruled: apps are their own WebIDs) | (user, client) shape + intersection cap when the MCP front door needs it |
 | Create pods/matters on demand | ❌ one owner at boot | **#90** T5.6 |
 | Author grants without hand-writing Turtle | ❌ | **#91** T5.7 `GrantService` + CLI |
 | Grants that expire | ❌ | **#92** T5.8 |
@@ -127,18 +127,54 @@ without it the server logs `NO_OWNER_CONFIGURED` at WARN and is unprotected (del
 
 ### Step 1 — Identity: who is the application?
 
-**Today:** one principal — the owner — via `Authorization: Bearer <CISTERN_OWNER_TOKEN>`.
-An application acting *as the firm* can use it on a private network. It cannot distinguish
-the legal app from the tax app, and it must never be shipped to a client device.
+**Today (T4.0, #88):** three ways to prove who a request is, all presented as
+`Authorization: Bearer <credential>`, all judged by the same engine, tried in this order —
+first authenticated wins, else anonymous (`ChainedPrincipalResolver`):
 
-**After #88:** the application authenticates as a **service principal** (`valuedocs-legal`,
-`valuedocs-tax`, each a WebID + credential from `ServicePrincipalRegistry`), and humans
-authenticate with JWTs from your OIDC issuer (`OidcJwtPrincipalResolver`, claim → WebID).
-Same header, same enforcement; only the resolver changes.
+1. **The owner's local token** — `cistern.owner.web-id` + `cistern.owner.token`. One
+   principal, the firm; private network only; never shipped to a client device.
+2. **A service principal** — the application *as itself*, with its own WebID and its own
+   secret. The secret is configured **hashed** (`sha256:<hex>`), so nothing at rest can be
+   presented; the application presents the plain secret. Ruled on #89 for v1: applications
+   are their own WebIDs, and a grant to one is not a grant to the other.
+   ```properties
+   cistern.auth.service-principals[0].web-id=https://valuedocs.co.in/apps/legal#id
+   cistern.auth.service-principals[0].credential-hash=sha256:af9f6ca9c55937463513e4cb25829d6eaa89ca74ed5699c0690f13469da4c481
+   cistern.auth.service-principals[1].web-id=https://valuedocs.co.in/apps/tax#id
+   cistern.auth.service-principals[1].credential-hash=sha256:a6944068fa09a27c3d4ed2bf53c1a452c7c8fb1199e4a07549081720504053ec
+   ```
+   Produce a hash from a shell: `printf '%s' "$SECRET" | shasum -a 256 | cut -d' ' -f1 | sed 's/^/sha256:/'`
+   (generate the secret with `openssl rand -hex 32`). Two entries may share a WebID (one
+   identity, two credentials, for rotation); two entries may not share a hash (refused at boot).
+   As environment: `CISTERN_AUTH_SERVICEPRINCIPALS_0_WEBID`, `CISTERN_AUTH_SERVICEPRINCIPALS_0_CREDENTIALHASH`.
+3. **A JWT from your OIDC issuer** — for humans (lawyers, clients) and, if you prefer OAuth
+   client credentials to a shared secret, for the applications too. Signature against the
+   issuer's published keys (JWKS, discovered from `{issuer}/.well-known/openid-configuration`
+   unless `jwks-uri` says otherwise; cached 5 min; refreshed on an unknown `kid`, at most
+   every 30 s), then `iss` verbatim, `aud` must contain one of `audiences`, `exp`/`nbf` with
+   `clock-skew`. The WebID is either a claim (`webid-claim`, default `webid` — Solid-OIDC's)
+   or a template over claims (`webid-template`), never both.
+   ```properties
+   cistern.auth.oidc.issuer=https://id.valuedocs.co.in/realms/valuedocs   # compared verbatim to iss
+   cistern.auth.oidc.audiences=cistern                                    # required; comma-separated
+   cistern.auth.oidc.webid-claim=webid                                    # default; or:
+   # cistern.auth.oidc.webid-template={iss}/users/{sub}#me                # any string claim in {braces}
+   cistern.auth.oidc.clock-skew=60s                                       # default
+   # cistern.auth.oidc.jwks-uri=https://…/protocol/openid-connect/certs   # only to bypass discovery
+   ```
+   Keycloak: add an *Audience* mapper (`Included Custom Audience: cistern`) and, for
+   `webid-claim`, a *User Attribute* mapper (`webid` → claim `webid`) to the client; the fixture
+   realm in `cistern-auth/src/test/resources/fixtures/keycloak/` is a worked example. A token
+   that fails any check authenticates **nobody** — the request proceeds as anonymous and gets
+   401 where a grant was needed — and the reason is logged (`Bearer JWT rejected (EXPIRED): …`).
 
-**After #89 (decision):** if the (user, client) shape is adopted, "lawyer X *via* the legal
-app" becomes a first-class principal with the intersection cap; grants can then name the
-client as well as the person.
+Enforcement is still switched on by `cistern.owner.web-id` (it seeds the root ACL); the
+other two are additional ways in, not replacements. There is **no** caching of decisions:
+revoking a grant, rotating a service secret or a signing key takes effect on the next request.
+
+**Not yet:** DPoP-bound tokens, `Authorization: DPoP`, WebID dereferencing (T4.1–T4.4); the
+(user, client) principal shape and the intersection cap (#89, taken when the MCP front door
+needs it).
 
 **After T4.1–T4.4:** any Solid-OIDC identity provider works and DPoP-bound tokens are
 accepted — this is what makes "point another firm's tools at the same pod" true.
@@ -337,6 +373,12 @@ authoring — decide in #91).
 
 ### 6.1 Identity (#88, #89)
 
+Built in T4.0 (#88); the shapes below are the first cut and the code is authoritative where
+they differ (`ChainedPrincipalResolver.Member` is how another module joins the chain;
+`JwksClient` is `keys()`/`refresh()`; `ServicePrincipalRegistry` and `ServiceCredentialResolver`
+live in cistern-webflux; `HashedCredential` is `sha256:<hex>`; `JwtVerifier` returns a sealed
+`JwtVerdict` with a typed `JwtRejectionReason`).
+
 ```java
 // exists — cistern-core
 public record Agent(Optional<URI> webId) { static Agent ANONYMOUS; static Agent of(URI); boolean isAuthenticated(); }
@@ -461,9 +503,14 @@ cistern receipts     <path> [--from … --to …]                            (#9
 | `cistern.owner.web-id` | `CISTERN_OWNER_WEBID` | unset | pod owner; **setting it turns enforcement on** and seeds `/.acl` |
 | `cistern.owner.token` | `CISTERN_OWNER_TOKEN` | unset | the owner's bearer secret (private network only) |
 | `cistern.cors.allowed-origins` / `.max-age` | — | `*` / — | CORS (T2.8) |
+| `cistern.auth.service-principals[n].web-id` / `.credential-hash` | `CISTERN_AUTH_SERVICEPRINCIPALS_n_WEBID` / `_CREDENTIALHASH` | unset | an application as its own principal; hash is `sha256:<hex>` (T4.0) |
+| `cistern.auth.oidc.issuer` | `CISTERN_AUTH_OIDC_ISSUER` | unset | trusted OIDC issuer, compared verbatim to `iss`; **setting it enables the JWT resolver** (T4.0) |
+| `cistern.auth.oidc.audiences` | `CISTERN_AUTH_OIDC_AUDIENCES` | — (required with issuer) | `aud` must contain one of these |
+| `cistern.auth.oidc.webid-claim` / `.webid-template` | … | `webid` / — | how a token names a WebID; one or the other |
+| `cistern.auth.oidc.clock-skew` | … | `60s` | tolerance on `exp`/`nbf` |
+| `cistern.auth.oidc.jwks-uri` | … | discovered | where the keys are, if not via `.well-known/openid-configuration` |
 
-Planned: `cistern.auth.*` (#88), `cistern.pods.seed[]` (#90), `cistern.audit.*` (#93),
-`cistern.storage.backend` (#95).
+Planned: `cistern.pods.seed[]` (#90), `cistern.audit.*` (#93), `cistern.storage.backend` (#95).
 
 ---
 

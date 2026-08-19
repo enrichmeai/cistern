@@ -189,7 +189,7 @@ regression.
 
 ## Phase 4 — Authentication (cistern-auth)
 
-- [ ] **T4.0 Resolver seam — pluggable `PrincipalResolver` chain, OIDC/JWT resolver, service
+- [x] **T4.0 Resolver seam — pluggable `PrincipalResolver` chain, OIDC/JWT resolver, service
   principals.** Phase 4-lite for a first application (ValueDocs legal/tax), per
   `docs/ideas/first-user-path.md`: `ChainedPrincipalResolver` (first authenticated wins) keeping
   `LocalCredentialResolver`/`AnonymousResolver`; `OidcJwtPrincipalResolver` in `cistern-auth`
