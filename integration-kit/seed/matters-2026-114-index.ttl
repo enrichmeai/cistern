@@ -1,0 +1,13 @@
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix vd:      <https://valuedocs.example/ns#> .
+
+# /matters/2026-114/index — the matter's machine-readable metadata (docs/INTEGRATION.md step 2:
+# metadata lives in a small RDF document, not in file names). Non-RDF documents sit beside it.
+<#matter> a vd:Matter ;
+    dcterms:identifier "2026-114" ;
+    dcterms:title      "Dispute 2026-114 — supply contract, Acme Law for Bob" ;
+    dcterms:created    "2026-08-01"^^xsd:date ;
+    vd:client          <https://acme-law.example/people/bob#me> ;
+    vd:leadLawyer      <https://acme-law.example/people/alice#me> ;
+    vd:document        <contract.pdf> .

@@ -1,0 +1,17 @@
+# /tax/FY2025-26/.acl — AFTER #88 (KIT_MODE=after-88): the tax app, the other way round.
+#
+# valuedocs-tax (webid=https://valuedocs.example/apps/tax#id) may Read this container; the
+# legal app is authenticated but unnamed here, so it gets 403. Two containers, two grants,
+# separation by default — docs/INTEGRATION.md step 2.
+# <OWNER-WEBID> is resolved from cistern.env when the file is applied.
+@prefix acl:  <http://www.w3.org/ns/auth/acl#> .
+
+<#owner> a acl:Authorization ;
+    acl:agent    <OWNER-WEBID> ;
+    acl:accessTo </tax/FY2025-26/> ; acl:default </tax/FY2025-26/> ;
+    acl:mode     acl:Read, acl:Write, acl:Append, acl:Control .
+
+<#tax-app> a acl:Authorization ;
+    acl:agent    <https://valuedocs.example/apps/tax#id> ;
+    acl:accessTo </tax/FY2025-26/> ; acl:default </tax/FY2025-26/> ;
+    acl:mode     acl:Read .

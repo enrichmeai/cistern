@@ -1,0 +1,20 @@
+# /matters/2026-114/.acl — TODAY's grant (KIT_MODE=today, the default).
+#
+# The server cannot yet name an application as a principal (that is #88), so "the legal app"
+# is whoever holds no credential: acl:agentClass foaf:Agent, Read only, on this container
+# only. Everything docs/INTEGRATION.md §9 warns about is honoured here:
+#   1. acl:default names the container, or nothing inside it is reachable;
+#   2. a resource-level .acl REPLACES inheritance, so the owner is re-stated or locked out.
+# <OWNER-WEBID> is resolved from cistern.env when the file is applied.
+@prefix acl:  <http://www.w3.org/ns/auth/acl#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+
+<#owner> a acl:Authorization ;
+    acl:agent    <OWNER-WEBID> ;
+    acl:accessTo </matters/2026-114/> ; acl:default </matters/2026-114/> ;
+    acl:mode     acl:Read, acl:Write, acl:Append, acl:Control .
+
+<#legal-app> a acl:Authorization ;
+    acl:agentClass foaf:Agent ;
+    acl:accessTo </matters/2026-114/> ; acl:default </matters/2026-114/> ;
+    acl:mode     acl:Read .
