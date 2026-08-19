@@ -22,7 +22,7 @@ class CisternPropertiesAuthTest {
     @Test
     @DisplayName("nothing configured: no issuer, no service principals, and no error")
     void unconfiguredDefaults() {
-        CisternProperties properties = new CisternProperties(null, null, null, null, null, null);
+        CisternProperties properties = new CisternProperties(null, null, null, null, null, null, null);
         assertFalse(properties.auth().oidc().isConfigured());
         assertTrue(properties.auth().servicePrincipals().isEmpty());
     }

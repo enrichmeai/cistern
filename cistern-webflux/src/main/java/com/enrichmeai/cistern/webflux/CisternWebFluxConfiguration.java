@@ -4,6 +4,11 @@ import com.enrichmeai.cistern.core.ResourceStore;
 import com.enrichmeai.cistern.core.ldp.LdpService;
 import com.enrichmeai.cistern.wac.AccessControl;
 import com.enrichmeai.cistern.wac.AclDiscovery;
+import com.enrichmeai.cistern.wac.DecisionLog;
+import com.enrichmeai.cistern.wac.DecisionQuery;
+import com.enrichmeai.cistern.wac.DecisionSink;
+import com.enrichmeai.cistern.wac.JsonLinesDecisionQuery;
+import com.enrichmeai.cistern.wac.JsonLinesDecisionSink;
 import com.enrichmeai.cistern.wac.PodProvisioner;
 import com.enrichmeai.cistern.wac.WacEngine;
 import com.enrichmeai.cistern.webflux.auth.AnonymousResolver;
@@ -14,6 +19,8 @@ import com.enrichmeai.cistern.webflux.auth.PrincipalResolver;
 import com.enrichmeai.cistern.webflux.auth.ServiceCredentialResolver;
 import com.enrichmeai.cistern.webflux.auth.ServicePrincipalRegistry;
 import com.enrichmeai.cistern.storage.file.FileResourceStore;
+import java.nio.file.Path;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -255,8 +262,90 @@ public class CisternWebFluxConfiguration {
     @Bean
     @ConditionalOnProperty(prefix = "cistern.owner", name = "web-id")
     public AuthorizationFilter cisternAuthorizationFilter(
-            PrincipalResolver principals, AccessControl accessControl, RequestPaths paths) {
-        return new AuthorizationFilter(principals, accessControl, paths);
+            PrincipalResolver principals, AccessControl accessControl, RequestPaths paths,
+            DecisionSink decisionSink, CisternProperties properties) {
+        return new AuthorizationFilter(
+                principals, accessControl, paths, decisionSink, properties.audit(), Clock.systemUTC());
+    }
+
+    // ---- Receipts (T5.9) -------------------------------------------------------------
+
+    /**
+     * Where the decision log lives: a {@link ResourceStore} of its own, rooted at
+     * {@code cistern.audit.root} (default {@code <storage root>/.cistern}), addressed in the
+     * log's own URI space rather than the pod's.
+     *
+     * <p>A second store instance rather than a subtree of the pod's, deliberately. The log
+     * must not be pod content — not listed by a container, not readable with Read, not
+     * deletable with Write, not addressable by an HTTP path — and the cleanest way to have none
+     * of those is for the pod's store never to know it exists. The file backend already skips
+     * dot-prefixed directories in a listing and encodes a client's leading dot as {@code %2E},
+     * so a sibling directory named {@code .cistern} is structurally unreachable from the pod's
+     * URI space; nothing in the storage layer had to learn what an audit log is. The same
+     * backend, the same volume, the same backup — a different store.
+     *
+     * <p>{@code @ConditionalOnMissingBean} so an embedder (or a test) can point the log at any
+     * {@link ResourceStore}: the sink and the query below only ever see a {@link DecisionLog}.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public DecisionLog decisionLog(CisternProperties properties) {
+        Path root = properties.audit().rootOrDefault(properties.storage());
+        return DecisionLog.in(new FileResourceStore(root));
+    }
+
+    /**
+     * Where every decision goes (T5.9): the JSON Lines log. Replaceable as a whole — an
+     * embedder that ships receipts elsewhere declares its own {@link DecisionSink} — but there
+     * is always exactly one, because {@link AuthorizationFilter} records through it
+     * unconditionally.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public DecisionSink decisionSink(DecisionLog decisionLog, CisternProperties properties) {
+        JsonLinesDecisionSink sink = new JsonLinesDecisionSink(decisionLog);
+        log.info(WebfluxMessage.AUDIT_WIRED.format(
+                sink.getClass().getSimpleName(), decisionLog.root().uri(), properties.audit().required()));
+        return sink;
+    }
+
+    /** Reading the same log back, for the receipts query. */
+    @Bean
+    @ConditionalOnMissingBean
+    public DecisionQuery decisionQuery(DecisionLog decisionLog) {
+        return new JsonLinesDecisionQuery(decisionLog);
+    }
+
+    /**
+     * The receipts query, {@code GET <resource>?receipts} (T5.9).
+     *
+     * <p>Registered under the same condition as the filter, so the query surface exists only
+     * when enforcement does: without an owner there are no decisions to record and nothing to
+     * protect the log with, and a route that answered anyway would be a receipts endpoint with
+     * no receipts and no guard. With the filter present, the request is a plain {@code GET}
+     * through the same {@code /**} space as every other — the filter sees {@code ?receipts},
+     * requires Control, records the decision, and only then does routing reach this handler.
+     * No route bypasses the filter, this one included.
+     *
+     * <p>Ordered just after the storage-description route and ahead of the catch-all read
+     * route, so that a {@code GET} carrying {@code ?receipts} is answered here rather than as a
+     * read of the resource. The query string is not part of a resource's identity
+     * ({@link RequestPaths}), which is exactly why routing has to look at it: nothing else
+     * will.
+     */
+    @Bean
+    @Order(Ordered.HIGHEST_PRECEDENCE + 1)
+    @ConditionalOnProperty(prefix = "cistern.owner", name = "web-id")
+    public RouterFunction<ServerResponse> cisternReceiptsRoutes(DecisionQuery decisionQuery, RequestPaths paths) {
+        ReceiptsHandler handler = new ReceiptsHandler(decisionQuery, paths);
+        RequestPredicate receipts = RequestPredicates.queryParam(
+                ReceiptsParameter.RECEIPTS.parameterName(), value -> true);
+        return RouterFunctions.route(
+                RequestPredicates.method(HttpMethod.GET)
+                        .or(RequestPredicates.method(HttpMethod.HEAD))
+                        .and(RequestPredicates.path(ALL_PATHS))
+                        .and(receipts),
+                handler::receipts);
     }
 
     @Bean

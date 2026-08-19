@@ -227,6 +227,8 @@ public enum WebfluxMessage {
     TITLE_PRECONDITION_FAILED("Precondition failed"),
     TITLE_AUTHENTICATION_REQUIRED("Authentication required"),
     TITLE_ACCESS_DENIED("Access denied"),
+    /** RFC 9110 §15.6.4; raised for an unrecordable decision under {@code cistern.audit.required}. */
+    TITLE_SERVICE_UNAVAILABLE("Service unavailable"),
 
     // ---------------------------------------------------------------- problem details
 
@@ -270,7 +272,43 @@ public enum WebfluxMessage {
      */
     POD_ALREADY_PROVISIONED(
             "Pod <%s> already has an ACL; left as it is (a restart is not a request to reset"
-                    + " permissions)");
+                    + " permissions)"),
+
+    // ---------------------------------------------------------------- receipts (T5.9)
+
+    /**
+     * The decision log refused a record and {@code cistern.audit.required} is set: the request
+     * fails closed. The problem detail; the cause is in the log under
+     * {@link #AUDIT_RECORD_FAILED}.
+     */
+    AUDIT_UNAVAILABLE(
+            "The decision could not be recorded and cistern.audit.required is set; the request"
+                    + " was not acted on. Retry later."),
+
+    /**
+     * The decision log refused a record. Logged at WARN whether or not the request went on;
+     * the outcome is stated so an operator reading the log knows which it was.
+     */
+    AUDIT_RECORD_FAILED("Decision log rejected the receipt for request %s (%s %s -> %s); %s"),
+
+    /** Suffix for {@link #AUDIT_RECORD_FAILED} when the request proceeded regardless. */
+    AUDIT_OUTCOME_UNCHANGED("the outcome stands (cistern.audit.required=false)"),
+
+    /** Suffix for {@link #AUDIT_RECORD_FAILED} when the request was failed closed. */
+    AUDIT_FAILED_CLOSED("the request was refused (cistern.audit.required=true)"),
+
+    /** Startup: which sink and which log root receipts go to. */
+    AUDIT_WIRED("Decision log: %s at <%s>; cistern.audit.required=%s"),
+
+    /** {@code ?receipts&from=}/{@code &to=} that is not an ISO 8601 instant. */
+    RECEIPTS_INSTANT_MALFORMED(
+            "Receipts parameter '%s' must be an ISO 8601 instant such as 2026-08-19T00:00:00Z: %s"),
+
+    /** {@code ?receipts&from=}/{@code &to=} that do not describe an interval. */
+    RECEIPTS_INTERVAL_EMPTY("Receipts interval is empty: from %s is not before to %s"),
+
+    /** {@code ?receipts&agent=} that is not an absolute WebID. */
+    RECEIPTS_AGENT_MALFORMED("Receipts parameter 'agent' must be an absolute WebID URI: %s");
 
     private final String template;
 

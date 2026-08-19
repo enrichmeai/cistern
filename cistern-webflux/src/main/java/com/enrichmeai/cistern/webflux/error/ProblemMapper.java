@@ -152,6 +152,7 @@ final class ProblemMapper {
             case CisternException.NotAcceptable ignored -> ProblemType.NOT_ACCEPTABLE;
             case CisternException.NotFound ignored -> ProblemType.NOT_FOUND;
             case CisternException.PreconditionFailed ignored -> ProblemType.PRECONDITION_FAILED;
+            case CisternException.ServiceUnavailable ignored -> ProblemType.SERVICE_UNAVAILABLE;
             case CisternException.UnprocessableEntity ignored -> ProblemType.UNPROCESSABLE_ENTITY;
             case CisternException.UnsupportedMediaType ignored -> ProblemType.UNSUPPORTED_MEDIA_TYPE;
         };

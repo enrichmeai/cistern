@@ -73,6 +73,14 @@ final class HttpConstants {
     static final String DPOP = "DPoP";
 
     /**
+     * The correlation identifier of a request (T5.9). Not an IETF-registered field, but the
+     * de-facto name every proxy, load balancer and tracing library agrees on. Read from the
+     * request when a client sends one, and echoed on every response so a client that did not
+     * can still match a refusal it saw to the receipt the owner can query.
+     */
+    static final String X_REQUEST_ID = "X-Request-Id";
+
+    /**
      * One {@code Link} field value (RFC 8288 §3): {@code <target>; rel="relation"}. The target
      * always comes from a vocabulary constant class or a resolved resource URI, never from a
      * literal, and the relation from {@link LinkRelation} — the same constants the request-side

@@ -83,7 +83,20 @@ enum ExposedResponseHeader {
     CONTENT_TYPE(HttpHeaders.CONTENT_TYPE),
 
     /** Body length, set explicitly so a {@code HEAD} reports it. Already Fetch-safelisted. */
-    CONTENT_LENGTH(HttpHeaders.CONTENT_LENGTH);
+    CONTENT_LENGTH(HttpHeaders.CONTENT_LENGTH),
+
+    /**
+     * The request's correlation identifier, echoed on every response (T5.9). A browser app that
+     * cannot read it cannot tell its user which receipt to ask the pod owner about.
+     */
+    X_REQUEST_ID(HttpConstants.X_REQUEST_ID),
+
+    /**
+     * {@code Cache-Control: no-store} on a receipts response (T5.9): audit data is sensitive and
+     * changes on every request. Already Fetch-safelisted; listed for the same reason
+     * {@link #CONTENT_TYPE} is.
+     */
+    CACHE_CONTROL(HttpHeaders.CACHE_CONTROL);
 
     private static final List<String> FIELD_NAMES =
             Arrays.stream(values()).map(ExposedResponseHeader::fieldName).toList();

@@ -69,7 +69,16 @@ public enum ProblemType {
             WebfluxMessage.TITLE_AUTHENTICATION_REQUIRED),
 
     /** An authenticated agent lacks the mode; re-authenticating would not help. */
-    ACCESS_DENIED("access-denied", HttpStatus.FORBIDDEN, WebfluxMessage.TITLE_ACCESS_DENIED);
+    ACCESS_DENIED("access-denied", HttpStatus.FORBIDDEN, WebfluxMessage.TITLE_ACCESS_DENIED),
+
+    /**
+     * RFC 9110 §15.6.4 — the server cannot handle the request right now; the same request may
+     * succeed later. Raised when {@code cistern.audit.required} is set and the decision log
+     * could not record the decision (T5.9): a decision that cannot be recorded is not acted on,
+     * and the client is told to retry rather than told it is forbidden.
+     */
+    SERVICE_UNAVAILABLE("service-unavailable", HttpStatus.SERVICE_UNAVAILABLE,
+            WebfluxMessage.TITLE_SERVICE_UNAVAILABLE);
 
     /** Base for every Cistern problem type URI. */
     private static final String TYPE_BASE = "https://enrichmeai.com/cistern/problems/";
