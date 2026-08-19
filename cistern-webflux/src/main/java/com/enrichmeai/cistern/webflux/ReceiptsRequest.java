@@ -3,6 +3,7 @@ package com.enrichmeai.cistern.webflux;
 import com.enrichmeai.cistern.core.CisternException;
 
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.Objects;
@@ -75,7 +76,7 @@ record ReceiptsRequest(Instant from, Instant to, Optional<URI> agent) {
                 throw new CisternException.BadInput(WebfluxMessage.RECEIPTS_AGENT_MALFORMED.format(text));
             }
             return uri;
-        } catch (java.net.URISyntaxException e) {
+        } catch (URISyntaxException e) {
             throw new CisternException.BadInput(WebfluxMessage.RECEIPTS_AGENT_MALFORMED.format(text));
         }
     }

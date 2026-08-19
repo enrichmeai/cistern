@@ -20,6 +20,7 @@ import java.util.Objects;
  *   <tr><td>{@code POST}</td><td>Append on the target container</td></tr>
  *   <tr><td>{@code PATCH}</td><td>Append on the target</td></tr>
  *   <tr><td>{@code DELETE}</td><td>Write on the target <strong>and</strong> Write on its parent</td></tr>
+ *   <tr><td>{@code GET}/{@code HEAD} {@code ?receipts}</td><td>Control on the target — see {@link #forReceipts} (T5.9)</td></tr>
  * </table>
  *
  * <p><strong>DELETE requiring the parent is the row that is easy to miss</strong>, and the

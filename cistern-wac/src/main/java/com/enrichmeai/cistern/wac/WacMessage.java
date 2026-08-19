@@ -136,7 +136,22 @@ public enum WacMessage {
 
     /** A day file line that is not a record. Logged and skipped by the query, never thrown. */
     DECISION_LINE_UNREADABLE(
-            "Decision log <%s>: skipping unreadable line %d, which is not a decision record");
+            "Decision log <%s>: skipping unreadable line %d, which is not a decision record"),
+
+    /** {@code AuditPolicy.BEST_EFFORT}: the receipt was lost, the decision stood. Logged at WARN. */
+    DECISION_NOT_RECORDED_OUTCOME_STANDS(
+            "Receipt for request %s not recorded; the %s decision on <%s> stands"
+                    + " (cistern.audit.required=false)"),
+
+    /** {@code AuditPolicy.REQUIRED}: the receipt was lost, so the request was refused. Logged at WARN. */
+    DECISION_NOT_RECORDED_FAILED_CLOSED(
+            "Receipt for request %s not recorded; the %s decision on <%s> was not acted on and the"
+                    + " request was refused (cistern.audit.required=true)"),
+
+    /** {@code AuditPolicy.REQUIRED}: what the client is told, as the 503 problem detail. */
+    DECISION_NOT_RECORDED(
+            "The decision for request %s could not be recorded and cistern.audit.required is set;"
+                    + " the request was not acted on. Retry later.");
 
     private final String template;
 

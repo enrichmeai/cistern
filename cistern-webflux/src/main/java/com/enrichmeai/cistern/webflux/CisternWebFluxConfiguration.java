@@ -4,6 +4,7 @@ import com.enrichmeai.cistern.core.ResourceStore;
 import com.enrichmeai.cistern.core.ldp.LdpService;
 import com.enrichmeai.cistern.wac.AccessControl;
 import com.enrichmeai.cistern.wac.AclDiscovery;
+import com.enrichmeai.cistern.wac.AuditPolicy;
 import com.enrichmeai.cistern.wac.DecisionLog;
 import com.enrichmeai.cistern.wac.DecisionQuery;
 import com.enrichmeai.cistern.wac.DecisionSink;
@@ -264,8 +265,10 @@ public class CisternWebFluxConfiguration {
     public AuthorizationFilter cisternAuthorizationFilter(
             PrincipalResolver principals, AccessControl accessControl, RequestPaths paths,
             DecisionSink decisionSink, CisternProperties properties) {
-        return new AuthorizationFilter(
-                principals, accessControl, paths, decisionSink, properties.audit(), Clock.systemUTC());
+        // The audit policy is applied here, around whatever DecisionSink the context holds, so
+        // that replacing the sink (an embedder, a test) does not silently replace the policy.
+        DecisionSink guarded = AuditPolicy.of(properties.audit().required()).guard(decisionSink);
+        return new AuthorizationFilter(principals, accessControl, paths, guarded, Clock.systemUTC());
     }
 
     // ---- Receipts (T5.9) -------------------------------------------------------------
@@ -305,7 +308,8 @@ public class CisternWebFluxConfiguration {
     public DecisionSink decisionSink(DecisionLog decisionLog, CisternProperties properties) {
         JsonLinesDecisionSink sink = new JsonLinesDecisionSink(decisionLog);
         log.info(WebfluxMessage.AUDIT_WIRED.format(
-                sink.getClass().getSimpleName(), decisionLog.root().uri(), properties.audit().required()));
+                sink.getClass().getSimpleName(), decisionLog.root().uri(),
+                AuditPolicy.of(properties.audit().required())));
         return sink;
     }
 

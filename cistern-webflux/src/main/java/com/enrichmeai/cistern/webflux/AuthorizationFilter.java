@@ -1,7 +1,6 @@
 package com.enrichmeai.cistern.webflux;
 
 import com.enrichmeai.cistern.core.Agent;
-import com.enrichmeai.cistern.core.CisternException;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.wac.AccessControl;
 import com.enrichmeai.cistern.wac.AccessDecision;
@@ -17,8 +16,6 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -60,11 +57,12 @@ import reactor.core.publisher.Mono;
  * without a race. The cost is one asynchronous append on the store's scheduler; the event
  * loop is never blocked.
  *
- * <p>A sink failure does not change the outcome — the decision stands, the failure is logged
- * — unless {@code cistern.audit.required} is set, in which case the request fails closed with
- * {@link CisternException.ServiceUnavailable} (503, retry later) through the one error mapper.
- * Neither branch touches the authorization result: {@link AccessControl} remains the only
- * decision point, and nothing here caches what it said.
+ * <p>What a sink failure means is not decided here: the sink this filter is given already
+ * carries the deployment's {@code AuditPolicy} ({@code cistern.audit.required}) — best-effort,
+ * where the decision stands and the failure is logged, or required, where the request fails
+ * closed with {@code CisternException.ServiceUnavailable} (503, retry later) through the one
+ * error mapper. Neither touches the authorization result: {@link AccessControl} remains the
+ * only decision point, and nothing here caches what it said.
  *
  * <p>The request's correlation identifier ({@code X-Request-Id}) is honoured when the client
  * sent a well-formed one and minted otherwise, echoed on every response this filter sees, and
@@ -76,8 +74,6 @@ import reactor.core.publisher.Mono;
  * is reachable only through this filter.
  */
 public final class AuthorizationFilter implements WebFilter, Ordered {
-
-    private static final Logger log = LoggerFactory.getLogger(AuthorizationFilter.class);
 
     /**
      * Runs before the handlers but after CORS. The precise value matters less than being
@@ -98,21 +94,22 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
     private final AccessControl accessControl;
     private final RequestPaths paths;
     private final DecisionSink sink;
-    private final CisternProperties.Audit audit;
     private final Clock clock;
 
+    /**
+     * @param sink where receipts go — already wrapped in the deployment's {@code AuditPolicy},
+     *             so that what a failure to record means was decided at wiring, not here
+     */
     public AuthorizationFilter(
             PrincipalResolver principals,
             AccessControl accessControl,
             RequestPaths paths,
             DecisionSink sink,
-            CisternProperties.Audit audit,
             Clock clock) {
         this.principals = Objects.requireNonNull(principals, "principals");
         this.accessControl = Objects.requireNonNull(accessControl, "accessControl");
         this.paths = Objects.requireNonNull(paths, "paths");
         this.sink = Objects.requireNonNull(sink, "sink");
-        this.audit = Objects.requireNonNull(audit, "audit");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -142,7 +139,7 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
 
         return principals.resolve(exchange)
                 .flatMap(agent -> accessControl.authorize(requirements, agent)
-                        .flatMap(verdict -> record(verdict, agent, requestId, request)
+                        .flatMap(verdict -> sink.record(DecisionRecord.of(clock.instant(), agent, verdict, requestId))
                                 .then(Mono.defer(() -> verdict.allowed()
                                         ? proceed(exchange, chain, agent, target, verdict)
                                         : refuse(exchange, agent)))));
@@ -158,26 +155,6 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
             return RequiredAccess.forReceipts(target);
         }
         return RequiredAccess.forRequest(request.getMethod().name(), target);
-    }
-
-    /**
-     * Leave the receipt. Completes when it is durable; on a sink failure, completes anyway
-     * (outcome unchanged) or fails closed, per {@code cistern.audit.required}. Either way the
-     * failure is logged with the request id and the outcome that was, or was not, acted on.
-     */
-    private Mono<Void> record(AccessVerdict verdict, Agent agent, RequestId requestId, ServerHttpRequest request) {
-        DecisionRecord record = DecisionRecord.of(clock.instant(), agent, verdict, requestId);
-        Mono<Void> recorded = sink.record(record)
-                .doOnError(failure -> log.warn(WebfluxMessage.AUDIT_RECORD_FAILED.format(
-                        requestId, request.getMethod(), request.getPath().value(), record.outcome(),
-                        audit.required()
-                                ? WebfluxMessage.AUDIT_FAILED_CLOSED.format()
-                                : WebfluxMessage.AUDIT_OUTCOME_UNCHANGED.format()), failure));
-        return audit.required()
-                // A domain signal, not a status: the one error mapper renders it as 503.
-                ? recorded.onErrorMap(failure -> new CisternException.ServiceUnavailable(
-                        WebfluxMessage.AUDIT_UNAVAILABLE.format()))
-                : recorded.onErrorComplete();
     }
 
     /** Publish the agent for downstream readers, advertise WAC-Allow, then continue. */

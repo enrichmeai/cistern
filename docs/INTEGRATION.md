@@ -391,10 +391,12 @@ returns decisions and never bytes. The append is read-modify-write of the day fi
 no append), serialized in-process so overlapping requests cannot drop each other's lines; the
 response waits for it — one asynchronous store write, never a blocked event loop.
 
-**If the log cannot be written.** By default the decision stands and the failure is logged
-(`AUDIT_RECORD_FAILED` at WARN, with the request id). Set `cistern.audit.required=true` and a
-decision that cannot be recorded is not acted on: the request fails closed with **503** through
-the one error mapper (`type: …/problems/service-unavailable`) — retry later, unlike a 403.
+**If the log cannot be written.** `AuditPolicy` (cistern-wac) is the closed set of two answers,
+applied around the sink at wiring. `BEST_EFFORT`, the default: the decision stands and the
+failure is logged at WARN with the request id (`DECISION_NOT_RECORDED_OUTCOME_STANDS`).
+`REQUIRED` (`cistern.audit.required=true`): a decision that cannot be recorded is not acted on
+— the request fails closed with **503** through the one error mapper
+(`type: …/problems/service-unavailable`) — retry later, unlike a 403.
 
 Design your application so that "which app read which document, under which permission, when"
 is a report you would be happy to hand the client — because it is one, and the owner can run it.
@@ -622,7 +624,8 @@ public final class DecisionRecordJson { static String toLine(DecisionRecord); st
 public static final class CisternException.ServiceUnavailable   // → 503, ProblemType.SERVICE_UNAVAILABLE
 
 // cistern-webflux
-AuthorizationFilter(PrincipalResolver, AccessControl, RequestPaths, DecisionSink, CisternProperties.Audit, Clock)
+public enum AuditPolicy { BEST_EFFORT, REQUIRED; static AuditPolicy of(boolean required); DecisionSink guard(DecisionSink delegate); }   // cistern-wac
+AuthorizationFilter(PrincipalResolver, AccessControl, RequestPaths, DecisionSink guardedByPolicy, Clock)   // cistern-webflux
 public final class ReceiptsHandler { Mono<ServerResponse> receipts(ServerRequest); }   // GET ?receipts, application/x-ndjson, Cache-Control: no-store
 record ReceiptsRequest(Instant from, Instant to, Optional<URI> agent) { static boolean isRequested(MultiValueMap<String,String>); static ReceiptsRequest parse(…); }
 enum ReceiptsParameter { RECEIPTS("receipts"), FROM("from"), TO("to"), AGENT("agent") }
