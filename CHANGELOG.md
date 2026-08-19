@@ -12,6 +12,21 @@ before anything is built, deliberately.
 
 ## [Unreleased]
 
+### Added
+
+- **Decision log and receipts (T5.9, #93).** Every authorization decision — allow and deny,
+  every method — leaves one `DecisionRecord` naming the agent, the target, the mode required,
+  the outcome and, when allowed, the ACL that granted it; the record is written before the
+  response is sent. `AccessDecision` now carries `decidedBy` and the matched authorization
+  IRIs. JSON Lines, one file per UTC day under `<storage root>/.cistern/decisions/`, written
+  through the storage SPI but outside the pod's URI space (never listed, no HTTP path reaches
+  it). `GET <resource>?receipts[&from&to]` returns them as `application/x-ndjson` to a holder
+  of Control on the resource; `GET /?receipts&agent=<webid>` is the owner's per-agent query.
+  `X-Request-Id` is honoured or minted and echoed on every response. `cistern.audit.required`
+  (default `false`) makes an unrecordable decision fail closed with 503 (new
+  `CisternException.ServiceUnavailable`); by default the outcome stands and the failure is
+  logged. `k8s/demo.sh` gains a sixth beat: the receipt.
+
 ## [0.1.0] - 2026-08-19
 
 First tagged release: everything built between the scaffold (2026-07-17) and the Java 25
