@@ -1,0 +1,44 @@
+{
+  "header": {
+    "alg": "RS256",
+    "typ": "JWT",
+    "kid": "qjb2vhgCWilsGooMs5XpvMU4TxlQhUoCZyNEk1KsluE"
+  },
+  "claims": {
+    "exp": 1787098880,
+    "iat": 1787098580,
+    "jti": "trrtcc:9232ed3e-b5bf-e433-b06a-6f7824dcbd31",
+    "iss": "http://keycloak:8080/realms/cistern",
+    "aud": [
+      "cistern",
+      "account"
+    ],
+    "sub": "bd3ff034-26f7-42f4-9b27-45627aae3e9d",
+    "typ": "Bearer",
+    "azp": "valuedocs-tax",
+    "acr": "1",
+    "realm_access": {
+      "roles": [
+        "default-roles-cistern",
+        "offline_access",
+        "uma_authorization"
+      ]
+    },
+    "resource_access": {
+      "account": {
+        "roles": [
+          "manage-account",
+          "manage-account-links",
+          "view-profile"
+        ]
+      }
+    },
+    "scope": "cistern profile email",
+    "webid": "https://valuedocs.example/apps/tax#id",
+    "clientHost": "192.168.0.1",
+    "email_verified": false,
+    "preferred_username": "service-account-valuedocs-tax",
+    "clientAddress": "192.168.0.1",
+    "client_id": "valuedocs-tax"
+  }
+}

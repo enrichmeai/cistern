@@ -1,0 +1,44 @@
+{
+  "header": {
+    "alg": "RS256",
+    "typ": "JWT",
+    "kid": "qjb2vhgCWilsGooMs5XpvMU4TxlQhUoCZyNEk1KsluE"
+  },
+  "claims": {
+    "exp": 1787098581,
+    "iat": 1787098580,
+    "jti": "trrtcc:ec42d9f4-e420-341c-15d1-808c8c417357",
+    "iss": "http://keycloak:8080/realms/cistern",
+    "aud": [
+      "cistern",
+      "account"
+    ],
+    "sub": "f717e7b5-f2f0-49e2-bd94-59209b0d2957",
+    "typ": "Bearer",
+    "azp": "fixture-short-lived",
+    "acr": "1",
+    "realm_access": {
+      "roles": [
+        "default-roles-cistern",
+        "offline_access",
+        "uma_authorization"
+      ]
+    },
+    "resource_access": {
+      "account": {
+        "roles": [
+          "manage-account",
+          "manage-account-links",
+          "view-profile"
+        ]
+      }
+    },
+    "scope": "cistern profile email",
+    "webid": "https://valuedocs.example/apps/fixture#id",
+    "clientHost": "192.168.0.1",
+    "email_verified": false,
+    "preferred_username": "service-account-fixture-short-lived",
+    "clientAddress": "192.168.0.1",
+    "client_id": "fixture-short-lived"
+  }
+}
