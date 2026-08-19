@@ -1,0 +1,88 @@
+# Cistern integration kit — Cistern + a real OIDC issuer (Keycloak), one command:
+#
+#   cd integration-kit && docker compose up -d --build && ./seed.sh && ./sample-app/run.sh
+#
+# Loopback only (ADR 0001): both host ports bind to 127.0.0.1. Change that to 0.0.0.0 and
+# the pod (owner token in cistern.env) and the realm (admin/admin) are on your network.
+#
+#   CISTERN_HOST_PORT=3801 KEYCLOAK_HOST_PORT=8180 docker compose up -d     # when 3737/8080 are taken
+#
+# Reset everything (pod contents, realm state, tokens):  docker compose down -v
+
+name: cistern-kit
+
+services:
+
+  cistern:
+    build:
+      context: ..                       # the repo's own Dockerfile; nothing kit-specific in the image
+    image: cistern:kit
+    ports:
+      - "127.0.0.1:${CISTERN_HOST_PORT:-3737}:3000"
+    env_file:
+      - cistern.env                     # CISTERN_OWNER_WEBID + CISTERN_OWNER_TOKEN: turns enforcement on
+    environment:
+      CISTERN_STORAGE_ROOT: /data
+      # One knob for port and base URL: cistern.base-url mints every identifier the pod hands
+      # out, so it must be the origin clients actually call — and that is 127.0.0.1, spelled
+      # out, not `localhost`: on a Mac `localhost` resolves to ::1 first, the port binding
+      # above is IPv4 only, and any other process on *:3737 (a stray `java -jar cistern.jar`,
+      # say) answers instead — with a 401 that looks exactly like this server misbehaving.
+      # Changing the port after first boot needs `docker compose down -v`: the identifiers
+      # already stored carry the old origin.
+      CISTERN_BASE_URL: http://127.0.0.1:${CISTERN_HOST_PORT:-3737}
+      #
+      # ---- after #88 (T4.0: OIDC/JWT resolver) — the switch is these lines, nothing else ----
+      # Uncomment to have Cistern accept Keycloak-issued JWTs (humans and the two service
+      # principals) alongside the owner token. Keys are cistern.auth.* from
+      # docs/INTEGRATION.md §6.1 in Spring's environment form. The issuer is the string
+      # Keycloak puts in `iss` (KC_HOSTNAME below) and is resolvable from this container.
+      # Then:  KIT_MODE=after-88 ./seed.sh && KIT_MODE=after-88 ./sample-app/run.sh
+      #
+      # CISTERN_AUTH_OIDC_ISSUER: http://keycloak:8080/realms/cistern     # cistern.auth.oidc.issuer
+      # CISTERN_AUTH_OIDC_AUDIENCES: cistern                              # cistern.auth.oidc.audiences
+      # CISTERN_AUTH_OIDC_WEBID_CLAIM: webid                              # cistern.auth.oidc.webid-claim
+      #
+      # Cistern-local service credentials (cistern.auth.service-principals[n].*) are the
+      # alternative for machine clients when you would rather not run an issuer for them;
+      # this kit authenticates the apps through Keycloak, so they stay unset:
+      # CISTERN_AUTH_SERVICE_PRINCIPALS_0_WEB_ID: https://valuedocs.example/apps/legal#id
+      # CISTERN_AUTH_SERVICE_PRINCIPALS_0_CREDENTIAL_HASH: <hash>
+    volumes:
+      # Named volume so /data keeps the image's non-root ownership (a bind mount would not).
+      - cistern-data:/data
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    command: ["start-dev", "--import-realm"]
+    ports:
+      - "127.0.0.1:${KEYCLOAK_HOST_PORT:-8080}:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # A fixed frontend URL, so `iss` is the same string whoever asks: the sample app on the
+      # host, Cistern inside the compose network (where `keycloak` resolves), and the
+      # fixtures. Left dynamic, Keycloak would mint iss=http://127.0.0.1:8080/... for the host
+      # and Cistern could neither match nor fetch it. The admin console keeps a host-side URL.
+      KC_HOSTNAME: http://keycloak:8080
+      KC_HOSTNAME_ADMIN: http://127.0.0.1:${KEYCLOAK_HOST_PORT:-8080}
+    volumes:
+      # The realm export (alice, bob, valuedocs-legal, valuedocs-tax, audience `cistern`).
+      # Imported once, on first boot; an existing realm is left alone on later boots.
+      - ./keycloak/realm-cistern.json:/opt/keycloak/data/import/realm-cistern.json:ro
+      - keycloak-data:/opt/keycloak/data      # not data/h2: that dir is not in the image, so a volume there would be root-owned and unwritable
+    healthcheck:
+      # The image has no curl. Bash's /dev/tcp is enough to ask for the realm's discovery
+      # document — healthy means "up AND the realm is imported", which is what seed.sh needs.
+      test: ["CMD", "bash", "-c",
+             "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /realms/cistern/.well-known/openid-configuration HTTP/1.0\\r\\nHost: keycloak\\r\\n\\r\\n' >&3 && grep -q '\"issuer\"' <&3"]
+      interval: 5s
+      timeout: 5s
+      start_period: 60s
+      retries: 30
+    restart: unless-stopped
+
+volumes:
+  cistern-data:
+  keycloak-data:
