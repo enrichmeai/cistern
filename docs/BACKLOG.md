@@ -13,6 +13,8 @@ regression.
 **Milestone 1** = end of phase 2 (server survives CTH bring-up, some assertions green).
 **Milestone 2** = end of phase 3 (unauthenticated read/write conformant).
 **Milestone 3** = end of phase 6 (WAC + auth conformant, MCP demo works) → public announcement.
+**Milestone 4** = hosted alpha (Cistern Cloud): a billed URL any MCP client can connect to —
+Phase 6 + T6.4–T6.6, T7.7, T1.6; the commercial half lives in `enrichmeai/cistern-cloud`.
 
 ---
 
@@ -348,6 +350,18 @@ regression.
 
 ## Phase 6 — MCP front-end (cistern-mcp)
 
+*Owner direction 2026-08-19 (#40): the MCP front-end is the income path — "an income stream
+via Claude Code or similar" — so Phase 6 runs ahead of the remaining Phase 5 polish. Rulings
+taken with it: buyer v1 = individuals **and** teams/businesses with a free tier as the funnel;
+authorization server = hosted Keycloak from the T7.10 kit with dynamic client registration
+(Cistern stays a resource server); billing = Stripe via Good Shepherd Software Consultancy
+Ltd; working name "Cistern Cloud" pending trademark clearance. Verified the same day against
+the Claude docs: Anthropic pays connector providers nothing, the Connectors Directory is a
+free listing (OAuth 2.0, tool annotations, privacy policy, Team/Enterprise org to submit),
+Claude Code adds remote servers with `claude mcp add --transport http <url>` and
+authenticates via `/mcp`, plugins bundle a `.mcp.json` — so the only income shape is a
+hosted URL we bill; the Apache-2.0 jar stays free.*
+
 - [ ] **T6.1 MCP server.** Using the official MCP Java SDK (Spring integration): expose
   tools `read_resource(uri)`, `write_resource(uri, content, contentType)`,
   `list_container(uri)`, `delete_resource(uri)` and MCP resources for pod browsing.
@@ -370,6 +384,30 @@ regression.
   proves enforcement works while demonstrating the product is unusable by its intended
   user. Recommendation there is a single-purpose CLI (`cistern grant claude --read
   /notes/ --for 24h`), roughly a day against a file format that must exist anyway.*
+- [ ] **T6.4 OAuth resource-server metadata + Keycloak-as-AS with DCR.** Cistern serves OAuth 2.0
+  Protected Resource Metadata (RFC 9728) at `/.well-known/oauth-protected-resource` and carries
+  `resource_metadata` in `WWW-Authenticate` on 401 (MCP authorization spec); the T7.10 Keycloak
+  realm exposes AS metadata (RFC 8414), dynamic client registration (RFC 7591, safe anonymous-
+  registration policy recorded), PKCE, resource indicators (RFC 8707) so tokens carry Cistern's
+  audience and `cistern-auth` rejects the rest. No IdP code in Cistern. DoD: fixtures of the
+  real Claude Code and Claude desktop OAuth flows captured (ground rule 6); `claude mcp add
+  --transport http` + `/mcp` and a Claude desktop custom connector both complete OAuth against
+  the kit and list the tools (transcript in the PR); WebTestClient for the 401/wrong-audience/
+  valid cases; INTEGRATION.md "MCP clients" step. Issue #118.
+- [ ] **T6.5 (user, client) principal — the deferred half of #89.** `Agent(webId, client)` in
+  core, client from the token's `azp`/`client_id`; `WacEngine` matcher for a client-scoped
+  authorization and the intersection cap `effective = modes(user) ∩ modes(client)`; `cistern
+  grant` can target `(webId, client)`; T4.1 fixtures capture `azp`. DoD: allowed/denied matrix
+  over (user-only, client-only, both, neither) with the cap proven; ARCHITECTURE load-bearing
+  decision recorded and #89 closed; no CTH regression. Issue #119.
+- [ ] **T6.6 Distribution pack.** Claude Code plugin (`plugin.json` + `.mcp.json` with a
+  configure-later `url`, skills: save to pod / recall / grant-revoke an agent), tool annotations
+  on every MCP tool (`title`, `readOnlyHint`/`destructiveHint`), Connectors Directory submission
+  pack (privacy policy URL, docs, support contact, reviewer test account — submitted from the
+  owner's Team org), MCP registry `server.json`. Nothing in the pack claims "first" or "the only
+  open one" (#100). DoD: plugin installs on a clean machine and connects to a hosted URL with
+  the three skills working (transcript); pre-submission checklist passes with evidence. The
+  hosted URL, signup and billing are `enrichmeai/cistern-cloud`, not this ticket. Issue #120.
 
 ## Phase 7 — Packaging & announcement
 
