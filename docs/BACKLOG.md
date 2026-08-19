@@ -424,6 +424,26 @@ regression.
   claim verified or marked planned with its ticket; linked from README and ARCHITECTURE.
   Issue #96.
 
+- [ ] **T7.9 Client SDKs.** Thin Java (`cistern-client-java`, no Spring) and TypeScript
+  (`@enrichmeai/cistern-client`) clients over the observed HTTP contract
+  (`docs/INTEGRATION.md` §8): auth header, ETag preconditions, typed 401/403/412/409,
+  `WAC-Allow` parsing, container listing, non-RDF uploads; `grant`/`revoke` after T5.7,
+  `receipts` after T5.9. Contract tests against a real server in CI (ground rule 6). DoD:
+  both clients reproduce `k8s/demo.sh` end to end; ≤15-line README snippet; INTEGRATION.md
+  gains "with the client" variants. Issue #101.
+- [ ] **T7.10 Integration kit.** `integration-kit/`: docker compose booting Cistern +
+  Keycloak (real OIDC issuer, seeded humans + `app-legal`/`app-tax` service principals) + a
+  sample app that authenticates, lists a matter, reads a document, is refused on a sibling
+  folder and shows its `WAC-Allow`; seed script provisions pod + grants (T5.6/T5.7 when
+  merged, template until then); fixtures reused by T4.0 tests. DoD: `docker compose up` →
+  allow/refuse sequence within 2 minutes; loopback only. Issue #102.
+- [ ] **T7.11 Hosted offering — design note (ADR 0003).** Decide tenancy model, BYO-IdP vs
+  managed, the open-here / commercial-repo boundary, pricing *shape* (per vault / seat /
+  GB / receipt volume; the business is billed, never the end person in v1), SG + IN
+  residency, and whole-vault export as standard Solid data. Note + decision only; build
+  lands in the commercial repo. DoD: ADR merged; INTEGRATION.md step 8 and COMMERCIAL.md
+  link to it. Issue #103.
+
 ## Parked (post-milestone-3 candidates — do not start without architect approval)
 
 - `cistern-notifications` (WebSocketChannel2023), `cistern-acp`, `cistern-storage-r2dbc`
