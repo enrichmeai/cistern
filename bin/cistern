@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# The `cistern` command: `cistern grant <webid|public> --read <path>`, `cistern revoke …`.
+# The `cistern` command: `cistern pod create --root </firms/acme/> --owner <webid>`,
+# `cistern grant <webid|public> --read <path>`, `cistern revoke …`.
 #
 # Runs the executable jar built by `mvn -pl cistern-cli -am package` (or the whole build).
 # Override the jar with CISTERN_CLI_JAR; the credential comes from --token or CISTERN_TOKEN;

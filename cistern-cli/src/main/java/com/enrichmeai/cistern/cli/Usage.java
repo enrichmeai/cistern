@@ -10,8 +10,28 @@ final class Usage {
 
     static final String COMMAND_NAME = "cistern";
     static final String COMMAND_DESCRIPTION =
-            "Authors Web Access Control grants against a running Cistern server, with your own"
-                    + " credential. The server enforces acl:Control; this tool only writes the file.";
+            "Provisions pods and authors Web Access Control grants against a running Cistern"
+                    + " server, with your own credential. The server enforces acl:Control; this"
+                    + " tool only writes the files.";
+
+    static final String POD_NAME = "pod";
+    static final String POD_DESCRIPTION = "Pods: containers with an owner of their own.";
+
+    static final String POD_CREATE_NAME = "create";
+    static final String POD_CREATE_DESCRIPTION =
+            "Make <root> a pod owned by <webid>: creates the container if it is not there and"
+                    + " writes <root>.acl granting the owner read, write, append and control on it"
+                    + " and everything inside it — nothing to anyone else, you included. Never"
+                    + " overwrites an ACL that already exists: run again by the pod's owner it"
+                    + " reports the pod and writes nothing; anyone else no longer holds Control"
+                    + " there and is refused.";
+
+    static final String ROOT_OPTION = "--root";
+    static final String ROOT_DESCRIPTION =
+            "The pod's root, as a container path on the server (ending in '/'), e.g. /firms/acme/.";
+    static final String OWNER_OPTION = "--owner";
+    static final String OWNER_DESCRIPTION = "The owner's WebID: an absolute URI.";
+    static final String WEBID_PARAM = "<webid>";
 
     static final String GRANT_NAME = "grant";
     static final String GRANT_DESCRIPTION =

@@ -103,6 +103,40 @@ class CliArgumentsTest {
     }
 
     @Nested
+    @DisplayName("--root and --owner (pod create)")
+    class PodRoots {
+
+        private final PodRootConverter roots = new PodRootConverter();
+        private final WebIdConverter owners = new WebIdConverter();
+
+        @ParameterizedTest
+        @ValueSource(strings = {"/", "/firms/acme/", "/alice/", " /bob/ "})
+        void rootAcceptsContainers(String root) {
+            assertTrue(roots.convert(root).isContainer());
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"/firms/acme", "firms/acme/", "/a//b/", "/a/../b/", "/x#f/", ""})
+        void rootRejectsAnythingElse(String root) {
+            TypeConversionException e = assertThrows(TypeConversionException.class, () -> roots.convert(root));
+            assertEquals(CliMessage.INVALID_ROOT.format(root), e.getMessage());
+        }
+
+        @Test
+        void ownerIsAnAbsoluteWebId() {
+            assertEquals(URI.create("https://acme-law.example/profile#firm"),
+                    owners.convert(" https://acme-law.example/profile#firm "));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"profile#firm", "acme", "not a uri", "", "public"})
+        void ownerRejectsAnythingElse(String owner) {
+            TypeConversionException e = assertThrows(TypeConversionException.class, () -> owners.convert(owner));
+            assertEquals(CliMessage.INVALID_OWNER.format(owner), e.getMessage());
+        }
+    }
+
+    @Nested
     @DisplayName("Exit codes")
     class ExitCodes {
 
@@ -115,6 +149,16 @@ class CliArgumentsTest {
                     new CliFailure.Refused(PodMethod.GET, acl, PodStatus.UNAUTHORIZED, trips)));
             assertEquals(ExitCode.REFUSED, CisternCli.exitCodeFor(
                     new CliFailure.Refused(PodMethod.PUT, acl, PodStatus.FORBIDDEN, trips)));
+            assertEquals(ExitCode.REFUSED, CisternCli.exitCodeFor(
+                    new CliFailure.Refused(PodMethod.PUT, trips, PodStatus.FORBIDDEN)), "a refused container create");
+        }
+
+        @Test
+        void refusalsAreExplainedByWhatWasAsked() {
+            assertEquals(CliMessage.REFUSED.format(PodMethod.PUT, acl.uri(), PodStatus.FORBIDDEN.code(), trips.uri()),
+                    new CliFailure.Refused(PodMethod.PUT, acl, PodStatus.FORBIDDEN, trips).getMessage());
+            assertEquals(CliMessage.REFUSED_RESOURCE.format(PodMethod.PUT, trips.uri(), PodStatus.FORBIDDEN.code()),
+                    new CliFailure.Refused(PodMethod.PUT, trips, PodStatus.FORBIDDEN).getMessage());
         }
 
         @Test

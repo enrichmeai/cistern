@@ -1,5 +1,6 @@
 package com.enrichmeai.cistern.cli;
 
+import com.enrichmeai.cistern.core.Agent;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.wac.AccessMode;
 import com.enrichmeai.cistern.wac.AclResource;
@@ -8,6 +9,9 @@ import com.enrichmeai.cistern.wac.AgentClass;
 import com.enrichmeai.cistern.wac.Authorization;
 import com.enrichmeai.cistern.wac.GrantOutcome;
 import com.enrichmeai.cistern.wac.Grantee;
+import com.enrichmeai.cistern.wac.PodProvisioned;
+import com.enrichmeai.cistern.wac.PodProvisioner;
+import com.enrichmeai.cistern.wac.PodSpec;
 import com.enrichmeai.cistern.wac.WacEngine;
 
 import java.net.URI;
@@ -55,6 +59,26 @@ final class AclReport {
                 : CliMessage.NOTHING_TO_REVOKE.format(name(grantee), base.display(target)));
         lines.addAll(holdings(outcome, target));
         return lines;
+    }
+
+    /**
+     * The lines for provisioning {@code spec}. What a created pod's ACL grants is read back off
+     * the graph the provisioner writes, through the engine, like every other report here.
+     */
+    List<String> provisioned(PodProvisioned outcome, PodSpec spec) {
+        return switch (outcome) {
+            case PodProvisioned.Created created -> List.of(CliMessage.POD_CREATED.format(
+                    base.display(created.root()), spec.ownerWebId(), base.display(created.acl()),
+                    modes(ownerModes(spec))));
+            case PodProvisioned.AlreadyExists existing -> List.of(CliMessage.POD_ALREADY_EXISTS.format(
+                    base.display(existing.root()), base.display(spec.acl())));
+        };
+    }
+
+    /** What the written ACL grants its owner on the root — asked of the engine, not assumed. */
+    private Set<AccessMode> ownerModes(PodSpec spec) {
+        return engine.decide(PodProvisioner.ownerAclGraph(spec), spec.root().uri(),
+                Agent.of(spec.ownerWebId()), AclScope.ACCESS_TO).modes();
     }
 
     // ---- what the ACL says ---------------------------------------------------------------

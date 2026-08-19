@@ -53,6 +53,12 @@ public enum CliMessage {
     /** A container target in a verdict: path, so the reader sees the trailing slash. */
     TARGET_CONTAINER("%s and everything inside it"),
 
+    /** root, owner, aclResource, modes — a pod was provisioned. */
+    POD_CREATED("Created pod %s owned by %s: %s grants %s on this container and everything inside it."),
+
+    /** root, aclResource — the pod was already there; nothing written. */
+    POD_ALREADY_EXISTS("Already a pod: %s has an ACL (%s), which is left as it is; nothing written."),
+
     // ---- warnings (stderr) -----------------------------------------------------------------
 
     /** env var name */
@@ -62,10 +68,15 @@ public enum CliMessage {
 
     // ---- failures (stderr, non-zero exit) --------------------------------------------------
 
-    /** method, uri, status, target */
+    /** method, uri, status, target — an ACL could not be read or written */
     REFUSED(
-            "Refused: %s %s answered HTTP %d. Granting or revoking on %s requires acl:Control"
+            "Refused: %s %s answered HTTP %d. Reading or writing the ACL of %s requires acl:Control"
                     + " there, and the server enforces that — this tool cannot"),
+
+    /** method, uri, status — a resource (not an ACL) could not be written */
+    REFUSED_RESOURCE(
+            "Refused: %s %s answered HTTP %d. Creating it requires acl:Write there, and the server"
+                    + " enforces that — this tool cannot"),
 
     /** uri */
     CONFLICT(
@@ -96,6 +107,12 @@ public enum CliMessage {
 
     /** value */
     INVALID_BASE("'%s' is not a server URL: an absolute http(s) URL without fragment or query is needed"),
+
+    /** value — a pod root that is not a container path */
+    INVALID_ROOT("'%s' is not a pod root: a container path, ending in '/', is needed"),
+
+    /** value — an owner that is not a WebID */
+    INVALID_OWNER("'%s' is not a WebID: an absolute URI is needed"),
 
     /** The revoke was refused by the grant service (its own message follows). */
     REVOKE_REFUSED("Refused: %s"),

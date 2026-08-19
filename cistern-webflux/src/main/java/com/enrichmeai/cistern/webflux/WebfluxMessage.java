@@ -162,6 +162,48 @@ public enum WebfluxMessage {
     /** Startup: which resolvers a request will be tried against, in order. Logged at INFO. */
     PRINCIPAL_RESOLVERS_WIRED("Principal resolvers, in order: %s"),
 
+    // ---------------------------------------------------------------- cistern.pods.seed[] (T5.6)
+
+    /** Both halves of an entry are required; a root with no owner is a container, not a pod. */
+    POD_SEED_INCOMPLETE(
+            "cistern.pods.seed[] entries need both root and owner-web-id"
+                    + " (root: %s, owner-web-id: %s)"),
+
+    /**
+     * A seed root is a path under {@code cistern.base-url}, and a pod is a subtree, so it must
+     * be a container path: leading slash, trailing slash, no empty segment.
+     */
+    POD_SEED_ROOT_NOT_A_CONTAINER_PATH(
+            "cistern.pods.seed[].root must be an absolute container path under cistern.base-url"
+                    + " (starting and ending with '/', no empty segment): %s"),
+
+    /**
+     * A dot segment would make one resource reachable under two spellings; refused rather than
+     * quietly collapsed, as {@code RequestPaths} refuses it on the wire.
+     */
+    POD_SEED_ROOT_NOT_NORMALIZED(
+            "cistern.pods.seed[].root must not contain '.' or '..' segments: %s"),
+
+    /** The root does not form a URI when appended to the base URL. */
+    POD_SEED_ROOT_MALFORMED(
+            "cistern.pods.seed[].root %s does not form a valid URI under %s: %s"),
+
+    /** A relative owner would resolve against the ACL document and name nobody who exists. */
+    POD_SEED_OWNER_NOT_ABSOLUTE(
+            "cistern.pods.seed[].owner-web-id for root %s must be an absolute URI: %s"),
+
+    /** Two entries for one root: whose pod is it? Refused at startup rather than guessed. */
+    POD_SEED_ROOT_DUPLICATED("cistern.pods.seed[] lists root %s more than once"),
+
+    /**
+     * A seed for the storage root naming a different owner than {@code cistern.owner.web-id}.
+     * Enforcement is keyed on the configured owner; letting a seed re-own {@code /} would lock
+     * that owner out of their own root, so the contradiction is refused, not resolved.
+     */
+    POD_SEED_ROOT_CONTRADICTS_OWNER(
+            "cistern.pods.seed[] names <%s> as owner of the storage root, but cistern.owner.web-id"
+                    + " is <%s>; the storage root belongs to the configured owner"),
+
     // ---------------------------------------- RFC 9457 titles, one per problem type
 
     // Titles are the RFC 9457 title member and so must not vary between occurrences of the
@@ -217,7 +259,18 @@ public enum WebfluxMessage {
                     + " reachable. Set both to use this pod as its owner."),
 
     /** Startup: a fresh pod was given a root ACL granting its owner full access. */
-    SEEDED_ROOT_ACL("Seeded root ACL <%s> granting full access to owner <%s>");
+    SEEDED_ROOT_ACL("Seeded root ACL <%s> granting full access to owner <%s>"),
+
+    /** Startup: a {@code cistern.pods.seed[]} entry was provisioned — container and owner ACL. */
+    SEEDED_POD("Seeded pod <%s>: owner ACL <%s> granting full access to <%s>"),
+
+    /**
+     * Startup: a {@code cistern.pods.seed[]} entry already had an ACL and was left alone. Logged
+     * at DEBUG — on every restart, for every pod, it is the expected case.
+     */
+    POD_ALREADY_PROVISIONED(
+            "Pod <%s> already has an ACL; left as it is (a restart is not a request to reset"
+                    + " permissions)");
 
     private final String template;
 

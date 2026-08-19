@@ -49,16 +49,16 @@ import java.util.Locale;
 public class RequestPaths {
 
     /** The URI path separator; also the container marker (Solid Protocol §3.1). */
-    private static final String SEPARATOR = "/";
+    static final String SEPARATOR = "/";
 
     /** Two separators with nothing between them: a segment the store cannot name. */
-    private static final String EMPTY_SEGMENT = SEPARATOR + SEPARATOR;
+    static final String EMPTY_SEGMENT = SEPARATOR + SEPARATOR;
 
     /** Percent-encoded {@code /}, upper-cased for a case-insensitive comparison. */
     private static final String ENCODED_SLASH = "%2F";
 
-    private static final String CURRENT_SEGMENT = ".";
-    private static final String PARENT_SEGMENT = "..";
+    static final String CURRENT_SEGMENT = ".";
+    static final String PARENT_SEGMENT = "..";
 
     private static final String[] NO_SEGMENTS = new String[0];
 

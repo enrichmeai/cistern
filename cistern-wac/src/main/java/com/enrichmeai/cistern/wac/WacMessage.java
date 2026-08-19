@@ -76,7 +76,16 @@ public enum WacMessage {
     REVOKE_WOULD_DROP_CONTROL(
             "Refusing to revoke <%s> on <%s>: that authorization grants acl:Control, and revoking"
                     + " Control could lock the owner out of the resource. Edit the ACL"
-                    + " deliberately instead");
+                    + " deliberately instead"),
+
+    // ---- provisioning (T5.6) ----------------------------------------------------------
+
+    /**
+     * A {@code PodSpec} whose root is not a container. A pod is a subtree, and only a
+     * container's ACL can carry the {@code acl:default} that makes the subtree inherit.
+     */
+    POD_ROOT_NOT_A_CONTAINER(
+            "A pod root must be a container (URI path ending in '/'): <%s>");
 
     private final String template;
 

@@ -1,19 +1,18 @@
 package com.enrichmeai.cistern.webflux;
 
-import com.enrichmeai.cistern.core.Representation;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
-import com.enrichmeai.cistern.core.ResourceStore;
-import com.enrichmeai.cistern.wac.AclResource;
+import com.enrichmeai.cistern.wac.PodProvisioned;
+import com.enrichmeai.cistern.wac.PodProvisioner;
+import com.enrichmeai.cistern.wac.PodSpec;
 
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.ApplicationArguments;
-import reactor.core.publisher.Mono;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.Ordered;
 
 /**
  * Gives a fresh pod a root ACL granting its owner full access.
@@ -29,17 +28,37 @@ import reactor.core.publisher.Mono;
  * <p>Idempotent, and deliberately <strong>never overwrites</strong>. Rewriting the root ACL on
  * every boot would silently undo any narrowing the owner had since applied — a restart is not
  * a request to reset permissions.
+ *
+ * <p>Since T5.6 this is the single-owner face of {@link PodProvisioner}: the storage root is a
+ * pod like any other, owned by {@code cistern.owner.web-id}. What is written, and the rule that
+ * an existing ACL is left alone, live there; this class only says <em>which</em> pod and
+ * <em>who</em>. Further pods with further owners are {@link PodSeeder}'s job.
  */
-public final class OwnerPodSeeder implements ApplicationRunner {
+public final class OwnerPodSeeder implements ApplicationRunner, Ordered {
+
+    /**
+     * Before {@link PodSeeder}: the storage root is settled first, so the log reads top-down and
+     * the root container is committed by its own seeder rather than as a side effect of a
+     * child's. Nothing else at startup depends on this ordering.
+     */
+    static final int ORDER = Ordered.HIGHEST_PRECEDENCE;
+
+    /** The storage root as a path under the base URL: the one pod {@code cistern.owner} names. */
+    private static final String STORAGE_ROOT_PATH = "/";
 
     private static final Logger log = LoggerFactory.getLogger(OwnerPodSeeder.class);
 
-    private final ResourceStore store;
+    private final PodProvisioner provisioner;
     private final CisternProperties properties;
 
-    public OwnerPodSeeder(ResourceStore store, CisternProperties properties) {
-        this.store = Objects.requireNonNull(store, "store");
+    public OwnerPodSeeder(PodProvisioner provisioner, CisternProperties properties) {
+        this.provisioner = Objects.requireNonNull(provisioner, "provisioner");
         this.properties = Objects.requireNonNull(properties, "properties");
+    }
+
+    @Override
+    public int getOrder() {
+        return ORDER;
     }
 
     @Override
@@ -51,42 +70,14 @@ public final class OwnerPodSeeder implements ApplicationRunner {
         }
         // Blocking is acceptable exactly here: ApplicationRunner is startup, not a request
         // path, and the server must not begin serving before its root ACL exists.
-        seed(owner.webId()).block();
+        PodProvisioned outcome = provisioner.provision(rootPod(owner.webId())).block();
+        if (outcome instanceof PodProvisioned.Created created) {
+            log.info(WebfluxMessage.SEEDED_ROOT_ACL.format(created.acl().uri(), owner.webId()));
+        }
     }
 
-    private Mono<Void> seed(URI ownerWebId) {
-        ResourceIdentifier root = new ResourceIdentifier(URI.create(properties.baseUrl() + "/"));
-        ResourceIdentifier rootAcl = AclResource.of(root);
-
-        return store.exists(rootAcl)
-                .flatMap(exists -> exists
-                        ? Mono.<Void>empty()
-                        : store.put(rootAcl, ownerAcl(root, ownerWebId))
-                                .doOnSuccess(stored ->
-                                        log.info(WebfluxMessage.SEEDED_ROOT_ACL.format(
-                                                rootAcl.uri(), ownerWebId)))
-                                .then());
-    }
-
-    /**
-     * Full access for the owner, on the root and everything under it — {@code acl:accessTo}
-     * for the root itself and {@code acl:default} so descendants inherit, because the two are
-     * separate statements and granting only the first would leave every child unreachable.
-     *
-     * <p>Nothing is granted to {@code foaf:Agent}: a new pod is private until its owner says
-     * otherwise. That is the whole point of the exercise, and it is what makes an anonymous
-     * {@code DELETE} return 401 instead of 204.
-     */
-    private static Representation ownerAcl(ResourceIdentifier root, URI ownerWebId) {
-        String turtle = """
-                @prefix acl: <http://www.w3.org/ns/auth/acl#> .
-
-                <#owner> a acl:Authorization ;
-                    acl:agent <%s> ;
-                    acl:accessTo <%s> ;
-                    acl:default <%s> ;
-                    acl:mode acl:Read, acl:Write, acl:Append, acl:Control .
-                """.formatted(ownerWebId, root.uri(), root.uri());
-        return new Representation("text/turtle", turtle.getBytes(StandardCharsets.UTF_8));
+    private PodSpec rootPod(URI ownerWebId) {
+        ResourceIdentifier root = new ResourceIdentifier(URI.create(properties.baseUrl() + STORAGE_ROOT_PATH));
+        return new PodSpec(root, ownerWebId);
     }
 }

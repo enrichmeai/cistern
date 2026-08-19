@@ -1,10 +1,16 @@
 package com.enrichmeai.cistern.webflux;
 
+import com.enrichmeai.cistern.core.ResourceIdentifier;
+import com.enrichmeai.cistern.wac.PodSpec;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -25,10 +31,11 @@ import java.util.Set;
  * @param owner   the pod owner and their local credential (T5.3/T5.4)
  * @param auth    the other ways a request proves who it is (T4.0): service principals and an
  *                OIDC issuer whose JWTs are accepted
+ * @param pods    further pods, each with its own owner, provisioned at boot (T5.6)
  */
 @ConfigurationProperties(prefix = "cistern")
 public record CisternProperties(
-        String baseUrl, Storage storage, Cors cors, Owner owner, Auth auth) {
+        String baseUrl, Storage storage, Cors cors, Owner owner, Auth auth, Pods pods) {
 
     private static final String DEFAULT_BASE_URL = "http://localhost:3000";
 
@@ -48,6 +55,16 @@ public record CisternProperties(
         cors = cors == null ? new Cors(null, null) : cors;
         owner = owner == null ? new Owner(null, null) : owner;
         auth = auth == null ? new Auth(null, null) : auth;
+        pods = pods == null ? new Pods(null) : pods;
+        // Bind-time, not boot-time: a seed that cannot be provisioned is a configuration error
+        // and should fail the start, not surface as a stack trace from a runner.
+        for (PodSpec seeded : pods.specsUnder(baseUrl)) {
+            if (owner.webId() != null && seeded.root().isStorageRoot()
+                    && !seeded.ownerWebId().equals(owner.webId())) {
+                throw new IllegalArgumentException(WebfluxMessage.POD_SEED_ROOT_CONTRADICTS_OWNER
+                        .format(seeded.ownerWebId(), owner.webId()));
+            }
+        }
     }
 
     /**
@@ -257,6 +274,110 @@ public record CisternProperties(
             if (webId == null || credentialHash == null || credentialHash.isBlank()) {
                 throw new IllegalArgumentException(
                         WebfluxMessage.SERVICE_PRINCIPAL_INCOMPLETE.format(webId));
+            }
+        }
+    }
+
+    /**
+     * Pods to provision at boot (T5.6, #90): {@code cistern.pods.seed[n].root} and
+     * {@code .owner-web-id}, one entry per pod, each with its own owner. This is how one server
+     * hosts several pods — {@code /alice/} and {@code /bob/} for the conformance harness,
+     * {@code /firms/acme/} and {@code /firms/globex/} for a hosted deployment — where
+     * {@code cistern.owner} names the one owner of the storage root.
+     *
+     * <p>Seeding is idempotent and never overwrites: a root that already has an ACL is left
+     * exactly as it is on every restart, because a restart is not a request to reset
+     * permissions. See {@code PodProvisioner}.
+     *
+     * <p>Two things this does <em>not</em> do, deliberately. It does not make the seeded owners
+     * able to authenticate — that is {@code cistern.auth.service-principals[]} or
+     * {@code cistern.auth.oidc}, and a seeded owner who cannot authenticate simply owns a pod
+     * nobody can enter yet. And it does not turn enforcement on: that is still keyed on
+     * {@code cistern.owner.web-id}, so a server with seeds and no owner has ACLs nothing
+     * consults.
+     *
+     * @param seed the pods, in configuration order; empty when none are configured
+     */
+    public record Pods(List<Seed> seed) {
+
+        public Pods {
+            seed = seed == null ? List.of() : List.copyOf(seed);
+        }
+
+        /**
+         * The configured pods as {@link PodSpec}s under {@code baseUrl}, in configuration order.
+         *
+         * @throws IllegalArgumentException if a root does not resolve to a normalized
+         *         container URI under the base, or the same root is listed twice
+         */
+        public List<PodSpec> specsUnder(String baseUrl) {
+            List<PodSpec> specs = new ArrayList<>(seed.size());
+            Set<ResourceIdentifier> roots = new HashSet<>();
+            for (Seed entry : seed) {
+                PodSpec spec = entry.specUnder(baseUrl);
+                if (!roots.add(spec.root())) {
+                    throw new IllegalArgumentException(
+                            WebfluxMessage.POD_SEED_ROOT_DUPLICATED.format(entry.root()));
+                }
+                specs.add(spec);
+            }
+            return List.copyOf(specs);
+        }
+    }
+
+    /**
+     * One pod to seed: {@code cistern.pods.seed[n]}.
+     *
+     * <p>The root is a <em>path</em> under {@code cistern.base-url} — {@code /firms/acme/}, or
+     * {@code /} for the storage root — never an absolute URL, so a pod cannot be configured
+     * outside the server that hosts it, and so the value reads the same way a request path
+     * does. It must name a container: a pod is a subtree, and only a container's ACL can
+     * carry the {@code acl:default} that makes the subtree inherit.
+     *
+     * @param root       container path under the base URL, starting and ending with {@code /}
+     * @param ownerWebId the agent granted full access to the root and everything under it
+     */
+    public record Seed(String root, URI ownerWebId) {
+
+        public Seed {
+            if (root == null || root.isBlank() || ownerWebId == null) {
+                throw new IllegalArgumentException(
+                        WebfluxMessage.POD_SEED_INCOMPLETE.format(root, ownerWebId));
+            }
+            root = root.trim();
+            // The same shape rules RequestPaths applies to a request-target, spelled once there:
+            // a container path, no empty segment, no dot segment.
+            if (!root.startsWith(RequestPaths.SEPARATOR) || !root.endsWith(RequestPaths.SEPARATOR)
+                    || root.contains(RequestPaths.EMPTY_SEGMENT)) {
+                throw new IllegalArgumentException(
+                        WebfluxMessage.POD_SEED_ROOT_NOT_A_CONTAINER_PATH.format(root));
+            }
+            for (String segment : root.split(RequestPaths.SEPARATOR)) {
+                if (segment.equals(RequestPaths.CURRENT_SEGMENT)
+                        || segment.equals(RequestPaths.PARENT_SEGMENT)) {
+                    throw new IllegalArgumentException(
+                            WebfluxMessage.POD_SEED_ROOT_NOT_NORMALIZED.format(root));
+                }
+            }
+            if (!ownerWebId.isAbsolute()) {
+                throw new IllegalArgumentException(
+                        WebfluxMessage.POD_SEED_OWNER_NOT_ABSOLUTE.format(root, ownerWebId));
+            }
+        }
+
+        /**
+         * This entry as a {@link PodSpec} under {@code baseUrl}, which is where the root becomes
+         * an identifier: {@code baseUrl + root}, exactly as {@code RequestPaths} forms one from a
+         * request path.
+         *
+         * @throws IllegalArgumentException if the root does not form a valid URI under the base
+         */
+        public PodSpec specUnder(String baseUrl) {
+            try {
+                return new PodSpec(new ResourceIdentifier(new URI(baseUrl + root)), ownerWebId);
+            } catch (URISyntaxException e) {
+                throw new IllegalArgumentException(
+                        WebfluxMessage.POD_SEED_ROOT_MALFORMED.format(root, baseUrl, e.getReason()), e);
             }
         }
     }
