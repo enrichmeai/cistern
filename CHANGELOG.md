@@ -6,13 +6,23 @@ All notable changes to Cistern are recorded here. The format follows
 
 A release is a `v<version>` tag on `main`. Pushing it runs `.github/workflows/release.yml`,
 which publishes `ghcr.io/enrichmeai/cistern:<version>` (linux/amd64 + linux/arm64) and a
-GitHub Release carrying `cistern-app-<version>.jar` and `SHA256SUMS`, with this file's
+GitHub Release carrying `cistern-app-<version>.jar`, the CLI (`cistern-cli-<version>.jar`
+plus its `cistern` wrapper script) and `SHA256SUMS` over all three, with this file's
 matching section as the release body. **A tag without a section here fails the release**
-before anything is built, deliberately.
+before anything is built, deliberately. The procedure around the tag — gate, rehearsal,
+stranger test — is [RELEASE.md](RELEASE.md).
 
 ## [Unreleased]
 
 ### Added
+
+- **The `cistern` CLI is a release asset (T7.14 follow-up, #107).** `release.yml` now uploads
+  `cistern-cli-<version>.jar` (the shaded executable jar — the shade plugin replaces the main
+  artifact, no classifier) and the `bin/cistern` wrapper to the GitHub Release beside the
+  server jar, covers all three in `SHA256SUMS`, and smoke-runs `java -jar … --help` before the
+  jar can become an asset. The README gains the download-and-use path (`cistern pod create` /
+  `grant` / `revoke` against a pulled image); `RELEASE.md` records the release gate, the
+  `workflow_dispatch` rehearsal, the tag commands and the post-release stranger test.
 
 - **Decision log and receipts (T5.9, #93).** Every authorization decision — allow and deny,
   every method — leaves one `DecisionRecord` naming the agent, the target, the mode required,
@@ -58,6 +68,13 @@ before anything is built, deliberately.
 
 ### Fixed
 
+- **Stale "no authentication, no access control" compose comments (#123).** `docker-compose.yml`
+  and `integration-kit/docker-compose.yml` now state the ADR 0002 posture: WAC is enforced the
+  moment an owner is configured; local/private-network only until the production posture is
+  applied. The kit's commented service-principal examples now use the Spring relaxed-binding
+  canonical env names (`CISTERN_AUTH_SERVICEPRINCIPALS_0_WEBID` / `_CREDENTIALHASH` — the old
+  `SERVICE_PRINCIPALS_…_WEB_ID` spelling silently fails to bind), and `docs/INTEGRATION.md` §7
+  states the env form for list properties.
 - **WAC: an ACL resource requires `acl:Control` on the resource it governs, for every method
   (#112).** `RequiredAccess` mapped `.acl` resources by HTTP method like any other resource, so
   after a public (or per-agent) Read grant on a container, `GET <container>.acl` returned 200
