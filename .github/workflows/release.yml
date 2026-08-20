@@ -7,8 +7,9 @@ name: release
 #
 # produces, from that one push:
 #   - ghcr.io/enrichmeai/cistern:0.1.0 (+ :latest for a non-prerelease), linux/amd64 + linux/arm64
-#   - a GitHub Release "Cistern 0.1.0" carrying cistern-app-0.1.0.jar + SHA256SUMS,
-#     whose body is the matching `## [0.1.0]` section of CHANGELOG.md
+#   - a GitHub Release "Cistern 0.1.0" carrying cistern-app-0.1.0.jar, the CLI as
+#     cistern-cli-0.1.0.jar (shaded executable jar) with its bin/cistern wrapper, and
+#     SHA256SUMS over all three, whose body is the matching `## [0.1.0]` section of CHANGELOG.md
 #
 # Shape — three jobs, in order:
 #   build    version + notes check, `mvn verify` (the full suite), the jar and its checksum
@@ -142,15 +143,23 @@ jobs:
       - name: Build and test
         run: mvn -B -ntp verify
 
-      - name: Collect the jar and checksums
+      - name: Collect the jars, the CLI wrapper and checksums
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          JAR="cistern-app/target/cistern-app-${VERSION}.jar"
-          test -f "$JAR" || { echo "::error::expected $JAR after the build"; ls cistern-app/target; exit 1; }
+          APP_JAR="cistern-app/target/cistern-app-${VERSION}.jar"
+          # The shade plugin replaces cistern-cli's main artifact (no classifier); the
+          # pre-shade jar is left behind as original-cistern-cli-<version>.jar and is
+          # never an asset.
+          CLI_JAR="cistern-cli/target/cistern-cli-${VERSION}.jar"
+          test -f "$APP_JAR" || { echo "::error::expected $APP_JAR after the build"; ls cistern-app/target; exit 1; }
+          test -f "$CLI_JAR" || { echo "::error::expected $CLI_JAR after the build"; ls cistern-cli/target; exit 1; }
+          # A fat jar is runnable or it is not an asset: --help exercises the manifest
+          # main class, picocli wiring and the merged ServiceLoader files offline.
+          java -jar "$CLI_JAR" --help >/dev/null
           mkdir -p "${RUNNER_TEMP}/dist"
-          cp "$JAR" "${RUNNER_TEMP}/dist/"
-          ( cd "${RUNNER_TEMP}/dist" && sha256sum "cistern-app-${VERSION}.jar" > SHA256SUMS && cat SHA256SUMS )
+          cp "$APP_JAR" "$CLI_JAR" bin/cistern "${RUNNER_TEMP}/dist/"
+          ( cd "${RUNNER_TEMP}/dist" && sha256sum "cistern-app-${VERSION}.jar" "cistern-cli-${VERSION}.jar" cistern > SHA256SUMS && cat SHA256SUMS )
           cp "${RUNNER_TEMP}/release-notes.md" "${RUNNER_TEMP}/dist/"
 
       - uses: actions/upload-artifact@v4
@@ -317,7 +326,8 @@ jobs:
             # A re-run of the same tag: refresh assets and notes rather than fail.
             echo "release $TAG exists — updating assets and notes"
             gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
-              "$DIST/cistern-app-$VERSION.jar" "$DIST/SHA256SUMS"
+              "$DIST/cistern-app-$VERSION.jar" "$DIST/cistern-cli-$VERSION.jar" \
+              "$DIST/cistern" "$DIST/SHA256SUMS"
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$NOTES"
           else
             EXTRA=()
@@ -327,7 +337,8 @@ jobs:
               --title "Cistern $VERSION" \
               --notes-file "$NOTES" \
               "${EXTRA[@]}" \
-              "$DIST/cistern-app-$VERSION.jar" "$DIST/SHA256SUMS"
+              "$DIST/cistern-app-$VERSION.jar" "$DIST/cistern-cli-$VERSION.jar" \
+              "$DIST/cistern" "$DIST/SHA256SUMS"
           fi
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets \
             --jq '.url, (.assets[] | "  \(.name)  \(.size) bytes")'
