@@ -9,4 +9,154 @@
     <version>0.1.0-SNAPSHOT</version>
   </parent>
   <artifactId>cistern-mcp</artifactId>
+  <name>Cistern :: MCP</name>
+  <description>MCP front door: exposes pod resources to AI agents as MCP tools, every call made
+    as a real HTTP request through the same filter chain as every other client (ARCHITECTURE
+    decision 6) — bound to exactly one principal by configuration (T6.2).</description>
+
+  <properties>
+    <mcp.main-class>com.enrichmeai.cistern.mcp.McpBridge</mcp.main-class>
+    <!-- 3.6.2 (2026-03-05): the version cistern-cli pinned; kept identical so the two fat
+         jars are built the same way. -->
+    <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
+  </properties>
+
+  <dependencies>
+    <!-- GrantService, AclResource, EffectiveAcl, RequiredAccess, AccessMode: the MCP tools do
+         not re-implement any authoring or ACL rule — grant/revoke feed the pure service what
+         they read over HTTP (exactly as cistern-cli does), and a refusal names the mode the
+         server checked because it is computed by the server's own RequiredAccess table. -->
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-wac</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!-- The official MCP Java SDK (version managed in the parent): async server, stdio
+         transport, schema types. -->
+    <dependency>
+      <groupId>io.modelcontextprotocol.sdk</groupId>
+      <artifactId>mcp</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.projectreactor</groupId>
+      <artifactId>reactor-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+    <!-- The stdio bridge logs to STDERR — stdout belongs to the MCP frames. slf4j-simple
+         writes to System.err by default, which is exactly right for a stdio MCP process. -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <!-- The embedded wiring (CisternMcpConfiguration) runs only inside cistern-app, where
+         cistern-webflux and Spring are already present; provided keeps them off the shaded
+         bridge jar, which carries no Spring at all (the same shape as cistern-cli). -->
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-webflux</artifactId>
+      <version>${project.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-autoconfigure</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <!-- WebServerInitializedEvent: the embedded runner starts once the app's real port is
+         known. Boot 4 moved it into its own module. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-web-server</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Real-first (ground rule 6): the end-to-end test boots the actual HTTP stack —
+         handlers, AuthorizationFilter, OwnerPodSeeder, receipts, file store — in-process on a
+         free port and drives the MCP tools against it; the wire-level test spawns the real
+         bridge as a child process and speaks to it with the SDK's own client over stdio. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webflux</artifactId>
+      <scope>test</scope>
+      <exclusions>
+        <!-- The module's own SLF4J binding (slf4j-simple, the bridge's stderr logging) is on
+             the test classpath too; Boot's Logback would fight it. Boot then logs through
+             java.util.logging — the same shape as cistern-cli's tests. -->
+        <exclusion>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-starter-logging</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>${maven-shade-plugin.version}</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <!-- One runnable jar Claude Desktop can launch:
+                   `java -jar cistern-mcp/target/cistern-mcp-<version>-bridge.jar`.
+                   Configuration comes from the connector's env (CISTERN_MCP_BASE_URL,
+                   CISTERN_MCP_CREDENTIAL). Service files are merged (Jena bootstraps through
+                   ServiceLoader, and the MCP SDK discovers its JSON mapper and schema
+                   validator the same way); signatures and module descriptors are dropped
+                   because neither survives shading.
+
+                   ATTACHED under the `bridge` classifier rather than replacing the main
+                   artifact (where cistern-cli shades in place): cistern-app depends on this
+                   module, and a shaded main artifact would smuggle second copies of
+                   cistern-core, cistern-wac, Jena and Reactor into the Boot jar. -->
+              <shadedArtifactAttached>true</shadedArtifactAttached>
+              <shadedClassifierName>bridge</shadedClassifierName>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>${mcp.main-class}</mainClass>
+                  <manifestEntries>
+                    <Implementation-Title>${project.name}</Implementation-Title>
+                    <Implementation-Version>${project.version}</Implementation-Version>
+                  </manifestEntries>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer"/>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
+                  <addHeader>false</addHeader>
+                </transformer>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                    <exclude>module-info.class</exclude>
+                    <exclude>META-INF/versions/*/module-info.class</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

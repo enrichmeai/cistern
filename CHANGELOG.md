@@ -14,9 +14,30 @@ stranger test — is [RELEASE.md](RELEASE.md).
 
 ## [Unreleased]
 
-<!-- Nothing yet. New entries land here and are folded into the version section when the
-     tag is cut — the tag is cut from main, so everything on main belongs to the version
-     (RELEASE.md §1). -->
+### Added
+
+**MCP front door (`cistern-mcp`, T6.1 + T6.2, #37/#38)**
+
+- The MCP server: seven tools — `read-resource`, `list-container`, `write-resource` (ETag
+  preconditions honoured), `delete-resource`, `grant`/`revoke` (the same `.acl` writes the
+  CLI performs; Control enforced by the server), `receipts` (Control enforced) — built on
+  the official MCP Java SDK. Deliberately no search tool, and no MCP resources in v1:
+  nothing the door serves may outlive a revocation.
+- **No privileged internal path** (ARCHITECTURE decision 6): every tool call is a real HTTP
+  request to the running server — the standalone bridge over the network, the embedded
+  shape over its own loopback port — crossing `AuthorizationFilter`, decided by WAC afresh,
+  and leaving a receipt like any other client's request.
+- **Static identity binding** (T6.2, per the #89 ruling): one connection, one bearer
+  credential (`cistern.mcp.credential` / `CISTERN_MCP_CREDENTIAL`), resolved through the
+  ordinary resolver chain. An enabled door without a credential is refused at bind time.
+- Refusals are honest and structured: a 401/403 becomes an `isError` result whose text
+  begins `REFUSED`, naming the resource and the required mode (computed by the server's own
+  `RequiredAccess` table) — never an empty success, never a retry with other credentials.
+- Two launch shapes: the shaded **bridge jar** (`cistern-mcp-<version>-bridge.jar`) a
+  desktop client launches against a running pod, and `cistern.mcp.enabled=true`, which makes
+  cistern-app serve MCP on its own stdio (with the `mcp-stdio` profile keeping stdout
+  protocol-clean). Claude Desktop configuration and the four-beat walkthrough:
+  `docs/demo/claude-desktop.md`.
 
 ## [0.1.0] - 2026-08-19
 

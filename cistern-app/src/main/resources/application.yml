@@ -5,3 +5,14 @@ cistern:
   storage:
     root: ${CISTERN_STORAGE_ROOT:./data}
   base-url: ${CISTERN_BASE_URL:http://localhost:3000}
+
+---
+# The shape where a desktop MCP client (Claude Desktop) launches cistern-app and owns its
+# stdio (T6.1): stdout carries MCP frames only, so the banner is off and logback-spring.xml
+# moves the console to stderr under this profile.
+spring:
+  config:
+    activate:
+      on-profile: mcp-stdio
+  main:
+    banner-mode: off

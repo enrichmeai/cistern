@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Logging destination per run shape (T6.1). Default: Spring Boot's stock console logging
+     on stdout, unchanged. Under the `mcp-stdio` profile — the shape where a desktop MCP
+     client launches cistern-app and owns its stdio — the console moves to STDERR, because
+     stdout then carries MCP frames and a log line printed into it corrupts the protocol.
+     (McpStdioSession also redirects System.out after start as a second line of defence;
+     this profile keeps even the boot banner and early lines off stdout.) -->
+<configuration>
+  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+  <springProfile name="mcp-stdio">
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+      <target>System.err</target>
+      <encoder>
+        <pattern>${CONSOLE_LOG_PATTERN}</pattern>
+        <charset>${CONSOLE_LOG_CHARSET}</charset>
+      </encoder>
+    </appender>
+  </springProfile>
+
+  <springProfile name="!mcp-stdio">
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+  </springProfile>
+
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+</configuration>

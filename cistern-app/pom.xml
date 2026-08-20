@@ -34,6 +34,20 @@
       <artifactId>cistern-auth</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!-- T6.1/T6.2 (#37/#38): the MCP front door, inert unless cistern.mcp.enabled is set.
+         slf4j-simple is the standalone bridge's stderr logging; in the app Logback is the
+         one provider, so the second one is excluded rather than left to classpath order. -->
+    <dependency>
+      <groupId>com.enrichmeai.cistern</groupId>
+      <artifactId>cistern-mcp</artifactId>
+      <version>${project.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-simple</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-webflux</artifactId>
