@@ -29,7 +29,7 @@ libraries is a separate decision for later.
 | Compose/kit stale-text hygiene (#123) | ✅ this PR |
 | Local rehearsal: `versions:set` → `verify` → both jars at the workflow's exact paths | ✅ 2026-08-20 (transcript on the PR) |
 | `workflow_dispatch` rehearsal green on `main` | ⬜ |
-| CHANGELOG `## [0.1.0]` re-scoped to what the tag actually ships | ⬜ **stale as of 2026-08-20** — §1 item 2 |
+| CHANGELOG `## [0.1.0]` re-scoped to what the tag actually ships | ✅ 2026-08-20, this PR — Unreleased folded in, limitations and upgrade notes rewritten to `main`'s truth |
 | Tag `v0.1.0` pushed | ⬜ owner only |
 | GHCR package made public (one-time) | ⬜ owner only |
 | Stranger test passed from published artifacts alone (§5) | ⬜ |
@@ -40,13 +40,13 @@ libraries is a separate decision for later.
    the full suite, no skips; the release build repeats it and must never be the first
    to discover red.
 2. **The CHANGELOG section describes the commit being tagged.** The workflow makes
-   `## [<version>]` the Release body verbatim and fails in seconds without it. Fold
-   `## [Unreleased]` in before tagging. As of 2026-08-20 the prepared `[0.1.0]` section
-   is **stale against `main`**: its *Known limitations* still say provisioning (#90),
-   grant authoring (#91) and the decision log (#93) are not built, and that
-   `cistern.auth.*` does not exist — all of which the tag would ship (T4.0, T5.6, T5.7,
-   T5.9 and T7.7 landed after it was drafted). Re-scoping it is the owner's editorial
-   call and blocks the tag.
+   `## [<version>]` the Release body verbatim and fails in seconds without it. The tag
+   is cut from `main`, so everything on `main` belongs in the version's section: fold
+   `## [Unreleased]` in before tagging, every time. **Done for 0.1.0 in the
+   release-readiness PR (#125)** — the prepared section predated T4.0, T5.6, T5.7, T5.9
+   and T7.7 landing, and its entries, *Known limitations* and *Upgrade notes* were
+   re-scoped to `main`'s truth. If anything else lands on `main` before the tag, repeat
+   the fold.
 3. **No stale text a stranger would read.** README quickstart names the version being
    tagged and its commands work as pasted; compose and kit comments state the ADR 0002
    posture (#123); nothing shipped claims a built feature is unbuilt or vice versa.
