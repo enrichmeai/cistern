@@ -89,6 +89,15 @@ classifier, and the pre-shade jar is left as `original-cistern-cli-<version>.jar
 (never an asset). If either `test -f` fails, the workflow's collect step would have
 failed the same way: fix the pom or the workflow before tagging, not the transcript.
 
+
+> **Why the tag is manual (and signed).** Everything after the tag is automated; the tag
+> itself is deliberately a human act. The release gate — *someone can deploy and use it* —
+> is a judgment, and the signed tag is the maintainer making it: `git tag -s` attests with
+> the maintainer's own key (GitHub shows it as Verified), the same discipline as the DCO
+> sign-off on every commit. A workflow-created tag would attest only that CI ran. A `v*`
+> tag ruleset limits who can create or move release tags. Revisit (a `cut-release`
+> workflow_dispatch with a typed confirm) only if releases become routine.
+
 ## 3. Tag and publish — owner only
 
 ```bash
