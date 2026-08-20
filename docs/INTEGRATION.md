@@ -17,8 +17,9 @@ deployment posture), #95 (T1.6 object storage), #96 (this document).
 
 ### 1.1 The request path (verified)
 
-Every HTTP request — from a browser, an application, or (later) the MCP front-end — crosses
-the same path. There is no privileged internal route (ARCHITECTURE decision 6).
+Every HTTP request — from a browser, an application, or the MCP front-end (T6.1, which
+reaches the pod *only* by making these same HTTP requests over loopback) — crosses the same
+path. There is no privileged internal route (ARCHITECTURE decision 6).
 
 ![One request through Cistern, as built](diagrams/request-path-sequence.svg)
 
@@ -75,7 +76,7 @@ Facts an integrator relies on, all observed on 2026-08-18:
 | `cistern-webflux` | built | handlers, negotiation, conditional requests, error mapper, `AuthorizationFilter`, `PrincipalResolver` + `ChainedPrincipalResolver` + `LocalCredentialResolver` + `ServiceCredentialResolver` (`ServicePrincipalRegistry`, `HashedCredential`) + `AnonymousResolver`, `OwnerPodSeeder` + `PodSeeder` (T5.6), `ReceiptsHandler` + `ReceiptsRequest` (T5.9), `CisternProperties` |
 | `cistern-wac` | built | `AclDiscovery`, `WacEngine`, `AccessControl`, `Authorization`, `AccessDecision`, `EffectiveAcl`, `RequiredAccess`, `AccessMode`, `AgentClass`, `WacMessage`; **T5.7:** `GrantService`, `GrantRequest`, `RevokeRequest`, `GrantOutcome`, `Grantee`; **T5.6:** `PodProvisioner`, `PodSpec`, `PodProvisioned`; **T5.9:** `AccessVerdict`, `DecisionRecord`, `Outcome`, `RequestId`, `DecisionSink`, `DecisionQuery`, `DecisionLog`, `JsonLinesDecisionSink`, `JsonLinesDecisionQuery`, `DecisionRecordJson`. No Spring. |
 | `cistern-auth` | built (T4.0) | `OidcJwtPrincipalResolver`, `JwtVerifier`, `CachingJwksClient`, `WebIdMapping`, `AuthMessage`; Solid-OIDC/DPoP validation (T4.1–T4.4) still to come |
-| `cistern-mcp` | **empty** | Phase 6; not needed for an HTTP application |
+| `cistern-mcp` | built (T6.1/T6.2, #37/#38) | the MCP front door: seven tools (`read-resource`, `list-container`, `write-resource`, `delete-resource`, `grant`, `revoke`, `receipts`) over stdio, every call a real loopback HTTP request as one statically bound principal (`cistern.mcp.credential`); ships the standalone bridge jar Claude Desktop launches. Not needed for an HTTP application |
 | `cistern-spring-boot-starter` | scaffold | T7.1 |
 | `cistern-app` | built | runnable server; config only |
 | `cistern-cli` | built (T5.7, T5.6) | the `cistern` command: `pod create`, `grant`, `revoke` over HTTP with the caller's credential (picocli, shaded jar; `bin/cistern`). |
@@ -149,7 +150,7 @@ Being straight about the effort is what makes the rest of this document credible
 
 | Integrator | What they do | Effort today | Effort after the levers land |
 |---|---|---|---|
-| **An AI assistant** (Claude Desktop, ChatGPT, an in-house agent) | Connects over MCP; the person grants it a folder | Not yet possible — the MCP front door is Phase 6 | **Near zero**: the assistant already speaks MCP; the company integrates nothing |
+| **An AI assistant** (Claude Desktop, ChatGPT, an in-house agent) | Connects over MCP; the person grants it a folder | **Near zero, and real (T6.1/T6.2)**: a Claude Desktop user pastes one connector entry — the bridge jar plus two env vars (`CISTERN_MCP_BASE_URL`, `CISTERN_MCP_CREDENTIAL`) — and the owner runs `cistern grant <agent-webid> --read /notes/`; see [`docs/demo/claude-desktop.md`](demo/claude-desktop.md). The assistant integrates nothing: it already speaks MCP, and every tool call is an ordinary HTTP request under WAC, receipts included | Streamable-HTTP transport for remote assistants; the (user, client) principal shape when delegation needs it (#89) |
 | **An application** (ValueDocs, a firm's DMS, a consumer app) | Authenticates as a principal, reads/writes under a grant, handles refusal, keeps no authoritative copy | Days: OIDC/JWT + service principals (T4.0), `cistern grant` / `GrantService` (T5.7), `cistern pod create` (T5.6), receipts (T5.9) and the integration kit (T7.10) are all on `main`; plain HTTP per §3 | Hours, once the thin clients (T7.9) exist; EnrichMeAI does it alongside the first partners (Shape A) |
 | **An operator / hoster** | Runs Cistern for tenants | Jar / Docker / k8s / tagged GHCR image (T7.14); production posture built (T7.7, ADR 0002): Terraform HTTPS-LB path and the k8s production overlay, neither yet applied by EnrichMeAI | Hosted model after #103 |
 
@@ -164,7 +165,7 @@ Being straight about the effort is what makes the rest of this document credible
 7. **Operations.** **Done (T7.7, ADR 0002):** TLS in front (Terraform HTTPS load balancer / k8s Ingress), the enforcement guard, backups + `infra/restore-drill.sh`, per-tenant isolation, edge rate limiting, `X-Request-Id` across the edge — `deploy.md`. Remaining: **#103** decides hosting.
 8. **Client code.** Today: read §8 and write HTTP. After **T7.9**: thin Java/TS clients that make the common mistakes impossible.
 
-**So: is it easy?** For an assistant, it will be trivial once the MCP door exists — that is the strategic point. For an application, it is honest engineering — days now that identity, grants, provisioning, receipts and the kit are on `main`; hours once the thin clients land — and a product decision either way about where the data lives. That is why the first integration is our own (ValueDocs) and the next two are done *with* partners rather than handed a document.
+**So: is it easy?** For an assistant, it is now trivial — the MCP door exists (T6.1) and connecting is one config block; that is the strategic point. For an application, it is honest engineering — days now that identity, grants, provisioning, receipts and the kit are on `main`; hours once the thin clients land — and a product decision either way about where the data lives. That is why the first integration is our own (ValueDocs) and the next two are done *with* partners rather than handed a document.
 
 ## 3. Playbook — integrating an application (ValueDocs as the worked example)
 
@@ -396,6 +397,39 @@ curl -X PUT -H "$APP" -H 'If-None-Match: *' -H 'Content-Type: text/turtle' --dat
 Read `WAC-Allow` and show the user what the app may do; do not discover permissions by
 trying and catching.
 
+### Step 4a — Connect an assistant (MCP) (T6.1/T6.2, #37/#38)
+
+An AI assistant is not integrated like an application — it already speaks MCP, so
+connecting it is configuration, not code. `cistern-mcp` ships a standalone **bridge jar**
+(`cistern-mcp-<version>-bridge.jar`): the desktop client (Claude Desktop) launches it, it
+serves MCP on stdio, and every tool call becomes a real HTTP request to the running server
+through the same filter chain as §1.1 — same WAC decision, same receipt, no privileged
+path (ARCHITECTURE decision 6).
+
+The connection is **bound to exactly one principal** (T6.2): the bearer credential in the
+connector's env (`CISTERN_MCP_CREDENTIAL`), resolved by the server's own resolver chain.
+Give the assistant its own service principal (step 1) and grant that WebID a folder
+(step 3); never hand it the owner's credential.
+
+```json
+"cistern": {
+  "command": "java",
+  "args": ["-jar", "/path/to/cistern-mcp-0.1.0-SNAPSHOT-bridge.jar"],
+  "env": {
+    "CISTERN_MCP_BASE_URL": "http://127.0.0.1:3737",
+    "CISTERN_MCP_CREDENTIAL": "<the assistant's service-principal secret>"
+  }
+}
+```
+
+Tools: `read-resource`, `list-container`, `write-resource` (ETag preconditions honoured),
+`delete-resource`, `grant`/`revoke` (the same `.acl` writes the CLI performs — the server
+enforces Control), `receipts` (Control). A 401/403 surfaces as a structured **REFUSED**
+result naming the resource and required mode — never an empty success. No search tool, by
+design (§4). Alternatively `cistern.mcp.enabled=true` makes cistern-app itself serve MCP on
+its own stdio (tool calls loop back over `127.0.0.1`); config reference in §7, walkthrough
+and the Claude Desktop config in [`docs/demo/claude-desktop.md`](demo/claude-desktop.md).
+
 ### Step 5 — Handle refusal correctly
 
 | Status | Meaning | Application must |
@@ -580,10 +614,11 @@ catalogue per module; no Spring in `cistern-core`/`cistern-wac`).
    │ Agent(+client? #89) · vocab   │   │ ResourceStore impl        │  │ ResourceStore impl             │
    │ Cistern vocab (#92) · SPI     │   └───────────────────────────┘  └────────────────────────────────┘
    └───────────────────────────────┘
-   ┌── cistern-cli (new, #90/#91) ──┐   ┌── cistern-mcp (Phase 6) ──┐
-   │ cistern pod create · grant ·    │   │ MCP front-end; same filter │
-   │ revoke                          │   └────────────────────────────┘
-   └─────────────────────────────────┘
+   ┌── cistern-cli (new, #90/#91) ──┐   ┌── cistern-mcp (built, #37/#38) ────────────┐
+   │ cistern pod create · grant ·    │   │ PodTool ×7 · PodHttp (loopback, bound      │
+   │ revoke                          │   │ credential) · ToolResults (one translator) │
+   └─────────────────────────────────┘   │ McpBridge (stdio) · McpStdioRunner (app)   │
+                                         └────────────────────────────────────────────┘
 ```
 
 Dependency rule, unchanged: `webflux → wac → core`; `auth → webflux` (it implements a
@@ -796,6 +831,9 @@ defaults to `CISTERN_TOKEN`; `--base` to `http://127.0.0.1:3737`.
 
 | `cistern.audit.required` | `CISTERN_AUDIT_REQUIRED` | `false` | `true` ⇒ a decision the log cannot record is not acted on: 503, retry later (T5.9) |
 | `cistern.audit.root` | `CISTERN_AUDIT_ROOT` | `<cistern.storage.root>/.cistern` | directory of the JSON Lines decision log (`decisions/YYYY-MM-DD.jsonl`); not pod content wherever it is (T5.9) |
+| `cistern.mcp.enabled` | `CISTERN_MCP_ENABLED` | `false` | cistern-app serves MCP on its own stdio; tool calls loop back over `127.0.0.1:<port>` through the full filter chain (T6.1). Run with the `mcp-stdio` profile so logging leaves stdout. The standalone bridge jar ignores this — launching it *is* enabling it |
+| `cistern.mcp.credential` | `CISTERN_MCP_CREDENTIAL` | unset | the one bearer credential the MCP connection is bound to (T6.2) — a service principal's secret or the owner token — resolved by the ordinary resolver chain; **required** when the door is enabled, refused at bind time otherwise |
+| `cistern.mcp.base-url` | `CISTERN_MCP_BASEURL` (bridge also reads `CISTERN_MCP_BASE_URL`) | embedded: own loopback port; bridge: required | where the door sends its HTTP requests — for the bridge, the running server's `cistern.base-url` |
 
 List properties in the environment (Spring relaxed binding): the index is its own `_`-separated
 segment and dashes inside a word are simply dropped — `cistern.auth.service-principals[0].web-id`
