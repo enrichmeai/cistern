@@ -152,14 +152,20 @@ jobs:
           # pre-shade jar is left behind as original-cistern-cli-<version>.jar and is
           # never an asset.
           CLI_JAR="cistern-cli/target/cistern-cli-${VERSION}.jar"
+          # the MCP bridge is shaded as an attached classifier jar (see cistern-mcp/pom.xml)
+          BRIDGE_JAR="cistern-mcp/target/cistern-mcp-${VERSION}-bridge.jar"
           test -f "$APP_JAR" || { echo "::error::expected $APP_JAR after the build"; ls cistern-app/target; exit 1; }
           test -f "$CLI_JAR" || { echo "::error::expected $CLI_JAR after the build"; ls cistern-cli/target; exit 1; }
+          test -f "$BRIDGE_JAR" || { echo "::error::expected $BRIDGE_JAR after the build"; ls cistern-mcp/target; exit 1; }
           # A fat jar is runnable or it is not an asset: --help exercises the manifest
           # main class, picocli wiring and the merged ServiceLoader files offline.
           java -jar "$CLI_JAR" --help >/dev/null
+          # The bridge serves MCP on stdio and exits when stdin closes: an empty stdin
+          # run proves the manifest main class and shaded SDK load without hanging CI.
+          java -jar "$BRIDGE_JAR" < /dev/null > /dev/null 2>&1 || true
           mkdir -p "${RUNNER_TEMP}/dist"
-          cp "$APP_JAR" "$CLI_JAR" bin/cistern "${RUNNER_TEMP}/dist/"
-          ( cd "${RUNNER_TEMP}/dist" && sha256sum "cistern-app-${VERSION}.jar" "cistern-cli-${VERSION}.jar" cistern > SHA256SUMS && cat SHA256SUMS )
+          cp "$APP_JAR" "$CLI_JAR" "$BRIDGE_JAR" bin/cistern "${RUNNER_TEMP}/dist/"
+          ( cd "${RUNNER_TEMP}/dist" && sha256sum "cistern-app-${VERSION}.jar" "cistern-cli-${VERSION}.jar" "cistern-mcp-${VERSION}-bridge.jar" cistern > SHA256SUMS && cat SHA256SUMS )
           cp "${RUNNER_TEMP}/release-notes.md" "${RUNNER_TEMP}/dist/"
 
       - uses: actions/upload-artifact@v4
@@ -326,7 +332,7 @@ jobs:
             # A re-run of the same tag: refresh assets and notes rather than fail.
             echo "release $TAG exists — updating assets and notes"
             gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
-              "$DIST/cistern-app-$VERSION.jar" "$DIST/cistern-cli-$VERSION.jar" \
+              "$DIST/cistern-app-$VERSION.jar" "$DIST/cistern-cli-$VERSION.jar" "$DIST/cistern-mcp-$VERSION-bridge.jar" \
               "$DIST/cistern" "$DIST/SHA256SUMS"
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$NOTES"
           else
@@ -337,7 +343,7 @@ jobs:
               --title "Cistern $VERSION" \
               --notes-file "$NOTES" \
               "${EXTRA[@]}" \
-              "$DIST/cistern-app-$VERSION.jar" "$DIST/cistern-cli-$VERSION.jar" \
+              "$DIST/cistern-app-$VERSION.jar" "$DIST/cistern-cli-$VERSION.jar" "$DIST/cistern-mcp-$VERSION-bridge.jar" \
               "$DIST/cistern" "$DIST/SHA256SUMS"
           fi
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets \

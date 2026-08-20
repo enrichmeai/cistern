@@ -14,6 +14,17 @@ stranger test — is [RELEASE.md](RELEASE.md).
 
 ## [Unreleased]
 
+<!-- nothing yet -->
+
+## [0.2.0] - 2026-08-20
+
+The MCP front door. Any MCP client — Claude Desktop first — now connects to a pod and gets
+exactly what its bound identity was granted: reads inside the grant, structured refusals
+outside it, revocation that lands on the very next tool call, and receipts for all of it.
+The four-beat flagship demo (works · refusal · live revocation · the receipt) runs end to
+end against a real MCP client. Every MCP call crosses the same enforcement filter as every
+HTTP caller — no privileged path, by architecture decision.
+
 ### Added
 
 **MCP front door (`cistern-mcp`, T6.1 + T6.2, #37/#38)**
