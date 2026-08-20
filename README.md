@@ -60,6 +60,28 @@ Data lives in the `cistern-data` volume and survives restarts.
 The same works from the jar — `java -jar cistern-app-0.1.0.jar` with the same environment
 variables (Java 25) — and on a local Kubernetes cluster via [`k8s/`](k8s/README.md).
 
+### Get the CLI
+
+The same Release carries the `cistern` command — pods, grants and revocations without
+hand-editing Turtle — as `cistern-cli-0.1.0.jar` (a self-contained executable jar, Java 25)
+plus the `cistern` wrapper script, both listed in `SHA256SUMS`:
+
+```bash
+REL=https://github.com/enrichmeai/cistern/releases/download/v0.1.0
+curl -fsSLO "$REL/cistern-cli-0.1.0.jar" && curl -fsSLO "$REL/cistern" && chmod +x cistern
+export CISTERN_CLI_JAR="$PWD/cistern-cli-0.1.0.jar"   # tells the wrapper where the jar is
+export CISTERN_TOKEN='<the owner token from the run above>'
+
+./cistern pod create --root /firms/acme/ --owner 'https://acme-law.example/profile#firm'
+./cistern grant 'https://valuedocs.example/apps/legal#id' --read /firms/acme/
+./cistern revoke 'https://valuedocs.example/apps/legal#id' /firms/acme/
+```
+
+`--base` defaults to `http://127.0.0.1:3737` — where the quickstart above put the server.
+Exit codes: `0` ok, `1` failure, `2` refused (the server enforces `acl:Control`; the CLI
+only writes the files), `3` conflict (the ACL changed underneath; nothing written). The
+full command reference is in [docs/INTEGRATION.md §6.6](docs/INTEGRATION.md#66-cli-90-built-91-built).
+
 ### Build it (from source)
 
 ```bash

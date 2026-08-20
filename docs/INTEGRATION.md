@@ -797,6 +797,12 @@ defaults to `CISTERN_TOKEN`; `--base` to `http://127.0.0.1:3737`.
 | `cistern.audit.required` | `CISTERN_AUDIT_REQUIRED` | `false` | `true` ⇒ a decision the log cannot record is not acted on: 503, retry later (T5.9) |
 | `cistern.audit.root` | `CISTERN_AUDIT_ROOT` | `<cistern.storage.root>/.cistern` | directory of the JSON Lines decision log (`decisions/YYYY-MM-DD.jsonl`); not pod content wherever it is (T5.9) |
 
+List properties in the environment (Spring relaxed binding): the index is its own `_`-separated
+segment and dashes inside a word are simply dropped — `cistern.auth.service-principals[0].web-id`
+→ `CISTERN_AUTH_SERVICEPRINCIPALS_0_WEBID`, `cistern.pods.seed[1].owner-web-id` →
+`CISTERN_PODS_SEED_1_OWNERWEBID`; `CISTERN_AUTH_SERVICE_PRINCIPALS_0_WEB_ID` does **not** bind
+(each extra `_` would have to be a nested property) and fails silently.
+
 Planned: `cistern.storage.backend` (#95).
 
 ---
