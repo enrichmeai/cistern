@@ -6,18 +6,25 @@
 #
 #   CISTERN_HOST_PORT=3801 docker compose up
 #
-# SECURITY: no authentication, no access control (Phases 4 and 5 are not built).
-# The port is bound to 127.0.0.1 deliberately — change that to 0.0.0.0 and every
-# resource in the pod becomes readable, writable and deletable by anyone who can
-# reach the host.
+# SECURITY: authentication and Web Access Control are built and are enforced the moment
+# an owner is configured (CISTERN_OWNER_WEBID turns enforcement on — see the README
+# quickstart). This file deliberately configures no owner, so a bare `docker compose up`
+# runs with enforcement OFF (the server warns NO_OWNER_CONFIGURED at boot) — fine for
+# hacking on the server, wrong for holding anything. That is why the port is bound to
+# 127.0.0.1: local/private-network only, per ADR 0002's development shape
+# (docs/adr/0002-production-posture.md). Facing a network takes an owner; facing the
+# internet takes the full production posture — TLS in front, no owner token, and the
+# rest of ADR 0002's eight conditions (k8s/overlays/production or infra/terraform).
 
 services:
   cistern:
     build: .
     image: cistern:local
-    # Loopback only. Not "0.0.0.0:..." until there is something to stop a stranger
-    # emptying the pod. Only the HOST side varies — inside the container it is always
-    # 3000, where nothing can collide with it.
+    # Loopback only: with no owner configured here, nothing would stop a stranger
+    # emptying the pod on 0.0.0.0 — and even enforcing, an internet-facing instance
+    # belongs behind the ADR 0002 posture, not on a raw published port. Only the HOST
+    # side varies — inside the container it is always 3000, where nothing can collide
+    # with it.
     ports:
       - "127.0.0.1:${CISTERN_HOST_PORT:-3737}:3000"
     environment:
