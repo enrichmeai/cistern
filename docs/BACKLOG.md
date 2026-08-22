@@ -182,6 +182,11 @@ regression.
 - [ ] **T3.2 Ratchet gate.** Persist the best-known pass-count in `cth/BASELINE.md`; CI
   fails a PR whose pass-count drops below baseline; merging a PR that raises it updates
   the file (same PR). DoD: demonstrated both directions on a test branch.
+  *Starved until the harness executes assertions at all. That needs **three** things, not
+  one: Phase 4 (so `registerClients` can succeed), the CTH's alice/bob multi-pod seeding
+  (T5.4 delivered the single-owner case only and says so), and an external IdP the harness
+  can drive (Phase 0: no skip-auth mode exists). Phase 4 alone does not produce numbers —
+  do not schedule this off T4.4 landing.*
 - [ ] **T3.3 Protocol grind.** Iterate: run CTH → pick failing protocol-suite assertions →
   fix → repeat, one PR per coherent cluster (headers, slash semantics, status codes...).
   Open one `T3.3.x` sub-ticket per cluster as discovered. DoD (phase exit = Milestone 2):
@@ -201,6 +206,29 @@ regression.
   *Depends on the architect's ruling on the resolver-seam resequencing and on the
   principal-shape decision (issue #89, the T4.3 `Agent(webId, client)` question).*
 
+- [ ] **T4.F Solid-OIDC fixture capture (real CSS).** Stand up a Community Solid Server
+  once and capture, into `cistern-auth/src/test/resources/fixtures/css/`: the discovery
+  document, JWKS, access tokens, and **DPoP proofs paired with the `cnf.jkt` they match**.
+  Mirror the shape T4.0 established for Keycloak — a committed `capture.sh` that is the
+  record of how, long token lifespans so valid fixtures do not rot, plus a README stating
+  what was observed (negative findings included). Ground rule 6: nothing hand-authored.
+  DoD: `capture.sh` regenerates the whole set against a fresh CSS; tests assert on
+  structure and controlled claims, never on a specific `kid`/`sub`; no production code
+  changes in this ticket.
+  *Split out of T4.1/T4.2 because both need artifacts from the same IdP run — two agents
+  each standing up CSS produces divergent fixtures and duplicated setup. Dispatchable
+  immediately; blocks both, and informs #89.*
+  **The README must answer the #89 question first:** does the CSS **access** token carry
+  `client_id`/`azp`, and is the value a dereferenceable Client ID Document URI or a bare
+  name? Half-known already — the captured Keycloak token
+  (`fixtures/keycloak/tokens/alice-valid.jwt`) carries `azp` as the opaque client name
+  `valuedocs-legal`, no `client_id`, no `cnf`, which is `acl:origin`'s defect in new
+  clothes. Whether a real Solid-OIDC IdP does better is the fact that should decide the
+  principal shape. Also record: whether `webid` is on the access token; whether the WebID
+  profile names the issuer via `solid:oidcIssuer` and in what serialisation (T4.3 must
+  parse what CSS actually serves); and whether CSS advertises `DPoP` in `WWW-Authenticate`
+  on a 401, with which parameters (T4.4 needs this).
+  *Observe wire behaviour only — never read CSS source for semantics, never copy it.*
 - [ ] **T4.1 Solid-OIDC validation.** Accept `Authorization: DPoP <token>`: resolve issuer
   discovery doc + JWKS (cached, TTL), verify signature/exp/aud per Solid-OIDC, extract
   `webid` claim. Fixtures captured from a REAL IdP (run CSS locally once, record its
@@ -209,7 +237,18 @@ regression.
   *See `docs/ideas/agent-scoped-delegation.md`: while capturing, record whether the
   **access** token carries a `client_id`/`azp` claim. Solid-OIDC only mandates `azp` on the
   ID token, yet CSS reads client identity off the access token — confirm what a real IdP
-  actually emits before anything depends on it.*
+  actually emits before anything depends on it.* **Now captured under T4.F, on which this
+  ticket depends.**
+  *This is a **delta on T4.0, not a rebuild**. Reuse `JwtVerifier`, `CachingJwksClient`,
+  `OidcProviderMetadata`, `OidcIssuer` and `WebIdMapping`, and extend the `JwtVerdict` /
+  `JwtRejectionReason` / `AuthMessage` enums — a second JWT verification path beside the
+  existing one is a review rejection. Genuinely new: (a) the `DPoP` auth scheme —
+  `BearerToken.from()` matches the literal prefix `"Bearer "` and returns empty otherwise,
+  so a DPoP-scheme request is invisible to every current resolver; add a scheme-aware
+  sibling value type rather than loosening `BearerToken`, whose meaning three resolvers
+  already depend on; (b) Solid-OIDC's `webid` claim as a path distinct from the configured
+  `WebIdMapping`, with precedence documented; (c) a new `PrincipalResolver` chain member,
+  keeping `OidcJwtPrincipalResolver`'s "this is not Solid-OIDC" javadoc true.*
 - [ ] **T4.2 DPoP proofs.** Validate the `DPoP` header JWT: htm/htu match, iat window, jti
   replay cache, `cnf.jkt` thumbprint binding to the access token. DoD: matrix incl.
   replayed jti and mismatched thumbprint; fixtures real-captured.
@@ -225,6 +264,15 @@ regression.
   `Agent.ANONYMOUS` (WAC decides), invalid credentials → 401 + `WWW-Authenticate`. No
   Spring Security session state; stateless only. DoD: WebTestClient auth matrix; no filter
   emits null signals; no `switchIfEmpty` hung off `chain.filter()`.
+  *The challenge itself must change here. `HttpConstants.WWW_AUTHENTICATE_CHALLENGE` is
+  `Bearer realm="cistern"`, and its javadoc says why: advertising a scheme the server
+  cannot honour sends clients down a path that always fails. Once T4.1 accepts `DPoP` the
+  inverse becomes true — accepting a scheme the challenge never advertises is a
+  conformance smell. Add to DoD: the challenge advertises every scheme the server accepts;
+  **verify against RFC 9449 §7.1** whether the `DPoP` challenge must also carry `algs`,
+  and what a 401 owes when a nonce is required (read the RFC, and take what T4.F recorded
+  of CSS's own 401 as the wire-behaviour check). The 401-vs-403 split in
+  `AuthorizationFilter` must not shift.*
 
 ## Phase 5 — Authorization (cistern-wac)
 
