@@ -1,0 +1,11 @@
+{
+  "keys": [
+    {
+      "kty": "EC",
+      "x": "GvKJFuLXsFBMOQAqXIbbm144an9XzCH2h3njw7KZ4iw",
+      "y": "rVtmBm48A3cayTAGw8WHJmUYmcodWiNI1v6HSM8-vfM",
+      "crv": "P-256",
+      "kid": "foreign-key-not-in-css-jwks"
+    }
+  ]
+}
