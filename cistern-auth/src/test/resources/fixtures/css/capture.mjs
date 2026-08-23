@@ -78,9 +78,17 @@ const reSign = (over) => new SJ({ ...claims, ...over })
   .sign(foreign.privateKey);
 w('access-token-wrong-key.jwt', await reSign({}));
 w('access-token-wrong-issuer.jwt', await reSign({ iss: 'https://evil.example/' }));
+w('access-token-unusable-issuer.jwt', await reSign({ iss: 'not-a-uri' }));
 w('jwks-foreign.json', JSON.stringify({ keys: [foreignJwk] }, null, 2));
+// Flip one bit of the signature's first byte, not its last base64url character: an ES256
+// signature is 64 raw bytes, so the final character carries four bits that decoding discards
+// — changing it yields a token that is byte-identical once decoded, and verifies.
 const parts = tok.access_token.split('.');
-const last = parts[2].slice(-1);
-parts[2] = parts[2].slice(0, -1) + (last === 'A' ? 'B' : 'A');
-w('access-token-bad-signature.jwt', parts.join('.'));
+const raw = Buffer.from(parts[2], 'base64url');
+raw[0] ^= 0x01;
+const tampered = raw.toString('base64url');
+if (tampered === parts[2] || Buffer.compare(Buffer.from(tampered, 'base64url'), Buffer.from(parts[2], 'base64url')) === 0) {
+  throw new Error('bad-signature derivation did not change the signature bytes');
+}
+w('access-token-bad-signature.jwt', [parts[0], parts[1], tampered].join('.'));
 console.log('derived negatives written');

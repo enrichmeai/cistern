@@ -81,7 +81,8 @@ listed with what was changed and what was left alone.
 |---|---|
 | `access-token-wrong-key.jwt` | the captured claims, re-signed with a locally generated ES256 key whose `kid` (`foreign-key-not-in-css-jwks`) is absent from `jwks.json` |
 | `access-token-wrong-issuer.jwt` | the same, with `iss` replaced by `https://evil.example/` |
-| `access-token-bad-signature.jwt` | `access-token.jwt` with the final character of the signature segment changed — header and payload are byte-for-byte what CSS issued |
+| `access-token-unusable-issuer.jwt` | the same, with `iss` replaced by `not-a-uri` — an issuer that names nothing to fetch keys from, which fails differently from one this pod merely does not trust |
+| `access-token-bad-signature.jwt` | `access-token.jwt` with one bit of the signature's **first byte** flipped — header and payload are byte-for-byte what CSS issued |
 | `jwks-foreign.json` | the public half of that locally generated key, so a test can assert a token verifies under the wrong key set and not under CSS's |
 
 ## Regenerating
@@ -94,3 +95,9 @@ node capture.mjs <output-dir>          # needs `npm i jose@5` alongside it
 
 The script prints the decoded claims and asserts `cnf.jkt` matches the DPoP key it generated;
 if that line ever reads `false`, the capture is wrong and nothing downstream should use it.
+
+**On tampering the signature:** flipping the *last* base64url character does not work here and
+the script asserts against it. An ES256 signature is 64 raw bytes, so its final character
+carries four bits that decoding discards — `A` and `B` decode to the same byte, the token still
+verifies, and the fixture silently tests nothing. The derivation flips a bit of the first byte
+instead and fails loudly if the decoded bytes come back unchanged.
