@@ -64,6 +64,32 @@ final class CssFixtures {
         return token("access-token");
     }
 
+    /** The captured resource-request DPoP proof, verbatim from the capture. */
+    static String dpopProof() {
+        return token("dpop-proof-resource-request");
+    }
+
+    /** A derived DPoP negative, e.g. {@code "wrong-htu"} — see {@code derive-dpop-negatives.mjs}. */
+    static String dpop(String variant) {
+        return token("dpop-proof-" + variant);
+    }
+
+    /** The {@code iat} the captured proof carries, as an instant. */
+    static java.time.Instant dpopIssuedAt() {
+        try {
+            return com.nimbusds.jwt.SignedJWT.parse(dpopProof())
+                    .getJWTClaimsSet().getIssueTime().toInstant();
+        } catch (ParseException e) {
+            throw new IllegalStateException("dpop-proof-resource-request", e);
+        }
+    }
+
+    /** The {@code cnf.jkt} the captured access token is bound to. */
+    static String boundThumbprint() {
+        Object confirmation = claims("access-token").getClaim("cnf");
+        return (String) ((java.util.Map<?, ?>) confirmation).get("jkt");
+    }
+
     static JWTClaimsSet claims(String name) {
         try {
             return SignedJWT.parse(token(name)).getJWTClaimsSet();
