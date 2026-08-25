@@ -43,6 +43,23 @@ public enum JwtRejectionReason {
     /** The mapping produced something that is not an absolute URI. */
     WEBID_INVALID(AuthMessage.REASON_WEBID_INVALID, Level.INFO),
 
+    /**
+     * A Solid-OIDC token with no {@code cnf.jkt}. It verified, but it is bound to no key,
+     * so possession of it is the only thing holding it — which is what DPoP exists to stop.
+     */
+    CONFIRMATION_MISSING(AuthMessage.REASON_CONFIRMATION_MISSING, Level.INFO),
+
+    /**
+     * The token names an issuer this pod will not talk to. Distinct from
+     * {@link #ISSUER_MISMATCH}, which is a verified token whose {@code iss} is not the one
+     * its verifier was built for: separate constants because they fail at different points
+     * and a test asserting one must not pass on the other.
+     */
+    ISSUER_UNTRUSTED(AuthMessage.REASON_ISSUER_UNTRUSTED, Level.INFO),
+
+    /** {@code iss} is missing or is not an absolute URI, so no issuer can be asked. */
+    ISSUER_INVALID(AuthMessage.REASON_ISSUER_INVALID, Level.INFO),
+
     /** An exception the verifier did not anticipate. Never a 500: the request is anonymous. */
     VERIFICATION_ERROR(AuthMessage.REASON_VERIFICATION_ERROR, Level.WARN);
 

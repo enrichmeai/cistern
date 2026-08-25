@@ -1,0 +1,20 @@
+{
+  "header": {
+    "alg": "ES256",
+    "typ": "at+jwt",
+    "kid": "BYQ__C_ZAdbgvUmOAw9x6_r6V8ifqj1HaE-UtcI15R8"
+  },
+  "claims": {
+    "webid": "http://localhost:3939/alice/profile/card#me",
+    "jti": "mj6j_sl5hGZLlR7A8anOo",
+    "sub": "cistern-capture_767ce9e3-fbf7-4f1c-8f42-b95eda13f7d7",
+    "iat": 1787457891,
+    "exp": 1787458491,
+    "client_id": "cistern-capture_767ce9e3-fbf7-4f1c-8f42-b95eda13f7d7",
+    "iss": "http://localhost:3939/",
+    "aud": "solid",
+    "cnf": {
+      "jkt": "jAFaFuyYHcJbN34RwAXGdmwEOnm9x4UB21prJ0ZzFmI"
+    }
+  }
+}

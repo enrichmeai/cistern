@@ -117,6 +117,9 @@ public enum WebfluxMessage {
     /** {@code BearerToken} constructed with nothing in it — a caller bug, not a request fault. */
     BEARER_TOKEN_BLANK("A bearer token cannot be blank"),
 
+    /** A DPoP-bound token was presented with an empty value (RFC 9449 §7.1). */
+    DPOP_TOKEN_BLANK("A DPoP-bound token cannot be blank"),
+
     /** A service principal's credential hash is not {@code <label>:<hex>}. */
     CREDENTIAL_HASH_MALFORMED(
             "cistern.auth.service-principals[].credential-hash must be <algorithm>:<hex digest>,"

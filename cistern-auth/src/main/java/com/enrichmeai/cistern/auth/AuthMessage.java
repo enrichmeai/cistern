@@ -28,6 +28,15 @@ public enum AuthMessage {
     REASON_NOT_YET_VALID("not valid before %s (now %s, allowing %s of skew)"),
     REASON_WEBID_MISSING("no WebID could be derived: %s"),
     REASON_WEBID_INVALID("the derived WebID is not an absolute URI: %s"),
+
+    /** RFC 9449 §6: without a confirmation claim the token is bearer-equivalent. */
+    REASON_CONFIRMATION_MISSING("no cnf.jkt: the token is not bound to any DPoP key"),
+
+    /** The token names an issuer, but not one this pod will fetch keys from. */
+    REASON_ISSUER_UNTRUSTED("the token names issuer %s, which this pod does not trust"),
+
+    /** {@code iss} is absent, or present and not an absolute URI. */
+    REASON_ISSUER_INVALID("iss is not an absolute URI: %s"),
     REASON_VERIFICATION_ERROR("verification failed unexpectedly: %s"),
 
     // ---------------------------------------------------------------- WebID mapping
