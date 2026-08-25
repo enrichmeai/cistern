@@ -22,9 +22,14 @@ provider.
 
 ## Status
 
-Pre-0.1, built in the open. Conformance against the official
+**v0.2.0**, built in the open — what changed is in [CHANGELOG.md](CHANGELOG.md).
+Conformance against the official
 [Solid test harness](https://github.com/solid-contrib/conformance-test-harness) is the
-project's public health metric — numbers only move forward (see `cth/BASELINE.md`).
+project's public health metric — numbers only move forward (see `cth/BASELINE.md`). It
+currently reads 0 of 41 cases executed: the harness registers authenticated test clients
+before running any assertion, and Solid-OIDC token acceptance is not built yet (Phase 4,
+T4.1–T4.4), so the run stops before the first test. Honest numbers only.
+
 Roadmap: [docs/BACKLOG.md](docs/BACKLOG.md) · Architecture:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Integrating an application:
 [docs/INTEGRATION.md](docs/INTEGRATION.md)
@@ -44,7 +49,7 @@ docker run --rm -p 127.0.0.1:3737:3000 \
   -e CISTERN_OWNER_WEBID='https://you.example/profile/card#me' \
   -e CISTERN_OWNER_TOKEN="$(openssl rand -hex 32)" \
   -v cistern-data:/data \
-  ghcr.io/enrichmeai/cistern:0.1.0
+  ghcr.io/enrichmeai/cistern:0.2.0
 ```
 
 Three things in that command are load-bearing. The port is published on **`127.0.0.1`**,
@@ -57,19 +62,19 @@ anyone else gets `401`, and the owner authenticates with `Authorization: Bearer 
 Print the token rather than losing it (`TOKEN=$(openssl rand -hex 32); echo "$TOKEN"`).
 Data lives in the `cistern-data` volume and survives restarts.
 
-The same works from the jar — `java -jar cistern-app-0.1.0.jar` with the same environment
+The same works from the jar — `java -jar cistern-app-0.2.0.jar` with the same environment
 variables (Java 25) — and on a local Kubernetes cluster via [`k8s/`](k8s/README.md).
 
 ### Get the CLI
 
 The same Release carries the `cistern` command — pods, grants and revocations without
-hand-editing Turtle — as `cistern-cli-0.1.0.jar` (a self-contained executable jar, Java 25)
+hand-editing Turtle — as `cistern-cli-0.2.0.jar` (a self-contained executable jar, Java 25)
 plus the `cistern` wrapper script, both listed in `SHA256SUMS`:
 
 ```bash
-REL=https://github.com/enrichmeai/cistern/releases/download/v0.1.0
-curl -fsSLO "$REL/cistern-cli-0.1.0.jar" && curl -fsSLO "$REL/cistern" && chmod +x cistern
-export CISTERN_CLI_JAR="$PWD/cistern-cli-0.1.0.jar"   # tells the wrapper where the jar is
+REL=https://github.com/enrichmeai/cistern/releases/download/v0.2.0
+curl -fsSLO "$REL/cistern-cli-0.2.0.jar" && curl -fsSLO "$REL/cistern" && chmod +x cistern
+export CISTERN_CLI_JAR="$PWD/cistern-cli-0.2.0.jar"   # tells the wrapper where the jar is
 export CISTERN_TOKEN='<the owner token from the run above>'
 
 ./cistern pod create --root /firms/acme/ --owner 'https://acme-law.example/profile#firm'
