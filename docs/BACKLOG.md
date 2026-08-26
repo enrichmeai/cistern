@@ -201,7 +201,7 @@ regression.
   *Depends on the architect's ruling on the resolver-seam resequencing and on the
   principal-shape decision (issue #89, the T4.3 `Agent(webId, client)` question).*
 
-- [ ] **T4.1 Solid-OIDC validation.** Accept `Authorization: DPoP <token>`: resolve issuer
+- [x] **T4.1 Solid-OIDC validation.** Accept `Authorization: DPoP <token>`: resolve issuer
   discovery doc + JWKS (cached, TTL), verify signature/exp/aud per Solid-OIDC, extract
   `webid` claim. Fixtures captured from a REAL IdP (run CSS locally once, record its
   tokens/JWKS into `src/test/resources/fixtures/` — real-first rule). DoD: valid/expired/
@@ -210,10 +210,10 @@ regression.
   **access** token carries a `client_id`/`azp` claim. Solid-OIDC only mandates `azp` on the
   ID token, yet CSS reads client identity off the access token — confirm what a real IdP
   actually emits before anything depends on it.*
-- [ ] **T4.2 DPoP proofs.** Validate the `DPoP` header JWT: htm/htu match, iat window, jti
+- [x] **T4.2 DPoP proofs.** Validate the `DPoP` header JWT: htm/htu match, iat window, jti
   replay cache, `cnf.jkt` thumbprint binding to the access token. DoD: matrix incl.
   replayed jti and mismatched thumbprint; fixtures real-captured.
-- [ ] **T4.3 WebID verification.** Dereference the WebID document (WebClient, timeout+
+- [x] **T4.3 WebID verification.** Dereference the WebID document (WebClient, timeout+
   cache); confirm `solid:oidcIssuer` lists the token's issuer; result = authenticated
   `Agent(webId)` in Reactor context — single population point, downstream reads context
   only. DoD: issuer-mismatch → 401; WebID fetch failure → 401 not 500.

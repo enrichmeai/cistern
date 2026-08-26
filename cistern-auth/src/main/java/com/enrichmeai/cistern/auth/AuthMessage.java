@@ -81,6 +81,11 @@ public enum AuthMessage {
     WEBID_REDIRECTS_INVALID("the WebID redirect cap cannot be negative, was %s"),
     WEBID_BODY_CAP_INVALID("the WebID body cap must be positive, was %s"),
 
+    /** A DPoP proof that did not bind the request, at the resolver boundary. */
+    DPOP_REJECTED("DPoP proof rejected: %s — %s"),
+    SOLID_RESOLVER_WIRED("Solid-OIDC resolver wired: base %s, proof window %s, WebID cache %s"),
+    ISSUER_BOUND_INVALID("the discovered-issuer bound must be positive, was %s"),
+
     /** The token names an issuer, but not one this pod will fetch keys from. */
     REASON_ISSUER_UNTRUSTED("the token names issuer %s, which this pod does not trust"),
 
