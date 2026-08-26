@@ -50,7 +50,7 @@ import reactor.core.publisher.Mono;
  * <p>Verified answers are cached for {@code cacheTtl}. Refusals are not: a WebID that has just
  * added its issuer should work on the next request, not after a timeout.
  */
-public final class WebIdIssuerVerifier {
+public final class WebIdIssuerVerifier implements WebIdIssuers {
 
     private final WebClient http;
     private final WebIdFetchPolicy policy;
@@ -70,6 +70,7 @@ public final class WebIdIssuerVerifier {
     }
 
     /** Whether {@code webId} names {@code issuer}. Never empty, never an error. */
+    @Override
     public Mono<WebIdVerdict> verify(URI webId, URI issuer) {
         Objects.requireNonNull(webId, "webId");
         Objects.requireNonNull(issuer, "issuer");
