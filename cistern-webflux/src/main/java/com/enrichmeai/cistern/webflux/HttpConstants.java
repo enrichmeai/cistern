@@ -32,7 +32,17 @@ final class HttpConstants {
      * advertising a scheme the server cannot yet honour would send clients down a path that
      * always fails.
      */
-    static final String WWW_AUTHENTICATE_CHALLENGE = "Bearer realm=\"cistern\"";
+    /**
+     * The challenge sent with a 401 (RFC 9110 §11.6.1, RFC 9449 §7.1).
+     *
+     * <p>Both schemes, because both are accepted: {@code Bearer} for an application's own
+     * credential, {@code DPoP} for Solid-OIDC. A client choosing between them reads this, and
+     * advertising only {@code Bearer} would tell a Solid client to retry the one way that
+     * cannot work — RFC 9449 §7.1 has the resource server list {@code DPoP} with the
+     * signature algorithms it will accept, which is what {@code algs} carries.
+     */
+    static final String WWW_AUTHENTICATE_CHALLENGE =
+            "Bearer realm=\"cistern\", DPoP realm=\"cistern\", algs=\"ES256 RS256\"";
 
     /** LDP 1.0 §7.1.2 — media types acceptable in a {@code POST} to this container. */
     static final String ACCEPT_POST = "Accept-Post";

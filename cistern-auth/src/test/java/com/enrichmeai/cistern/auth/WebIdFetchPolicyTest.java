@@ -19,8 +19,13 @@ class WebIdFetchPolicyTest {
     @Test
     @DisplayName("a public https WebID is permitted")
     void permitsPublicHttps() {
-        assertThat(policy.refuse(URI.create("https://solidcommunity.net/alice/profile/card")))
-                .isEmpty();
+        // A stub resolver, so this asserts the rule rather than the health of public DNS.
+        WebIdFetchPolicy resolving = new WebIdFetchPolicy(
+                WebIdFetchPolicy.DEFAULT_TIMEOUT, WebIdFetchPolicy.DEFAULT_MAX_REDIRECTS,
+                WebIdFetchPolicy.DEFAULT_MAX_BODY_BYTES,
+                host -> new java.net.InetAddress[] {java.net.InetAddress.getByName("93.184.216.34")});
+
+        assertThat(resolving.refuse(URI.create("https://alice.example/profile/card"))).isEmpty();
     }
 
     @ParameterizedTest(name = "{0}")
@@ -74,10 +79,10 @@ class WebIdFetchPolicyTest {
     @DisplayName("construction rejects limits that would disable a guard")
     void rejectsInvalidLimits() {
         assertThatIllegalArgumentException()
-                .isThrownBy(() -> new WebIdFetchPolicy(Duration.ZERO, 3, 1024));
+                .isThrownBy(() -> new WebIdFetchPolicy(Duration.ZERO, 3, 1024, WebIdFetchPolicy.HostResolver.system()));
         assertThatIllegalArgumentException()
-                .isThrownBy(() -> new WebIdFetchPolicy(Duration.ofSeconds(5), -1, 1024));
+                .isThrownBy(() -> new WebIdFetchPolicy(Duration.ofSeconds(5), -1, 1024, WebIdFetchPolicy.HostResolver.system()));
         assertThatIllegalArgumentException()
-                .isThrownBy(() -> new WebIdFetchPolicy(Duration.ofSeconds(5), 3, 0));
+                .isThrownBy(() -> new WebIdFetchPolicy(Duration.ofSeconds(5), 3, 0, WebIdFetchPolicy.HostResolver.system()));
     }
 }

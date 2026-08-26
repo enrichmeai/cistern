@@ -37,8 +37,27 @@ import java.util.Objects;
  *                       is fail-closed, so a slow host becomes a 401, never a hang
  * @param maxRedirects   hops followed, each re-checked against this policy
  * @param maxBodyBytes   the largest WebID document accepted
+ * @param hosts          how a hostname becomes addresses. A dependency rather than a direct
+ *                       call to {@link InetAddress}, for the same reason {@link java.time.Clock}
+ *                       is one: a rule about DNS answers cannot be tested against a DNS this
+ *                       does not control. Not a bypass — the rule itself is unchanged and
+ *                       applies to whatever the resolver returns.
  */
-public record WebIdFetchPolicy(Duration connectTimeout, int maxRedirects, int maxBodyBytes) {
+public record WebIdFetchPolicy(Duration connectTimeout, int maxRedirects, int maxBodyBytes,
+                               HostResolver hosts) {
+
+    /** How a hostname becomes the addresses a connection would reach. */
+    @FunctionalInterface
+    public interface HostResolver {
+
+        /** Every address {@code host} resolves to. */
+        InetAddress[] resolve(String host) throws UnknownHostException;
+
+        /** The real one. */
+        static HostResolver system() {
+            return InetAddress::getAllByName;
+        }
+    }
 
     /** The only scheme a WebID may be dereferenced over. */
     public static final String REQUIRED_SCHEME = "https";
@@ -49,6 +68,7 @@ public record WebIdFetchPolicy(Duration connectTimeout, int maxRedirects, int ma
 
     public WebIdFetchPolicy {
         Objects.requireNonNull(connectTimeout, "connectTimeout");
+        Objects.requireNonNull(hosts, "hosts");
         if (connectTimeout.isNegative() || connectTimeout.isZero()) {
             throw new IllegalArgumentException(AuthMessage.WEBID_TIMEOUT_INVALID.format(connectTimeout));
         }
@@ -60,9 +80,10 @@ public record WebIdFetchPolicy(Duration connectTimeout, int maxRedirects, int ma
         }
     }
 
-    /** The defaults: 5s, 3 hops, 256 KiB. */
+    /** The defaults: 5s, 3 hops, 256 KiB, real DNS. */
     public static WebIdFetchPolicy defaults() {
-        return new WebIdFetchPolicy(DEFAULT_TIMEOUT, DEFAULT_MAX_REDIRECTS, DEFAULT_MAX_BODY_BYTES);
+        return new WebIdFetchPolicy(DEFAULT_TIMEOUT, DEFAULT_MAX_REDIRECTS, DEFAULT_MAX_BODY_BYTES,
+                HostResolver.system());
     }
 
     /**
@@ -84,7 +105,7 @@ public record WebIdFetchPolicy(Duration connectTimeout, int maxRedirects, int ma
         if (uri.getHost() == null) {
             return java.util.Optional.of(JwtRejectionReason.WEBID_INVALID);
         }
-        return isPubliclyRoutable(uri.getHost())
+        return isPubliclyRoutable(uri.getHost(), hosts)
                 ? java.util.Optional.empty()
                 : java.util.Optional.of(JwtRejectionReason.WEBID_ADDRESS_REFUSED);
     }
@@ -95,9 +116,9 @@ public record WebIdFetchPolicy(Duration connectTimeout, int maxRedirects, int ma
      * <p>Every address, not the first: a host with both a public and a loopback record would
      * otherwise pass here and connect to whichever the client picked.
      */
-    private static boolean isPubliclyRoutable(String host) {
+    private static boolean isPubliclyRoutable(String host, HostResolver hosts) {
         try {
-            InetAddress[] addresses = InetAddress.getAllByName(host);
+            InetAddress[] addresses = hosts.resolve(host);
             if (addresses.length == 0) {
                 return false;
             }
