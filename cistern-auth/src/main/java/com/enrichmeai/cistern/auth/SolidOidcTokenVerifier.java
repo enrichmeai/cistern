@@ -17,10 +17,11 @@ import reactor.core.publisher.Mono;
  *
  * <p>Three things make this different from the plain bearer path ({@link JwtVerifier} under
  * {@link OidcJwtPrincipalResolver}), and all three were settled by capturing a token from a
- * real Solid identity provider rather than from the specification — which, checked at
- * §9.2/§9.3/§8.1.1, states requirements for the <em>authorization</em> server and leaves
- * resource-server validation undefined. The fixtures and their provenance are in
- * {@code src/test/resources/fixtures/css/}.
+ * real Solid identity provider. Solid-OIDC §9.2/§9.3/§8.1.1 specify the <em>authorization</em>
+ * server — the half where getting it wrong issues bad tokens to everyone — and leave the
+ * resource server to follow from it. So the answers here come from what a conforming
+ * implementation actually emits, which is the reason ground rule 6 exists. The fixtures and
+ * their provenance are in {@code src/test/resources/fixtures/css/}.
  *
  * <ol>
  *   <li><strong>The issuer arrives in the token.</strong> A pod cannot enumerate the identity

@@ -28,10 +28,9 @@ import java.util.Objects;
  * Checks that a DPoP proof binds a request to the key its access token names (T4.2), following
  * the twelve numbered steps of RFC 9449 §4.3 in order.
  *
- * <p>Unlike Solid-OIDC, which leaves resource-server validation undefined, RFC 9449 says
- * exactly what to check — so this is written against the RFC text, with each step naming the
- * {@link DpopRejectionReason} it fails with, and the captured fixtures used to confirm the
- * shape a real client actually sends.
+ * <p>RFC 9449 enumerates the resource-server checks in full, so this is written against its
+ * text step by step, each naming the {@link DpopRejectionReason} it fails with, with the
+ * captured fixtures used to confirm the shape a real client actually sends.
  *
  * <p>Two steps are deliberately absent. Step 10 (server-provided {@code nonce}) applies only
  * once this server issues {@code DPoP-Nonce} challenges, which it does not; if that arrives,
