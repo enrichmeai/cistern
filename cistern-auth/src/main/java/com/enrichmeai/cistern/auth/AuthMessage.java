@@ -71,6 +71,16 @@ public enum AuthMessage {
     DPOP_METHOD_BLANK("the request method cannot be blank"),
     DPOP_TARGET_NOT_ABSOLUTE("the request target must be an absolute URI, was %s"),
 
+    // ---- WebID dereferencing, T4.3 ----
+    REASON_WEBID_SCHEME_REFUSED("a WebID is only dereferenced over https, not %s"),
+    REASON_WEBID_ADDRESS_REFUSED("the WebID host %s resolves to a non-public address"),
+    REASON_WEBID_UNREACHABLE("the WebID document could not be fetched: %s"),
+    REASON_WEBID_UNPARSEABLE("the WebID document is not parseable RDF: %s"),
+    REASON_WEBID_ISSUER_NOT_NAMED("the WebID does not name %s as a solid:oidcIssuer (names: %s)"),
+    WEBID_TIMEOUT_INVALID("the WebID fetch timeout must be positive, was %s"),
+    WEBID_REDIRECTS_INVALID("the WebID redirect cap cannot be negative, was %s"),
+    WEBID_BODY_CAP_INVALID("the WebID body cap must be positive, was %s"),
+
     /** The token names an issuer, but not one this pod will fetch keys from. */
     REASON_ISSUER_UNTRUSTED("the token names issuer %s, which this pod does not trust"),
 
