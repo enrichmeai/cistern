@@ -32,6 +32,45 @@ public enum AuthMessage {
     /** RFC 9449 §6: without a confirmation claim the token is bearer-equivalent. */
     REASON_CONFIRMATION_MISSING("no cnf.jkt: the token is not bound to any DPoP key"),
 
+    // ---- DPoP proof validation, RFC 9449 §4.3, one per numbered step ----
+
+    /** §4.3 step 1. */
+    DPOP_HEADER_REPEATED("the request carried %s DPoP header fields; exactly one is allowed"),
+    /** §4.3 step 2. */
+    DPOP_MALFORMED("the DPoP header is not a well-formed JWT: %s"),
+    /** §4.3 step 3. */
+    DPOP_CLAIM_MISSING("the DPoP proof omits the required claim %s"),
+    /** §4.3 step 4. */
+    DPOP_TYP_UNEXPECTED("the DPoP proof declares typ %s, not dpop+jwt"),
+    /** §4.3 step 5. */
+    DPOP_ALG_NOT_ACCEPTED("the DPoP proof is signed with %s; accepted: %s"),
+    /** §4.3 step 6. */
+    DPOP_SIGNATURE_INVALID("the DPoP proof does not verify against the key it carries"),
+    /** §4.3 step 7 — a proof carrying a private key is a client that has leaked its own secret. */
+    DPOP_JWK_HAS_PRIVATE_KEY("the DPoP proof's jwk carries private key material"),
+    /** §4.3 step 8. */
+    DPOP_HTM_MISMATCH("the DPoP proof is for method %s; this request is %s"),
+    /** §4.3 step 9. */
+    DPOP_HTU_MISMATCH("the DPoP proof is for %s; this request is for %s"),
+    /** §4.3 step 11. */
+    DPOP_IAT_OUTSIDE_WINDOW("the DPoP proof was created at %s; now %s, accepting %s either way"),
+    /** §4.3 step 11, replay half: a jti seen before inside the acceptance window. */
+    DPOP_JTI_REPLAYED("the DPoP proof jti %s has already been used"),
+    /** The replay cache is full, so uniqueness cannot be guaranteed; refuse rather than guess. */
+    DPOP_REPLAY_CACHE_FULL("the DPoP replay cache is at its bound of %s entries"),
+    /** §4.3 step 12, first half. */
+    DPOP_ATH_MISMATCH("the DPoP proof's ath does not hash to the presented access token"),
+    /** §4.3 step 12, second half — the proof key is not the key the token is bound to. */
+    DPOP_THUMBPRINT_MISMATCH("the DPoP proof key is %s; the access token is bound to %s"),
+    /** The proof carries no ath, but an access token was presented alongside it. */
+    DPOP_ATH_MISSING("an access token was presented but the DPoP proof carries no ath"),
+
+    /** Construction-time invariants of the replay cache. */
+    DPOP_RETENTION_INVALID("jti retention must be positive, was %s"),
+    DPOP_BOUND_INVALID("the jti cache bound must be positive, was %s"),
+    DPOP_METHOD_BLANK("the request method cannot be blank"),
+    DPOP_TARGET_NOT_ABSOLUTE("the request target must be an absolute URI, was %s"),
+
     /** The token names an issuer, but not one this pod will fetch keys from. */
     REASON_ISSUER_UNTRUSTED("the token names issuer %s, which this pod does not trust"),
 

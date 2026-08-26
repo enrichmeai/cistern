@@ -101,3 +101,48 @@ the script asserts against it. An ES256 signature is 64 raw bytes, so its final 
 carries four bits that decoding discards — `A` and `B` decode to the same byte, the token still
 verifies, and the fixture silently tests nothing. The derivation flips a bit of the first byte
 instead and fails loudly if the decoded bytes come back unchanged.
+
+
+## DPoP proofs (T4.2)
+
+`capture.mjs` writes two proofs exactly as a real client produces them, signed with the
+ES256 key the access token is bound to:
+
+| File | Signed for | Carries |
+|---|---|---|
+| `dpop-proof-token-request.jwt` | `POST` to the token endpoint | `htu`, `htm`, `iat`, `jti` |
+| `dpop-proof-resource-request.jwt` | `GET http://localhost:3939/alice/private/note.ttl` | the above plus `ath` |
+
+Both bindings were verified against the captured access token rather than assumed:
+
+- `ath` equals `base64url(SHA-256(ASCII(access token)))` — RFC 9449 §4.2.
+- The proof key's RFC 7638 thumbprint equals the token's `cnf.jkt`.
+
+### Derived negatives
+
+No correct client emits a proof that fails §4.3, so the negatives are stated derivations,
+produced by [`derive-dpop-negatives.mjs`](derive-dpop-negatives.mjs) from the captured proof's
+own claims. They are signed with a locally generated ES256 key (`dpop-foreign-jwk.json`),
+which is why `dpop-proof-foreign-key.jwt` fails the thumbprint check and nothing else.
+
+| File | Fails | Step |
+|---|---|---|
+| `dpop-proof-wrong-typ.jwt` | `typ` is `JWT` | 4 |
+| `dpop-proof-bad-signature.jwt` | first byte of the signature flipped | 6 |
+| `dpop-proof-private-jwk.jwt` | `jwk` carries `d` | 7 |
+| `dpop-proof-wrong-htm.jwt` | `htm` is `DELETE` | 8 |
+| `dpop-proof-wrong-htu.jwt` | `htu` names another origin | 9 |
+| `dpop-proof-no-ath.jwt` | no `ath`, with a token presented | 12 |
+| `dpop-proof-wrong-ath.jwt` | `ath` hashes to nothing | 12 |
+| `dpop-proof-foreign-key.jwt` | correct `htm`/`htu`/`ath`, foreign key | 12 |
+
+**On `dpop-proof-bad-signature.jwt`:** the corruption is a flipped bit in the *first* byte of
+the decoded signature. Flipping the last base64url character does not reliably change the
+signature — a 64-byte ES256 signature ends on a character whose low bits decoding discards, so
+the token still verifies. That mistake was made once in the T4.1 fixtures and the derivation
+now asserts the bytes actually differ.
+
+**On `dpop-proof-private-jwk.jwt`:** Nimbus refuses a non-public key in the `jwk` header during
+`JWSHeader.parse`, so this fixture is rejected as malformed before the validator's own step-7
+check runs. `DpopValidatorTest` asserts on the rejection detail, so the requirement stays
+covered by a test rather than by a comment.
