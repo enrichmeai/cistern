@@ -91,6 +91,12 @@ public record WebIdFetchPolicy(Duration connectTimeout, int maxRedirects, int ma
      *
      * <p>Called for the WebID itself and again for every redirect target.
      *
+     * <p><strong>Blocks on DNS.</strong> The address rule cannot be answered without
+     * resolving the host, and {@link InetAddress} has no non-blocking form of that — so a
+     * reactive caller subscribes this on {@code boundedElastic} (ground rule 3) and puts it
+     * inside its timeout, or a slow resolver stalls an event loop for as long as the OS
+     * lets it. Every caller in this module does both; a new one must too.
+     *
      * @return empty when the URI is permitted
      */
     public java.util.Optional<JwtRejectionReason> refuse(URI uri) {

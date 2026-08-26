@@ -86,4 +86,37 @@ class DiscoveringIssuersTest {
     void rejectsInvalidBound() {
         assertThatIllegalArgumentException().isThrownBy(() -> issuers(0));
     }
+
+    @Test
+    @DisplayName("the bound holds even when racing requests all name fresh issuers")
+    void boundHoldsUnderConcurrency() throws Exception {
+        DiscoveringIssuers discovering = issuers(4);
+        int racers = 16;
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(racers);
+        try {
+            java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+            java.util.List<java.util.concurrent.Future<Boolean>> outcomes = new java.util.ArrayList<>();
+            for (int i = 0; i < racers; i++) {
+                URI issuer = URI.create("https://idp-" + i + ".example/");
+                outcomes.add(pool.submit(() -> {
+                    start.await();
+                    return discovering.verifierFor(issuer).isPresent();
+                }));
+            }
+            start.countDown();
+            int admitted = 0;
+            for (java.util.concurrent.Future<Boolean> outcome : outcomes) {
+                if (outcome.get()) {
+                    admitted++;
+                }
+            }
+            assertThat(admitted)
+                    .describedAs("size-check-then-insert as two operations would admit "
+                            + "every racer that read the map before the first insert landed")
+                    .isEqualTo(4);
+            assertThat(discovering.size()).isEqualTo(4);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
 }

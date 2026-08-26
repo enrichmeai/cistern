@@ -181,6 +181,27 @@ class SolidOidcTokenVerifierTest {
                 .verifyComplete();
     }
 
+    /**
+     * The issuer lookup runs {@link WebIdFetchPolicy#refuse}, which resolves DNS — a blocking
+     * call. On the event loop this chain is otherwise subscribed from, that is a stall for
+     * every request the loop serves (ground rule 3).
+     */
+    @Test
+    @DisplayName("the issuer lookup runs on boundedElastic, not the subscriber's thread")
+    void issuerLookupLeavesTheCallingThread() {
+        java.util.concurrent.atomic.AtomicReference<String> lookupThread =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        SolidOidcTokenVerifier verifier = new SolidOidcTokenVerifier(issuer -> {
+            lookupThread.set(Thread.currentThread().getName());
+            return Optional.empty();
+        });
+
+        StepVerifier.create(verifier.verify(CssFixtures.accessToken()))
+                .expectNextCount(1)
+                .verifyComplete();
+        assertThat(lookupThread.get()).contains("boundedElastic");
+    }
+
     /** {@code iss} that is not an absolute URI names no issuer to ask, and says so as itself. */
     @Test
     @DisplayName("a token with no usable iss is rejected as invalid, not as untrusted")

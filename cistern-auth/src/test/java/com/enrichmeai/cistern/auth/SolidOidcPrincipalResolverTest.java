@@ -125,6 +125,24 @@ class SolidOidcPrincipalResolverTest {
                 .verifyComplete();
     }
 
+    /**
+     * §4.3 step 9 compares URIs, and the client signs the URL it dialled — encoded. A
+     * decoding refactor here would fail every proof for a URI with an encoded reserved
+     * character and look exactly like a broken client, so the raw path is pinned.
+     */
+    @Test
+    @DisplayName("the DPoP target keeps the path exactly as the client encoded it, on the configured base")
+    void targetKeepsTheRawPath() {
+        var request = org.springframework.mock.http.server.reactive.MockServerHttpRequest
+                .method(org.springframework.http.HttpMethod.GET,
+                        URI.create("http://some-socket-host:9999/alice/a%20note%2Bmore.ttl"))
+                .build();
+
+        assertThat(resolver(vouching()).targetOf(request))
+                .describedAs("base-url replaces the socket's origin; the raw path survives")
+                .isEqualTo(URI.create(BASE_URL + "/alice/a%20note%2Bmore.ttl"));
+    }
+
     @Test
     @DisplayName("a Bearer credential is not claimed by the DPoP resolver")
     void bearerIsNotOurs() {

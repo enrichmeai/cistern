@@ -157,6 +157,51 @@ class CachingJwksClientTest {
         assertEquals(2, server.hits(KEYS_PATH));
     }
 
+    /** The discovery-with-vetting form {@link DiscoveringIssuers} builds, policy included. */
+    private CachingJwksClient discovering(WebIdFetchPolicy policy) {
+        OidcIssuer issuer = new OidcIssuer(server.uri("/realms/cistern"), Set.of("cistern"), Duration.ZERO);
+        return new CachingJwksClient(WebClient.create(), issuer, policy, clock);
+    }
+
+    private void serveDiscoveryNaming(String jwksUri) {
+        String discovery = Fixtures.openidConfiguration().replace(
+                "http://localhost:8080" + KEYS_PATH, jwksUri);
+        assertTrue(discovery.contains(jwksUri), "rewrite must have applied");
+        server.serve(DISCOVERY_PATH, discovery);
+    }
+
+    /**
+     * The SSRF at the follow: the issuer URI can be vetted and public, yet the document it
+     * serves names where the next GET goes. Without this check a public-HTTPS issuer routes
+     * the pod's own request at metadata services or anything else on the inside.
+     */
+    @Test
+    @DisplayName("a discovered jwks_uri the fetch policy refuses is an error, not a fetch")
+    void discoveredJwksUriIsVetted() {
+        serveDiscoveryNaming("http://169.254.169.254/keys");
+
+        StepVerifier.create(discovering(WebIdFetchPolicy.defaults()).keys())
+                .expectErrorSatisfies(error -> {
+                    assertTrue(error instanceof JwksUnavailableException, "the one expected failure");
+                    assertNotNull(error.getMessage());
+                    assertTrue(error.getMessage().contains("refuses"), error.getMessage());
+                })
+                .verify();
+    }
+
+    @Test
+    @DisplayName("a public-https jwks_uri resolving to a private address is refused the same way")
+    void discoveredJwksUriOnPrivateAddressIsRefused() {
+        serveDiscoveryNaming("https://keys.internal.example/jwks");
+        WebIdFetchPolicy policy = new WebIdFetchPolicy(WebIdFetchPolicy.DEFAULT_TIMEOUT,
+                WebIdFetchPolicy.DEFAULT_MAX_REDIRECTS, WebIdFetchPolicy.DEFAULT_MAX_BODY_BYTES,
+                host -> new java.net.InetAddress[] {java.net.InetAddress.getByName("10.0.0.7")});
+
+        StepVerifier.create(discovering(policy).keys())
+                .expectError(JwksUnavailableException.class)
+                .verify();
+    }
+
     @Test
     @DisplayName("a failed discovery is not remembered: the next request tries again")
     void failedDiscoveryIsRetried() {

@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Fetches the issuer's key set with {@link WebClient}, caches it, and refreshes it on demand
@@ -67,6 +68,7 @@ public final class CachingJwksClient implements JwksClient {
     private static final Duration FOREVER = Duration.ofMillis(Long.MAX_VALUE);
 
     private final WebClient http;
+    private final Optional<WebIdFetchPolicy> discoveryPolicy;
     private final Mono<URI> jwksUri;
     private final Duration timeToLive;
     private final Duration minimumRefreshInterval;
@@ -103,9 +105,38 @@ public final class CachingJwksClient implements JwksClient {
             Duration timeToLive,
             Duration minimumRefreshInterval,
             Clock clock) {
+        this(http, issuer, jwksUri, Optional.empty(), timeToLive, minimumRefreshInterval, clock);
+    }
+
+    /** With the default TTL and refresh floor. */
+    public CachingJwksClient(WebClient http, OidcIssuer issuer, Optional<URI> jwksUri, Clock clock) {
+        this(http, issuer, jwksUri, DEFAULT_TIME_TO_LIVE, DEFAULT_MINIMUM_REFRESH_INTERVAL, clock);
+    }
+
+    /**
+     * Discovery with the discovered {@code jwks_uri} vetted by {@code discoveryPolicy} — the
+     * form {@link DiscoveringIssuers} uses, where the issuer (and so the document naming the
+     * key set) is chosen by an unauthenticated caller. The operator-configured constructors
+     * above take no policy on purpose: a location the operator wrote into configuration is
+     * trusted the way the rest of the configuration is.
+     */
+    public CachingJwksClient(WebClient http, OidcIssuer issuer, WebIdFetchPolicy discoveryPolicy, Clock clock) {
+        this(http, issuer, Optional.empty(), Optional.of(discoveryPolicy),
+                DEFAULT_TIME_TO_LIVE, DEFAULT_MINIMUM_REFRESH_INTERVAL, clock);
+    }
+
+    private CachingJwksClient(
+            WebClient http,
+            OidcIssuer issuer,
+            Optional<URI> jwksUri,
+            Optional<WebIdFetchPolicy> discoveryPolicy,
+            Duration timeToLive,
+            Duration minimumRefreshInterval,
+            Clock clock) {
         this.http = Objects.requireNonNull(http, "http");
         Objects.requireNonNull(issuer, "issuer");
         Objects.requireNonNull(jwksUri, "jwksUri");
+        this.discoveryPolicy = Objects.requireNonNull(discoveryPolicy, "discoveryPolicy");
         this.timeToLive = Objects.requireNonNull(timeToLive, "timeToLive");
         this.minimumRefreshInterval =
                 Objects.requireNonNull(minimumRefreshInterval, "minimumRefreshInterval");
@@ -115,11 +146,6 @@ public final class CachingJwksClient implements JwksClient {
                         // Success is remembered for good; a failure not at all, so the next
                         // request tries again rather than inheriting a boot-time outage.
                         .cache(uri -> FOREVER, error -> Duration.ZERO, () -> Duration.ZERO));
-    }
-
-    /** With the default TTL and refresh floor. */
-    public CachingJwksClient(WebClient http, OidcIssuer issuer, Optional<URI> jwksUri, Clock clock) {
-        this(http, issuer, jwksUri, DEFAULT_TIME_TO_LIVE, DEFAULT_MINIMUM_REFRESH_INTERVAL, clock);
     }
 
     @Override
@@ -200,9 +226,32 @@ public final class CachingJwksClient implements JwksClient {
                 .bodyToMono(String.class)
                 .timeout(FETCH_TIMEOUT)
                 .map(body -> OidcProviderMetadata.parse(body, discoveryDocument).jwksUri())
+                .flatMap(this::vetted)
                 .onErrorMap(
                         error -> !(error instanceof JwksUnavailableException),
                         error -> new JwksUnavailableException(
                                 AuthMessage.DISCOVERY_FAILED.format(discoveryDocument, error), error));
+    }
+
+    /**
+     * The discovered {@code jwks_uri}, if the discovery policy allows fetching it.
+     *
+     * <p>That URI comes out of a document the issuer wrote. Vetting the issuer and then
+     * following whatever its document advertises would leave exactly the hole the vetting
+     * exists to close: a public-HTTPS issuer whose {@code jwks_uri} points this pod's next
+     * GET at a private or link-local address. So the same policy rules again here — and since
+     * its check resolves DNS, which blocks, it runs on {@code boundedElastic} and under the
+     * same budget as the fetch it gates.
+     */
+    private Mono<URI> vetted(URI discovered) {
+        return discoveryPolicy
+                .map(policy -> Mono.fromCallable(() -> policy.refuse(discovered))
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .timeout(FETCH_TIMEOUT)
+                        .flatMap(refusal -> refusal
+                                .<Mono<URI>>map(reason -> Mono.error(new JwksUnavailableException(
+                                        AuthMessage.JWKS_URI_REFUSED.format(reason.describe(discovered)))))
+                                .orElseGet(() -> Mono.just(discovered))))
+                .orElseGet(() -> Mono.just(discovered));
     }
 }

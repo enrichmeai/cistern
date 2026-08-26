@@ -3,16 +3,21 @@ package com.enrichmeai.cistern.auth;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.net.InetAddress;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 @DisplayName("A WebID must name the issuer that minted a token for it (Solid-OIDC §5)")
 class WebIdIssuerVerifierTest {
@@ -31,10 +36,41 @@ class WebIdIssuerVerifierTest {
     }
 
     private static String profileNaming(String issuer) {
+        return profileFor(WEB_ID, issuer);
+    }
+
+    private static String profileFor(URI webId, String issuer) {
         return """
             @prefix solid: <http://www.w3.org/ns/solid/terms#> .
-            <https://alice.example/profile/card#me> solid:oidcIssuer <%s> .
-            """.formatted(issuer);
+            <%s> solid:oidcIssuer <%s> .
+            """.formatted(webId, issuer);
+    }
+
+    /** Reserved {@code .example} hosts never resolve; this declares them public instead. */
+    private static WebIdFetchPolicy publicPolicy() {
+        return new WebIdFetchPolicy(WebIdFetchPolicy.DEFAULT_TIMEOUT,
+                WebIdFetchPolicy.DEFAULT_MAX_REDIRECTS, WebIdFetchPolicy.DEFAULT_MAX_BODY_BYTES,
+                host -> new InetAddress[] {InetAddress.getByName("93.184.216.34")});
+    }
+
+    /** A client that proves no fetch happened by failing loudly the moment one is tried. */
+    private static WebClient noNetwork() {
+        return WebClient.builder()
+                .exchangeFunction(request -> Mono.error(new IllegalStateException("the test allows no network")))
+                .build();
+    }
+
+    /** A clock the test moves by hand. */
+    private static final class MutableClock extends Clock {
+        private Instant now = Instant.parse("2026-08-25T00:00:00Z");
+
+        void advance(Duration by) {
+            now = now.plus(by);
+        }
+
+        @Override public ZoneId getZone() { return ZoneOffset.UTC; }
+        @Override public Clock withZone(ZoneId zone) { return this; }
+        @Override public Instant instant() { return now; }
     }
 
     @Test
@@ -125,6 +161,107 @@ class WebIdIssuerVerifierTest {
                 .assertNext(verdict -> assertThat(((WebIdVerdict.Refused) verdict).reason())
                         .isEqualTo(JwtRejectionReason.WEBID_ADDRESS_REFUSED))
                 .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("the DNS check runs on boundedElastic, never the subscriber's thread (ground rule 3)")
+    void dnsCheckLeavesTheCallingThread() {
+        AtomicReference<String> resolverThread = new AtomicReference<>();
+        WebIdFetchPolicy policy = new WebIdFetchPolicy(WebIdFetchPolicy.DEFAULT_TIMEOUT,
+                WebIdFetchPolicy.DEFAULT_MAX_REDIRECTS, WebIdFetchPolicy.DEFAULT_MAX_BODY_BYTES,
+                host -> {
+                    resolverThread.set(Thread.currentThread().getName());
+                    return new InetAddress[] {InetAddress.getByName("127.0.0.1")};
+                });
+        WebIdIssuerVerifier verifier = new WebIdIssuerVerifier(noNetwork(), policy,
+                Duration.ofMinutes(5), Clock.fixed(Instant.parse("2026-08-25T00:00:00Z"), ZoneOffset.UTC));
+
+        StepVerifier.create(verifier.verify(WEB_ID, ISSUER))
+                .assertNext(verdict -> assertThat(((WebIdVerdict.Refused) verdict).reason())
+                        .isEqualTo(JwtRejectionReason.WEBID_ADDRESS_REFUSED))
+                .verifyComplete();
+        assertThat(resolverThread.get())
+                .describedAs("InetAddress.getAllByName blocks; on an event loop it stalls "
+                        + "every request that loop serves")
+                .contains("boundedElastic");
+    }
+
+    @Test
+    @DisplayName("a resolver slower than the timeout is a 401, not a hang")
+    void slowDnsIsBoundedByTheTimeout() {
+        WebIdFetchPolicy policy = new WebIdFetchPolicy(Duration.ofMillis(100),
+                WebIdFetchPolicy.DEFAULT_MAX_REDIRECTS, WebIdFetchPolicy.DEFAULT_MAX_BODY_BYTES,
+                host -> {
+                    try {
+                        Thread.sleep(5_000);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return new InetAddress[] {InetAddress.getByName("93.184.216.34")};
+                });
+        WebIdIssuerVerifier verifier = new WebIdIssuerVerifier(noNetwork(), policy,
+                Duration.ofMinutes(5), Clock.fixed(Instant.parse("2026-08-25T00:00:00Z"), ZoneOffset.UTC));
+
+        StepVerifier.create(verifier.verify(WEB_ID, ISSUER))
+                .assertNext(verdict -> assertThat(((WebIdVerdict.Refused) verdict).reason())
+                        .describedAs("the fetch budget covers the resolver, not just the server")
+                        .isEqualTo(JwtRejectionReason.WEBID_UNREACHABLE))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("past its bound the cache declines entries, and verification still succeeds")
+    void cacheBoundSkipsCachingNotVerification() {
+        URI other = URI.create("https://bob.example/profile/card#me");
+        WebIdIssuerVerifier verifier = new WebIdIssuerVerifier(noNetwork(), publicPolicy(),
+                Duration.ofMinutes(5), 1,
+                Clock.fixed(Instant.parse("2026-08-25T00:00:00Z"), ZoneOffset.UTC));
+
+        assertThat(verifier.check(WEB_ID, ISSUER, profileNaming("https://idp.example/")))
+                .describedAs("fills the single slot")
+                .isInstanceOf(WebIdVerdict.Verified.class);
+        assertThat(verifier.check(other, ISSUER, profileFor(other, "https://idp.example/")))
+                .describedAs("the bound must never refuse a verification, only decline to cache it")
+                .isInstanceOf(WebIdVerdict.Verified.class);
+
+        // The cached pair answers without the network; the uncached one has to fetch, and
+        // the no-network client turns that attempt into proof the cache declined it.
+        StepVerifier.create(verifier.verify(WEB_ID, ISSUER))
+                .assertNext(verdict -> assertThat(verdict).isInstanceOf(WebIdVerdict.Verified.class))
+                .verifyComplete();
+        StepVerifier.create(verifier.verify(other, ISSUER))
+                .assertNext(verdict -> assertThat(((WebIdVerdict.Refused) verdict).reason())
+                        .isEqualTo(JwtRejectionReason.WEBID_UNREACHABLE))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("expired entries make room at the bound — the cache cannot leak")
+    void expiredEntriesMakeRoomAtTheBound() {
+        URI other = URI.create("https://bob.example/profile/card#me");
+        MutableClock clock = new MutableClock();
+        Duration ttl = Duration.ofMinutes(5);
+        WebIdIssuerVerifier verifier = new WebIdIssuerVerifier(noNetwork(), publicPolicy(), ttl, 1, clock);
+
+        assertThat(verifier.check(WEB_ID, ISSUER, profileNaming("https://idp.example/")))
+                .isInstanceOf(WebIdVerdict.Verified.class);
+        clock.advance(ttl);
+        assertThat(verifier.check(other, ISSUER, profileFor(other, "https://idp.example/")))
+                .isInstanceOf(WebIdVerdict.Verified.class);
+
+        StepVerifier.create(verifier.verify(other, ISSUER))
+                .assertNext(verdict -> assertThat(verdict)
+                        .describedAs("the expired entry was swept, so this one was cached")
+                        .isInstanceOf(WebIdVerdict.Verified.class))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("a cache bound that would disable the guard is refused at construction")
+    void rejectsInvalidCacheBound() {
+        assertThatIllegalArgumentException().isThrownBy(() -> new WebIdIssuerVerifier(
+                noNetwork(), publicPolicy(), Duration.ofMinutes(5), 0,
+                Clock.fixed(Instant.parse("2026-08-25T00:00:00Z"), ZoneOffset.UTC)));
     }
 
     @Test

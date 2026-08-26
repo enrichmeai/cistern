@@ -80,9 +80,13 @@ public enum AuthMessage {
     WEBID_TIMEOUT_INVALID("the WebID fetch timeout must be positive, was %s"),
     WEBID_REDIRECTS_INVALID("the WebID redirect cap cannot be negative, was %s"),
     WEBID_BODY_CAP_INVALID("the WebID body cap must be positive, was %s"),
+    WEBID_CACHE_BOUND_INVALID("the verified-WebID cache bound must be positive, was %s"),
 
     /** A DPoP proof that did not bind the request, at the resolver boundary. */
     DPOP_REJECTED("DPoP proof rejected: %s — %s"),
+
+    /** The DPoP comparison target could not be built from base-url + path. Resolves anonymous. */
+    DPOP_TARGET_UNBUILDABLE("the DPoP comparison target could not be constructed: %s"),
     SOLID_RESOLVER_WIRED("Solid-OIDC resolver wired: base %s, proof window %s, WebID cache %s"),
     ISSUER_BOUND_INVALID("the discovered-issuer bound must be positive, was %s"),
 
@@ -108,6 +112,9 @@ public enum AuthMessage {
 
     /** The key set could not be fetched or parsed. The exception message; logged by the resolver. */
     JWKS_FETCH_FAILED("Could not load the signing keys from <%s>: %s"),
+
+    /** A discovered {@code jwks_uri} the fetch policy refuses — the SSRF guard at the follow. */
+    JWKS_URI_REFUSED("discovery names a jwks_uri this pod refuses to fetch: %s"),
 
     /** The discovery document could not be fetched or parsed. */
     DISCOVERY_FAILED("Could not read the OpenID discovery document at <%s>: %s"),
