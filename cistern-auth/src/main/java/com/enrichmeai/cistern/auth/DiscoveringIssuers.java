@@ -24,10 +24,14 @@ import org.springframework.web.reactive.function.client.WebClient;
  * <p>Two guards, both load-bearing:
  *
  * <ul>
- *   <li><strong>The same {@link WebIdFetchPolicy}</strong> the WebID fetch uses. An issuer of
- *       {@code https://169.254.169.254/} is refused here for exactly the reason it is refused
- *       there, and refusing costs nothing: an issuer that cannot be reached over public HTTPS
- *       could not have issued a token any WebID will vouch for.
+ *   <li><strong>The same {@link WebIdFetchPolicy}</strong> the WebID fetch uses — applied to
+ *       the issuer URI here, and to the {@code jwks_uri} its discovery document advertises
+ *       when {@link CachingJwksClient} follows it. Both are needed: an issuer of
+ *       {@code https://169.254.169.254/} is refused here for exactly the reason a WebID there
+ *       would be, and a <em>public</em> issuer whose document points its {@code jwks_uri} at
+ *       a private address is refused at the follow. Refusing costs nothing: an issuer that
+ *       cannot be reached over public HTTPS could not have issued a token any WebID will
+ *       vouch for.
  *   <li><strong>A bound on how many issuers are remembered.</strong> Each distinct {@code iss}
  *       costs a cached verifier and a discovery fetch, and {@code iss} is attacker-chosen — so
  *       without a bound a stream of tokens naming fresh issuers is unbounded memory and
@@ -71,12 +75,24 @@ public final class DiscoveringIssuers implements SolidOidcTokenVerifier.Issuers 
         if (known != null) {
             return Optional.of(known);
         }
-        if (verifiers.size() >= maximumIssuers) {
-            return Optional.empty();
+        // The bound is only a bound if "is there room" and "insert" are one operation —
+        // concurrent requests naming fresh issuers could otherwise all pass the size check
+        // and push the map past the very limit that is this class's reason to exist. The
+        // monitor also keeps the older guarantee: two requests naming the same new issuer
+        // build one verifier, not two. Only a cache miss pays for it, and building does no
+        // I/O, so nothing slow ever holds it.
+        synchronized (verifiers) {
+            known = verifiers.get(issuer);
+            if (known != null) {
+                return Optional.of(known);
+            }
+            if (verifiers.size() >= maximumIssuers) {
+                return Optional.empty();
+            }
+            JwtVerifier built = build(issuer);
+            verifiers.put(issuer, built);
+            return Optional.of(built);
         }
-        // computeIfAbsent rather than get-then-put: two requests naming the same new issuer
-        // would otherwise build two key clients and make two discovery fetches.
-        return Optional.of(verifiers.computeIfAbsent(issuer, this::build));
     }
 
     /**
@@ -89,8 +105,10 @@ public final class DiscoveringIssuers implements SolidOidcTokenVerifier.Issuers 
     private JwtVerifier build(URI issuer) {
         OidcIssuer configured = new OidcIssuer(
                 issuer, Set.of(SolidOidcTokenVerifier.SOLID_AUDIENCE), clockSkew);
+        // The policy rides along so the discovered jwks_uri is vetted before it is fetched —
+        // that URI comes out of a document the issuer wrote, and the issuer is caller-chosen.
         return new JwtVerifier(
-                configured, new CachingJwksClient(http, configured, Optional.empty(), clock), clock);
+                configured, new CachingJwksClient(http, configured, policy, clock), clock);
     }
 
     /** How many issuers are currently remembered. */

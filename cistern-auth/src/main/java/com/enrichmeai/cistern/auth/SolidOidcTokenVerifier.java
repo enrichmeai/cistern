@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Verifies a Solid-OIDC access token presented as {@code Authorization: DPoP <token>} (T4.1).
@@ -88,9 +89,13 @@ public final class SolidOidcTokenVerifier {
             }
             // The claims read above are unverified — they only say which issuer to ask. The
             // verifier that issuer supplies is what decides whether any of them may be trusted.
-            return issuers.verifierFor(issuer)
-                    .map(verifier -> verifier.verify(token).map(this::identify))
-                    .orElseGet(() -> rejected(JwtRejectionReason.ISSUER_UNTRUSTED, issuer));
+            // Asking is a blocking call (the fetch policy resolves DNS before trusting the
+            // issuer's address), so it runs on boundedElastic, never the event loop.
+            return Mono.fromCallable(() -> issuers.verifierFor(issuer))
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .flatMap(found -> found
+                            .map(verifier -> verifier.verify(token).map(this::identify))
+                            .orElseGet(() -> rejected(JwtRejectionReason.ISSUER_UNTRUSTED, issuer)));
         });
     }
 

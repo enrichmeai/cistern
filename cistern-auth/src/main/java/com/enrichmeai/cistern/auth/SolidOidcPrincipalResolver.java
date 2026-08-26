@@ -92,8 +92,18 @@ public final class SolidOidcPrincipalResolver implements PrincipalResolver {
     private Mono<Agent> withProof(ServerWebExchange exchange, String token, SolidOidcIdentity identity) {
         ServerHttpRequest request = exchange.getRequest();
         List<String> headers = request.getHeaders().getOrDefault(DPOP_HEADER, List.of());
-        DpopRequest dpopRequest = new DpopRequest(
-                request.getMethod().name(), targetOf(request), Optional.of(token));
+        DpopRequest dpopRequest;
+        try {
+            dpopRequest = new DpopRequest(
+                    request.getMethod().name(), targetOf(request), Optional.of(token));
+        } catch (IllegalArgumentException e) {
+            // No reachable request is known to land here (the path below came out of a URI
+            // the server already parsed), but the resolver contract is "never an error", and
+            // a contract kept by argument is one refactor away from broken. A target this
+            // cannot build is a request this cannot authenticate.
+            return anonymous(org.slf4j.event.Level.WARN,
+                    AuthMessage.DPOP_TARGET_UNBUILDABLE.format(e.getMessage()));
+        }
 
         DpopVerdict verdict = proofs.validate(headers, dpopRequest);
         if (verdict instanceof DpopVerdict.Rejected rejected) {
@@ -113,8 +123,16 @@ public final class SolidOidcPrincipalResolver implements PrincipalResolver {
                 });
     }
 
-    /** {@code cistern.base-url} + this request's path — never the socket, never a header. */
-    private URI targetOf(ServerHttpRequest request) {
+    /**
+     * {@code cistern.base-url} + this request's path — never the socket, never a header.
+     *
+     * <p>{@link ServerHttpRequest#getPath()} is parsed from the request URI's <em>raw</em>
+     * path, so percent-encoding survives into the comparison exactly as the client signed it
+     * (§4.3 step 9 compares URIs, not decoded strings). Package-private so the encoded-path
+     * test pins that, since a decoding refactor would fail step 9 for every URI with an
+     * encoded reserved character and look exactly like a broken client.
+     */
+    URI targetOf(ServerHttpRequest request) {
         String base = baseUrl.toString();
         if (base.endsWith(PATH_SEPARATOR)) {
             base = base.substring(0, base.length() - PATH_SEPARATOR.length());

@@ -11,7 +11,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -24,6 +23,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Confirms that a WebID authorises the issuer that minted a token for it (T4.3).
@@ -47,14 +47,29 @@ import reactor.core.publisher.Mono;
  * because each hop has to be re-checked against that policy — following them automatically and
  * checking only the first URL is the standard SSRF bypass.
  *
- * <p>Verified answers are cached for {@code cacheTtl}. Refusals are not: a WebID that has just
- * added its issuer should work on the next request, not after a timeout.
+ * <p>Verified answers are cached for {@code cacheTtl}, and at most {@code maximumCached} of
+ * them: the pair is caller-chosen (one issuer plus a wildcard DNS zone mints as many as anyone
+ * likes), so an unbounded map is handing out permanent memory for the price of a verification.
+ * At the bound, expired entries are swept, and if the cache is still full the answer simply
+ * goes uncached — the next request re-verifies, slower but correct. Refusing at the bound
+ * would be backwards: this cache is an optimisation, and whoever filled it must not get a veto
+ * over everyone else's login ({@link DiscoveringIssuers} refuses at its bound because there
+ * the refusal <em>is</em> the guard). Refusals are never cached: a WebID that has just added
+ * its issuer should work on the next request, not after a timeout.
  */
 public final class WebIdIssuerVerifier implements WebIdIssuers {
+
+    /**
+     * Distinct (WebID, issuer) pairs remembered at once. An entry is two URIs and an
+     * {@link Instant} — the bound caps the map at a few hundred kilobytes while comfortably
+     * holding every pair a real pod sees inside one TTL.
+     */
+    public static final int DEFAULT_MAXIMUM_CACHED = 4096;
 
     private final WebClient http;
     private final WebIdFetchPolicy policy;
     private final Duration cacheTtl;
+    private final int maximumCached;
     private final Clock clock;
     private final ConcurrentHashMap<Authorisation, Instant> verified = new ConcurrentHashMap<>();
 
@@ -63,10 +78,19 @@ public final class WebIdIssuerVerifier implements WebIdIssuers {
     }
 
     public WebIdIssuerVerifier(WebClient http, WebIdFetchPolicy policy, Duration cacheTtl, Clock clock) {
+        this(http, policy, cacheTtl, DEFAULT_MAXIMUM_CACHED, clock);
+    }
+
+    public WebIdIssuerVerifier(WebClient http, WebIdFetchPolicy policy, Duration cacheTtl,
+                               int maximumCached, Clock clock) {
         this.http = Objects.requireNonNull(http, "http");
         this.policy = Objects.requireNonNull(policy, "policy");
         this.cacheTtl = Objects.requireNonNull(cacheTtl, "cacheTtl");
         this.clock = Objects.requireNonNull(clock, "clock");
+        if (maximumCached <= 0) {
+            throw new IllegalArgumentException(AuthMessage.WEBID_CACHE_BOUND_INVALID.format(maximumCached));
+        }
+        this.maximumCached = maximumCached;
     }
 
     /** Whether {@code webId} names {@code issuer}. Never empty, never an error. */
@@ -78,8 +102,14 @@ public final class WebIdIssuerVerifier implements WebIdIssuers {
         Authorisation authorisation = new Authorisation(webId, issuer);
         Instant cached = verified.get(authorisation);
         Instant now = clock.instant();
-        if (cached != null && now.isBefore(cached)) {
-            return Mono.just(WebIdVerdict.Verified.instance());
+        if (cached != null) {
+            if (now.isBefore(cached)) {
+                return Mono.just(WebIdVerdict.Verified.instance());
+            }
+            // Expired entries leave on the way past, not only at the bound — a long-running
+            // pod otherwise keeps one dead entry per pair it ever verified. Conditional on
+            // the expiry read above, so a fresh entry another thread just wrote survives.
+            verified.remove(authorisation, cached);
         }
 
         return fetch(documentOf(webId), policy.maxRedirects())
@@ -106,10 +136,20 @@ public final class WebIdIssuerVerifier implements WebIdIssuers {
     }
 
     private Mono<String> fetch(URI uri, int redirectsLeft) {
-        Optional<JwtRejectionReason> refusal = policy.refuse(uri);
-        if (refusal.isPresent()) {
-            return Mono.error(new RefusedException(refusal.get(), uri));
-        }
+        // The policy check resolves DNS, which blocks — so it runs on boundedElastic (ground
+        // rule 3), never on the event loop this chain is subscribed from or the reactor-http
+        // thread a redirect hop lands on. And it sits inside the timeout, because "a slow
+        // host becomes a 401, never a hang" has to include a slow resolver, not just a slow
+        // server.
+        return Mono.fromCallable(() -> policy.refuse(uri))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(refusal -> refusal
+                        .<Mono<String>>map(reason -> Mono.error(new RefusedException(reason, uri)))
+                        .orElseGet(() -> request(uri, redirectsLeft)))
+                .timeout(policy.connectTimeout());
+    }
+
+    private Mono<String> request(URI uri, int redirectsLeft) {
         return http.get()
                 .uri(uri)
                 .accept(MediaType.valueOf(Representation.TURTLE))
@@ -135,8 +175,7 @@ public final class WebIdIssuerVerifier implements WebIdIssuers {
                                 new RefusedException(JwtRejectionReason.WEBID_UNREACHABLE, uri)));
                     }
                     return response.bodyToMono(String.class);
-                })
-                .timeout(policy.connectTimeout());
+                });
     }
 
     /**
@@ -177,8 +216,31 @@ public final class WebIdIssuerVerifier implements WebIdIssuers {
         if (!namesIssuer(named, issuer)) {
             return WebIdVerdict.Refused.of(JwtRejectionReason.WEBID_ISSUER_NOT_NAMED, issuer, named);
         }
-        verified.put(authorisation, clock.instant().plus(cacheTtl));
+        remember(authorisation);
         return WebIdVerdict.Verified.instance();
+    }
+
+    /**
+     * Caches a verified authorisation, or declines to — see the class comment for the ruling.
+     *
+     * <p>Reads stay lock-free; the monitor makes "is there room + insert" one operation, so
+     * the bound is exact rather than approximately enforced. Writes happen once per pair per
+     * TTL, so nothing contends.
+     */
+    private void remember(Authorisation authorisation) {
+        Instant now = clock.instant();
+        synchronized (verified) {
+            boolean known = verified.containsKey(authorisation);
+            if (!known && verified.size() >= maximumCached) {
+                // Room only ever comes from entries whose time has passed. Nothing live is
+                // evicted: whether an entry survives must not be something a stream of fresh
+                // caller-chosen pairs gets to decide.
+                verified.values().removeIf(expiry -> !now.isBefore(expiry));
+            }
+            if (known || verified.size() < maximumCached) {
+                verified.put(authorisation, now.plus(cacheTtl));
+            }
+        }
     }
 
     /**
