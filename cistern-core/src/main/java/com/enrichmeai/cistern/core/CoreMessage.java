@@ -213,9 +213,10 @@ public enum CoreMessage {
     N3_PREDICATE_REPEATED("a patch resource must contain at most one %s triple"),
     N3_PREDICATE_OBJECT_NOT_FORMULA("the object of %s must be a formula { ... }"),
     N3_WHERE_BLANK_NODE(
-            "blank nodes in the solid:where formula are not supported: the "
-                    + "specification defines the mapping algorithm over variables only and "
-                    + "leaves blank-node matching undefined"),
+            "blank nodes in the solid:where formula are not supported: the specification "
+                    + "defines the mapping algorithm over variables, and matching blank nodes "
+                    + "falls outside it, so this server declines rather than inventing a "
+                    + "behaviour a patch could not rely on"),
     N3_FORMULA_BLANK_NODE("the %s formula must not contain blank nodes"),
     N3_VARIABLE_NOT_IN_WHERE(
             "variable ?%s in the %s formula does not occur in the solid:where formula"),

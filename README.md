@@ -30,6 +30,17 @@ currently reads 0 of 41 cases executed: the harness registers authenticated test
 before running any assertion, and Solid-OIDC token acceptance is not built yet (Phase 4,
 T4.1–T4.4), so the run stops before the first test. Honest numbers only.
 
+## Standing on
+
+Cistern implements the [Solid Protocol](https://solidproject.org/TR/protocol), [WAC](https://solidproject.org/TR/wac)
+and [Solid-OIDC](https://solidproject.org/TR/oidc). None of this is our design. The Solid
+community spent years agreeing on what a personal data store should do and writing it down
+precisely enough to build against, then published a
+[conformance harness](https://github.com/solid-contrib/conformance-test-harness) that will
+tell us when we are wrong — and the [Community Solid Server](https://github.com/CommunitySolidServer/CommunitySolidServer)
+gave us a working implementation to check our reading against. We get to build a server
+because they did the hard part first.
+
 Roadmap: [docs/BACKLOG.md](docs/BACKLOG.md) · Architecture:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Integrating an application:
 [docs/INTEGRATION.md](docs/INTEGRATION.md)

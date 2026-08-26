@@ -146,3 +146,17 @@ now asserts the bytes actually differ.
 `JWSHeader.parse`, so this fixture is rejected as malformed before the validator's own step-7
 check runs. `DpopValidatorTest` asserts on the rejection detail, so the requirement stays
 covered by a test rather than by a comment.
+
+
+## With thanks
+
+Every fixture in this directory came out of a Community Solid Server that started on the
+first try, provisioned a pod, and issued a correct DPoP-bound token without being argued
+with. Ground rule 6 says fixtures are captured from a real implementation rather than
+invented — that rule is only affordable because CSS exists, is open, and runs.
+
+The same goes for the specifications these are checked against, and for the conformance
+harness that will judge the result. Solid Protocol, WAC and Solid-OIDC are years of work by
+people who did the difficult part: agreeing on something, in public, and writing it down
+precisely enough to implement. Cistern is a different implementation of their design, not an
+improvement on it.
