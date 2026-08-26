@@ -31,6 +31,18 @@ public final class Solid {
     public static final Property STORAGE_DESCRIPTION =
             ResourceFactory.createProperty(NS, "storageDescription");
 
+    /**
+     * {@code solid:oidcIssuer} — from a WebID to an identity provider it authorises to issue
+     * tokens on its behalf.
+     *
+     * <p>Solid-OIDC §5: a resource server confirms "the WebID document contains a
+     * {@code solid:oidcIssuer} triple naming the issuer of the access token" before trusting
+     * the token's WebID. Without that check any issuer may mint a token for any WebID, so this
+     * one triple carries the whole trust model: the token says who it is, and only the WebID
+     * document says who is allowed to say so.
+     */
+    public static final Property OIDC_ISSUER = ResourceFactory.createProperty(NS, "oidcIssuer");
+
     private Solid() {
         // constants only
     }

@@ -43,6 +43,21 @@ public enum JwtRejectionReason {
     /** The mapping produced something that is not an absolute URI. */
     WEBID_INVALID(AuthMessage.REASON_WEBID_INVALID, Level.INFO),
 
+    /** T4.3: a WebID offered over a scheme this will not dereference. */
+    WEBID_SCHEME_REFUSED(AuthMessage.REASON_WEBID_SCHEME_REFUSED, Level.WARN),
+
+    /** T4.3: the WebID host resolves somewhere this process will not be pointed. */
+    WEBID_ADDRESS_REFUSED(AuthMessage.REASON_WEBID_ADDRESS_REFUSED, Level.WARN),
+
+    /** T4.3: the WebID document could not be fetched. Fail closed — a 401, never a 500. */
+    WEBID_UNREACHABLE(AuthMessage.REASON_WEBID_UNREACHABLE, Level.INFO),
+
+    /** T4.3: fetched, but not RDF this can read. */
+    WEBID_UNPARSEABLE(AuthMessage.REASON_WEBID_UNPARSEABLE, Level.INFO),
+
+    /** T4.3: the WebID does not authorise the token's issuer. The check that matters. */
+    WEBID_ISSUER_NOT_NAMED(AuthMessage.REASON_WEBID_ISSUER_NOT_NAMED, Level.WARN),
+
     /**
      * A Solid-OIDC token with no {@code cnf.jkt}. It verified, but it is bound to no key,
      * so possession of it is the only thing holding it — which is what DPoP exists to stop.
