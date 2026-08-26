@@ -84,6 +84,33 @@ Java 25 (SDKMAN), Maven 3.9. No Gradle. No Lombok — use records.
 - CTH conformance numbers only move forward. If your PR regresses a previously passing
   CTH assertion, that is a blocking failure regardless of what it adds.
 
+## Writing about the specs
+
+We implement other people's designs. Solid, WAC and Solid-OIDC are years of public agreement,
+published precisely enough to build against and backed by a harness that tells us when we are
+wrong — none of which we had to do. Cistern is a different implementation of that design, never
+an improvement on it, and nothing we publish says or implies otherwise.
+
+Where a spec genuinely leaves something open — and some do, which is normal for a spec that has
+to be implementable by more than one party — say **what it defines** and **what we did about
+it**, never what it "fails to" or "leaves undefined". Two examples of the right shape:
+
+- *"Solid-OIDC specifies the authorization server, and leaves the resource server to follow, so
+  the behaviour here was confirmed against a running implementation."* Not "the spec doesn't
+  say".
+- *"The specification defines the mapping algorithm over variables; matching blank nodes falls
+  outside it, so this server declines rather than inventing a behaviour a patch could not rely
+  on."* Not "leaves blank-node matching undefined".
+
+This is accuracy as much as manners: an open point is usually a division of labour or a
+deliberate non-goal, not an oversight. It also protects the thing that makes our claims
+checkable — the conformance number only means something while we are plainly implementing the
+same specification everyone else is.
+
+Applies to code comments, error messages clients see, `docs/`, the README, PR text and the
+site. Extensions of our own stay **additive and ignorable**: a pod carrying them still passes
+the harness, and a plain Solid client still works against it.
+
 ## Spec sources (read these, not summaries)
 
 - Solid Protocol: https://solidproject.org/TR/protocol
