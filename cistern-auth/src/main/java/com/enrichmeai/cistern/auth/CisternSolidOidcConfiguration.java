@@ -65,9 +65,15 @@ public class CisternSolidOidcConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public WebIdFetchPolicy webIdFetchPolicy(
-            @Value("${cistern.auth.solid.webid.trusted-origins:}") Set<String> trustedOrigins) {
-        Set<String> configured = trustedOrigins.stream()
-                .filter(origin -> !origin.isBlank())
+            @Value("${cistern.auth.solid.webid.trusted-origins:}") String trustedOrigins) {
+        // Split here rather than letting @Value convert to a Set: it does not reliably split a
+        // comma-separated value, and a two-origin list arrived as one string — which
+        // canonicalOrigin then turned into a single unusable entry. Bound as a String and
+        // split explicitly, the behaviour is the same whether the value comes from a file, an
+        // environment variable or the command line.
+        Set<String> configured = java.util.Arrays.stream(trustedOrigins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         if (!configured.isEmpty()) {
             log.warn(AuthMessage.WEBID_ORIGINS_TRUSTED.format(configured.size(), configured));
