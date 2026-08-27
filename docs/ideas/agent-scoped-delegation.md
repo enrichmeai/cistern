@@ -92,7 +92,7 @@ September 2026. Nobody has put an owner-facing authoring surface on it, nobody h
 to MCP, it has no time-bound grants, and it has no cap — a mis-authored rule over-grants
 silently.
 
-**Competitive note.** Inrupt is pitching precisely this — their Solid + MCP post argues
+**Competitive note.** The incumbent commercial implementation is pitching precisely this — their Solid + MCP writing argues
 "the current MCP authentication model treats AI agents like they're you," and pitches
 natural-language time-bounded grants ("share my driver's license with the rental agency
 for the next 48 hours"). It is a prototype seeking release partners: no dates, no repos,
