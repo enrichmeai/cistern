@@ -16,6 +16,11 @@
 # Local only, deliberately. Both ports bind to 127.0.0.1, and Penstock v0.1.0 has unpatched
 # dependency findings in its own published scan — read it, run it on your machine, do not
 # expose it to a network until that lands.
+#
+# 127.0.0.1 everywhere, never "localhost": on a Mac localhost resolves to ::1 first while
+# Docker binds IPv4 only, so any other process on the port answers instead — with a 401 that
+# looks exactly like this server misbehaving. In a demo whose whole subject is refusals, a
+# spurious 401 is the worst possible failure. Same rule as integration-kit/README.md.
 
 services:
   cistern:
@@ -24,7 +29,7 @@ services:
       - "127.0.0.1:${CISTERN_PORT:-3737}:3000"
     environment:
       CISTERN_STORAGE_ROOT: /data
-      CISTERN_BASE_URL: http://localhost:${CISTERN_PORT:-3737}
+      CISTERN_BASE_URL: http://127.0.0.1:${CISTERN_PORT:-3737}
 
       # The human. Holds Control over everything, and is the only identity that can
       # write or revoke a grant.
@@ -39,7 +44,7 @@ services:
       # CISTERN_AUTH_SERVICEPRINCIPALS_0_WEBID. The intuitive SERVICE_PRINCIPALS_0_WEB_ID
       # spelling binds nothing, silently, and the pod then starts with no agent principal and
       # refuses the agent for a reason that looks nothing like a typo.
-      CISTERN_AUTH_SERVICEPRINCIPALS_0_WEBID: http://localhost:${CISTERN_PORT:-3737}/agents/penstock#id
+      CISTERN_AUTH_SERVICEPRINCIPALS_0_WEBID: http://127.0.0.1:${CISTERN_PORT:-3737}/agents/penstock#id
       CISTERN_AUTH_SERVICEPRINCIPALS_0_CREDENTIALHASH: sha256:${CISTERN_DEMO_HASH:?set this — see the header}
 
       # One pod for the human, so there is something to grant access to.

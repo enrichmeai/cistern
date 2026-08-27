@@ -34,7 +34,7 @@ configuration. Cistern never holds the credential it checks.
 ### 1. Put something in the pod
 
 ```bash
-curl -X PUT http://localhost:3737/notes/meeting.ttl \
+curl -X PUT http://127.0.0.1:3737/notes/meeting.ttl \
   -H "Authorization: Bearer $CISTERN_OWNER_TOKEN" \
   -H 'Content-Type: text/turtle' \
   --data '<#note> <http://purl.org/dc/terms/title> "Board meeting, Tuesday" .'
@@ -42,7 +42,7 @@ curl -X PUT http://localhost:3737/notes/meeting.ttl \
 
 ### 2. Ask the agent to read it — and watch it be refused
 
-Open <http://localhost:8080>, log in as `demo` with your `PENSTOCK_PASSWORD`, and ask:
+Open <http://127.0.0.1:8080>, log in as `demo` with your `PENSTOCK_PASSWORD`, and ask:
 
 > Read /notes/meeting.ttl from my pod and tell me the title.
 
@@ -53,13 +53,13 @@ it nicely.
 ### 3. Grant it, narrowly
 
 ```bash
-curl -X PUT http://localhost:3737/notes/.acl \
+curl -X PUT http://127.0.0.1:3737/notes/.acl \
   -H "Authorization: Bearer $CISTERN_OWNER_TOKEN" \
   -H 'Content-Type: text/turtle' \
   --data '@prefix acl: <http://www.w3.org/ns/auth/acl#> .
 <#agent> a acl:Authorization ;
-  acl:agent <http://localhost:3737/agents/penstock#id> ;
-  acl:accessTo <http://localhost:3737/notes/meeting.ttl> ;
+  acl:agent <http://127.0.0.1:3737/agents/penstock#id> ;
+  acl:accessTo <http://127.0.0.1:3737/notes/meeting.ttl> ;
   acl:mode acl:Read .'
 ```
 
@@ -75,7 +75,7 @@ document, and that is what it got.
 ### 5. Take it back, and read the receipt
 
 ```bash
-curl -X DELETE http://localhost:3737/notes/.acl \
+curl -X DELETE http://127.0.0.1:3737/notes/.acl \
   -H "Authorization: Bearer $CISTERN_OWNER_TOKEN"
 ```
 
@@ -85,7 +85,7 @@ no cache to expire, no waiting.
 Then ask the pod what happened:
 
 ```bash
-curl "http://localhost:3737/notes/meeting.ttl?receipts" \
+curl "http://127.0.0.1:3737/notes/meeting.ttl?receipts" \
   -H "Authorization: Bearer $CISTERN_OWNER_TOKEN"
 ```
 
