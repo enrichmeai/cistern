@@ -316,6 +316,18 @@ regression.
   answerable. Audit is asserted as a property in STRATEGY.md but scheduled nowhere; it is
   nearly free if the decision point carries it from the start.*
 
+- [x] **T5.8b WebID profile seeding — the document the harness 404s on.** A seeded pod got a
+  container and an owner ACL and no WebID document, so an owner whose identity lives in their
+  own pod could not authenticate anywhere: Solid-OIDC resolves the WebID and looks for
+  `solid:oidcIssuer`, and no document means no triple. That 404 is what stops the conformance
+  harness in REGISTER CLIENTS. `cistern.pods.seed[n].oidc-issuer` turns it on per pod;
+  unset means no document is written, which is right when the owner's WebID lives at their own
+  provider. The profile is granted public Read — that is what a WebID *is*, since a resource
+  server checking a token has not authenticated anyone yet and must read it anonymously — on
+  the document alone, with no `acl:default`, and the owner keeps every mode. Idempotent: an
+  existing profile is left alone rather than reverted on boot. DoD: 7 tests on the graph and
+  its ACL; full build green.
+
 - [ ] **T5.5 WAC grind.** Same ratchet loop as T3.3 against the CTH WAC suite. DoD: WAC
   suite green ⇒ Milestone 3 gate 1.
 

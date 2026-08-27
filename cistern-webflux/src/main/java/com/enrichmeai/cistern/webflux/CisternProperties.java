@@ -435,10 +435,20 @@ public record CisternProperties(
      * does. It must name a container: a pod is a subtree, and only a container's ACL can
      * carry the {@code acl:default} that makes the subtree inherit.
      *
-     * @param root       container path under the base URL, starting and ending with {@code /}
-     * @param ownerWebId the agent granted full access to the root and everything under it
+     * @param root        container path under the base URL, starting and ending with {@code /}
+     * @param ownerWebId  the agent granted full access to the root and everything under it
+     * @param oidcIssuer  the identity provider allowed to issue tokens for {@code ownerWebId},
+     *                    written into a seeded WebID document as {@code solid:oidcIssuer}.
+     *                    <p>Optional, and seeding the document is what it turns on. Set it only
+     *                    when the WebID lives <em>in this pod</em>: a document is written at
+     *                    that URI, publicly readable, because a resource server checking a
+     *                    token has not authenticated anyone yet and must read it anonymously.
+     *                    Leave it unset when the owner's WebID lives at their own provider,
+     *                    which is the ordinary case — there is nothing for this server to
+     *                    publish, and writing a profile at a URI it does not own would be
+     *                    inventing an identity for somebody else.
      */
-    public record Seed(String root, URI ownerWebId) {
+    public record Seed(String root, URI ownerWebId, URI oidcIssuer) {
 
         public Seed {
             if (root == null || root.isBlank() || ownerWebId == null) {

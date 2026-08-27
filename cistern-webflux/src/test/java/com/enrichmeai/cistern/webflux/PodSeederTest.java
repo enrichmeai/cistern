@@ -43,9 +43,9 @@ class PodSeederTest {
     private static final URI ACME = URI.create("https://acme-law.example/profile#firm");
 
     private static final CisternProperties.Pods THREE_PODS = new CisternProperties.Pods(List.of(
-            new CisternProperties.Seed("/alice/", ALICE),
-            new CisternProperties.Seed("/bob/", BOB),
-            new CisternProperties.Seed("/firms/acme/", ACME)));
+            new CisternProperties.Seed("/alice/", ALICE, null),
+            new CisternProperties.Seed("/bob/", BOB, null),
+            new CisternProperties.Seed("/firms/acme/", ACME, null)));
 
     @TempDir
     Path storageRoot;

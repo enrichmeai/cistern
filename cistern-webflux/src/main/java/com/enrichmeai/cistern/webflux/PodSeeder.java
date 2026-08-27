@@ -4,6 +4,7 @@ import com.enrichmeai.cistern.wac.PodProvisioned;
 import com.enrichmeai.cistern.wac.PodProvisioner;
 import com.enrichmeai.cistern.wac.PodSpec;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Objects;
 
@@ -60,13 +61,17 @@ public final class PodSeeder implements ApplicationRunner, Ordered {
         // Blocking is acceptable exactly here: ApplicationRunner is startup, not a request
         // path, and the server must not begin serving before the pods it was told to
         // provision exist. concatMap, not flatMap: in order, one at a time.
-        Flux.fromIterable(pods)
-                .concatMap(this::seed)
+        // specsUnder returns the pods in configuration order, so index i of each list is the
+        // same pod. Paired rather than merged into PodSpec because the issuer is a seeding
+        // instruction, not part of what a pod is.
+        List<CisternProperties.Seed> seeds = properties.pods().seed();
+        Flux.range(0, pods.size())
+                .concatMap(index -> seed(pods.get(index), seeds.get(index).oidcIssuer()))
                 .then()
                 .block();
     }
 
-    private Mono<PodProvisioned> seed(PodSpec spec) {
+    private Mono<?> seed(PodSpec spec, URI oidcIssuer) {
         return provisioner.provision(spec)
                 .doOnNext(outcome -> {
                     switch (outcome) {
@@ -75,6 +80,13 @@ public final class PodSeeder implements ApplicationRunner, Ordered {
                         case PodProvisioned.AlreadyExists existing -> log.debug(
                                 WebfluxMessage.POD_ALREADY_PROVISIONED.format(existing.root().uri()));
                     }
-                });
+                })
+                // The profile is seeded after the pod, and only when an issuer was configured:
+                // without one there is nothing a WebID document could usefully say.
+                .then(oidcIssuer == null
+                        ? Mono.empty()
+                        : provisioner.provisionWebIdProfile(spec, oidcIssuer)
+                                .doOnNext(profile -> log.info(WebfluxMessage.SEEDED_WEBID_PROFILE
+                                        .format(profile.uri(), spec.ownerWebId(), oidcIssuer))));
     }
 }
