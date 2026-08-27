@@ -15,6 +15,9 @@ public enum McpMessage {
     // ---------------------------------------------------------------- tool results: outcomes
 
     /** modes, target — what an allowed read/write/delete reports. */
+    /** The Streamable HTTP door is open — logged because it widens who can reach the pod. */
+    HTTP_TRANSPORT_WIRED("MCP Streamable HTTP transport serving %s; tools reach the pod at %s"),
+
     READ_OK("Read %s (%s, %d bytes)."),
 
     /** target — a non-text resource is reported, not dumped into the model's context. */

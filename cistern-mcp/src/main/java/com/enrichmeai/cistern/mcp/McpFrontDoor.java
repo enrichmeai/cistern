@@ -9,6 +9,7 @@ import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpServerTransportProvider;
+import io.modelcontextprotocol.spec.McpStreamableServerTransportProvider;
 
 /**
  * Assembles the MCP server: the seven {@link PodTool}s wired to {@link PodToolHandlers}, over
@@ -48,10 +49,31 @@ public final class McpFrontDoor {
         // assembly only
     }
 
-    /** The front door over {@code transport}, bound to {@code credential} at {@code address}. */
+    /** The front door over a stdio {@code transport}, bound to {@code credential}. */
     public static McpAsyncServer serve(McpServerTransportProvider transport,
                                        BearerCredential credential, PodAddress address) {
         Objects.requireNonNull(transport, "transport");
+        return describe(McpServer.async(transport), credential, address);
+    }
+
+    /**
+     * The front door over a Streamable HTTP {@code transport} (T6.7).
+     *
+     * <p>A second overload rather than a second assembly: the SDK's two provider interfaces do
+     * not share a supertype the builder accepts, but the pod is the same pod either way. The
+     * tools, their descriptions and the refusal instruction below are defined once, so a client
+     * arriving over HTTP cannot be offered a different surface from one arriving over stdio —
+     * which is the property that lets the same WAC decision mean the same thing on both.
+     */
+    public static McpAsyncServer serve(McpStreamableServerTransportProvider transport,
+                                       BearerCredential credential, PodAddress address) {
+        Objects.requireNonNull(transport, "transport");
+        return describe(McpServer.async(transport), credential, address);
+    }
+
+    /** Everything the two transports share: the tools, the capabilities, the instructions. */
+    private static McpAsyncServer describe(McpServer.AsyncSpecification<?> specification,
+                                           BearerCredential credential, PodAddress address) {
         PodToolHandlers handlers = new PodToolHandlers(PodHttp.connect(credential), address);
         List<McpServerFeatures.AsyncToolSpecification> tools = new ArrayList<>();
         for (PodTool tool : PodTool.values()) {
@@ -60,7 +82,7 @@ public final class McpFrontDoor {
                     .callHandler((exchange, request) -> handlers.handle(tool, request))
                     .build());
         }
-        return McpServer.async(transport)
+        return specification
                 .serverInfo(SERVER_NAME, version())
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(false).build())
                 .instructions(INSTRUCTIONS)

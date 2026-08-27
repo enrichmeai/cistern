@@ -71,6 +71,14 @@
       <artifactId>spring-boot-autoconfigure</artifactId>
       <scope>provided</scope>
     </dependency>
+    <!-- RouterFunction/ServerResponse for the Streamable HTTP transport (T6.7). Provided for
+         the same reason as the rest: that transport only runs inside cistern-app, and the
+         shaded stdio bridge jar must stay free of Spring. -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-webflux</artifactId>
+      <scope>provided</scope>
+    </dependency>
     <!-- WebServerInitializedEvent: the embedded runner starts once the app's real port is
          known. Boot 4 moved it into its own module. -->
     <dependency>
@@ -96,6 +104,19 @@
           <artifactId>spring-boot-starter-logging</artifactId>
         </exclusion>
       </exclusions>
+    </dependency>
+    <!-- WebTestClient.bindToRouterFunction drives the Streamable HTTP transport's routes
+         directly (T6.7), so the protocol behaviour is asserted over real HTTP rather than by
+         calling handler methods. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-test</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 
