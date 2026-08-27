@@ -17,6 +17,22 @@ confirmed on run 29757151369: `host.docker.internal` resolves from the harness c
 on the Linux runner via `--add-host=host-gateway`, so the 404 is a real answer from
 Cistern rather than a connection failure.
 
+Re-verified 2026-08-27 against main `4121b27` (Phase 4 complete: #140 DPoP, #141 WebID
+verification, #143 security wiring, #144 review fixes), harness 1.2.2, suite 0.0.19,
+server built and run via `docker compose` with `CISTERN_BASE_URL=http://host.docker.internal:3737`
+as `run-cth.sh` instructs: **unchanged at 0 / 0 / 41 — no regression.** The run still
+stops in REGISTER CLIENTS on a real 404 for an alice/bob WebID document (exit code 1,
+no results report emitted). The wall is no longer identity validation — Phase 4 can
+verify a Solid-OIDC token end to end — it is that those documents and pods do not
+exist: T5.4 provisions only the single-owner case, and the harness needs alice/bob
+accounts plus an IdP to authenticate them against. A second gate sits behind that one:
+`WebIdFetchPolicy` refuses http/non-public origins by design, so a local test IdP is
+unusable until the trusted-origins allow-list (PR #148) merges. Both are named so the
+next number move is deliberate, not accidental: provision alice/bob (T5.4 follow-on),
+point them at a real IdP (CSS 7.2.0 works — the T4.1/T4.2 fixture capture automates
+account + pod + client credentials in `cistern-auth/.../fixtures/css/capture.mjs`),
+and list that IdP's origin in `cistern.auth.solid.webid.trusted-origins`.
+
 Baseline run details (2026-07-19, `solidproject/conformance-test-harness:latest`,
 digest `sha256:4a38077d…`, test suite version 0.0.19 2024-03-21):
 

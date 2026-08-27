@@ -9,7 +9,10 @@ import java.time.Duration;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.util.Set;
+
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -50,10 +53,26 @@ public class CisternSolidOidcConfiguration {
         return new JtiReplayCache(PROOF_ACCEPTANCE_WINDOW, Clock.systemUTC());
     }
 
+    /**
+     * The fetch policy, plus whatever origins {@code cistern.auth.solid.webid.trusted-origins}
+     * names.
+     *
+     * <p>Logged at WARN whenever the list is non-empty, and named in full. An operator who
+     * opened an origin for a conformance run and forgot is told on every boot rather than
+     * discovering it from an incident — the whole value of naming origins instead of flipping
+     * a switch is that the trust is visible, and a log nobody prints is not visible.
+     */
     @Bean
     @ConditionalOnMissingBean
-    public WebIdFetchPolicy webIdFetchPolicy() {
-        return WebIdFetchPolicy.defaults();
+    public WebIdFetchPolicy webIdFetchPolicy(
+            @Value("${cistern.auth.solid.webid.trusted-origins:}") Set<String> trustedOrigins) {
+        Set<String> configured = trustedOrigins.stream()
+                .filter(origin -> !origin.isBlank())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        if (!configured.isEmpty()) {
+            log.warn(AuthMessage.WEBID_ORIGINS_TRUSTED.format(configured.size(), configured));
+        }
+        return WebIdFetchPolicy.trusting(configured);
     }
 
     @Bean
