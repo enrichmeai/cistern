@@ -310,6 +310,10 @@ public enum WebfluxMessage {
      * Startup: a {@code cistern.pods.seed[]} entry already had an ACL and was left alone. Logged
      * at DEBUG — on every restart, for every pod, it is the expected case.
      */
+    /** A WebID document was written — logged because it is publicly readable by design. */
+    SEEDED_WEBID_PROFILE("seeded WebID document %s for %s, naming issuer %s — readable by "
+            + "anyone, which is what makes the WebID resolvable"),
+
     POD_ALREADY_PROVISIONED(
             "Pod <%s> already has an ACL; left as it is (a restart is not a request to reset"
                     + " permissions)"),

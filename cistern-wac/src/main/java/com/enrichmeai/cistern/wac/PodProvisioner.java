@@ -4,6 +4,8 @@ import com.enrichmeai.cistern.core.Representation;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.ResourceStore;
 import com.enrichmeai.cistern.core.rdf.RdfIo;
+
+import java.net.URI;
 import com.enrichmeai.cistern.core.vocab.Acl;
 
 import java.util.Collections;
@@ -92,6 +94,50 @@ public final class PodProvisioner {
                         : ensureContainer(root)
                                 .then(store.put(acl, ownerAcl(spec)))
                                 .thenReturn(new PodProvisioned.Created(root, acl)));
+    }
+
+    /**
+     * Write the owner's WebID document and its ACL, if the WebID lives in this pod.
+     *
+     * <p>Idempotent like {@link #provision}: an existing document is left alone, because it may
+     * have been edited since it was seeded and a boot must not silently revert somebody's
+     * profile.
+     *
+     * <p>Empty when the WebID lives elsewhere. That is not a failure — it is the ordinary case,
+     * where the owner's identity is issued by their own provider and this pod merely holds
+     * their storage.
+     *
+     * @param oidcIssuer the provider allowed to issue tokens for the owner
+     */
+    public Mono<ResourceIdentifier> provisionWebIdProfile(PodSpec spec, URI oidcIssuer) {
+        Objects.requireNonNull(spec, "spec");
+        Objects.requireNonNull(oidcIssuer, "oidcIssuer");
+        if (!WebIdProfile.livesIn(spec.ownerWebId(), spec.root())) {
+            return Mono.empty();
+        }
+        ResourceIdentifier profile = WebIdProfile.documentOf(spec.ownerWebId());
+        ResourceIdentifier profileAcl = AclResource.of(profile);
+        return store.exists(profile)
+                .flatMap(exists -> exists
+                        ? Mono.<ResourceIdentifier>empty()
+                        : ensureContainer(parentOf(profile))
+                                .then(store.put(profile,
+                                        WebIdProfile.document(spec.ownerWebId(), oidcIssuer)))
+                                .then(store.put(profileAcl,
+                                        WebIdProfile.acl(spec.ownerWebId(), profile)))
+                                .thenReturn(profile));
+    }
+
+    /**
+     * The container a document sits in.
+     *
+     * <p>A WebID is conventionally {@code …/profile/card#me}, so the document usually needs a
+     * {@code profile/} container that pod provisioning did not create.
+     */
+    private static ResourceIdentifier parentOf(ResourceIdentifier document) {
+        String uri = document.uri().toString();
+        int lastSlash = uri.lastIndexOf('/');
+        return new ResourceIdentifier(URI.create(uri.substring(0, lastSlash + 1)));
     }
 
     /** Create the root container if it is absent; leave it untouched if it is there. */

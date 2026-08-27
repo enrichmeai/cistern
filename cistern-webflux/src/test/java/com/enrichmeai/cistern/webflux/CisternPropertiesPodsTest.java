@@ -24,7 +24,7 @@ class CisternPropertiesPodsTest {
     private static final URI ALICE = URI.create("https://alice.example/profile/card#me");
 
     private static CisternProperties.Seed seed(String root, URI owner) {
-        return new CisternProperties.Seed(root, owner);
+        return new CisternProperties.Seed(root, owner, null);
     }
 
     @Test
