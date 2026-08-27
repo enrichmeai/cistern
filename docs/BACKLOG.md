@@ -354,28 +354,28 @@ regression.
 - [x] **T6.1 MCP server.** Using the official MCP Java SDK (Spring integration): expose
   tools `read_resource(uri)`, `write_resource(uri, content, contentType)`,
   `list_container(uri)`, `delete_resource(uri)` and MCP resources for pod browsing.
-  Transport: **stdio only** — see T6.7. DoD: MCP Inspector session
+  Transport: stdio; Streamable HTTP added in T6.7. DoD: MCP Inspector session
   transcript in the PR showing all four tools.
 - [x] **T6.2 Identity binding.** MCP connection config carries either a static WebID
   mapping (dev) or a Solid-OIDC token (prod path); every tool call goes through
   `WacEnforcer` as that agent — verify by test that a WAC-denied resource is denied over
   MCP with a clean MCP error, not a stack trace. DoD: allowed/denied matrix over MCP.
-- [ ] **T6.7 Streamable HTTP transport.** The MCP Java SDK **2.0.0 ships Servlet transports
-  only** (`HttpServletStreamableServerTransportProvider`, `…SseServerTransportProvider`,
-  `HttpServletStatelessServerTransport`); `io.modelcontextprotocol.sdk:mcp-spring-webflux`
-  stops at **0.18.4** and was not carried to the 2.x line. So a Netty/WebFlux server on SDK 2.0
-  has **no first-party HTTP transport**, which is why T6.1 shipped stdio alone — the ticket
-  text claimed both and only stdio exists. Until this lands, Cistern is reachable only by a
-  client that can spawn a local subprocess: no remote MCP client, no hosted deployment, no
-  connector for an assistant running anywhere else.
-  **Options, for the architect:** (a) implement `McpServerTransportProvider` over WebFlux —
-  ~900 lines ported from the Servlet version (sessions, SSE, `Mcp-Session-Id`, `DELETE`;
-  resumability via `Last-Event-ID` could be a stated non-goal at first), ours to own, and
-  **contributable upstream** where it would serve every Spring reactive MCP server; (b) pin the
-  SDK back to 0.18.x to use `mcp-spring-webflux`, losing 2.x; (c) run the Servlet transport on
-  a second HTTP stack beside Netty, against ground rule 3; (d) wait for upstream.
-  Recommendation: (a). DoD: MCP Inspector over HTTP against a running pod, session lifecycle
-  covered by tests, ground rule 3 held.
+- [x] **T6.7 Streamable HTTP transport.** Written rather than imported: the MCP Java SDK
+  2.0.0 ships Servlet transports only, and `io.modelcontextprotocol.sdk:mcp-spring-webflux`
+  stops at 0.18.4 — never carried to the 2.x line — so a Netty/WebFlux server on SDK 2.0 has
+  no first-party HTTP transport. `WebFluxStreamableTransport` implements
+  `McpStreamableServerTransportProvider`: POST (initialize → JSON + `Mcp-Session-Id`; request
+  → SSE; notification/response → 202), GET (the server-initiated stream), DELETE (end the
+  session). Never blocks — the Servlet version `.block()`s on the initialize result and on
+  notification handling, which an event loop cannot afford. `McpFrontDoor` gained an overload
+  so both transports are built from one definition of the tools; a client over HTTP gets the
+  same surface and the same refusals as one over stdio. Off unless `cistern.mcp.http.enabled`.
+  **Stated non-goal: resumability.** `Last-Event-ID` is refused with 501 rather than accepted
+  and ignored — a client told its stream resumed and then silently missing messages is worse
+  off than one told it cannot. Every message is stamped with an id so adding an event store
+  later changes the store, not the wire. DoD: 9 protocol tests over real HTTP via
+  `WebTestClient.bindToRouterFunction`; full build green. *Renumbered from T6.4 — #121
+  reserved T6.4–T6.6 first.*
 
 - [ ] **T6.3 Flagship demo.** `docs/demo/claude-desktop.md`: config + walkthrough — Claude
   reads and writes a note in a pod, is denied on another user's private container. Record
