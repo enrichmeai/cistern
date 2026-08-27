@@ -425,8 +425,8 @@ regression.
   credential so Cistern resolves it to the agent's own WebID. Five beats — put a document in,
   ask and be **refused**, grant one document read-only, ask and be answered, revoke and be
   refused **on the next request** — then read the receipt from the pod. Runs entirely offline
-  with Ollama, both ports bound to loopback. Honest limits stated in the doc: Penstock v0.1.0
-  has unpatched findings in its own published scan so it is a local demo, the WebIDs are local
+  with Ollama, both ports bound to loopback. Honest limits stated in the doc: it is a local demo and
+  says so — Penstock still reports criticals with no upstream fix — the WebIDs are local
   rather than resolvable, and conformance is whatever `cth/BASELINE.md` currently says.
   *The Claude Desktop walkthrough the ticket originally described is superseded: the
   interesting demonstration turned out to be an agent that authenticates as itself and gets

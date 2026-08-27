@@ -114,11 +114,15 @@ leaves it. The demo works the same way — which is the point.
 
 ## Honest limits
 
-**Penstock v0.1.1 fixed the criticals that had a released fix** — 138 findings down to 89,
-both Tomcat criticals gone. One app-level finding remains (`spring-security-web`
-CVE-2026-22732) because upstream has not published a fixed version yet; the rest of the tail
-is the bundled Gradle toolchain. Both scans ship with their releases, so the before and the
-after are public and you can check this rather than believe it.
+**Do not put this on a network.** Run it on your own machine, behind the loopback binding
+the compose file already sets, and stop it when you are done.
+
+Penstock v0.1.1 fixed the criticals that had a released fix — 138 findings down to 89, both
+Tomcat criticals gone — but its scan still reports **4 CRITICAL and 85 HIGH**. One of those
+criticals is in the application itself: `spring-security-web` CVE-2026-22732, which has no
+fixed release upstream yet, so there is nothing to apply. The rest of the tail is the bundled
+Gradle toolchain. Both scans ship with their releases, so those numbers are yours to read
+rather than ours to summarise.
 
 **The WebIDs here are local and made up.** A real deployment uses WebIDs that resolve, with
 their own identity provider — Cistern validates Solid-OIDC tokens for that case, and this
