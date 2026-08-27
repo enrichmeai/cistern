@@ -3,9 +3,14 @@ package com.enrichmeai.cistern.webflux;
 import com.enrichmeai.cistern.core.Representation;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.ResourceStore;
+import com.enrichmeai.cistern.wac.AclResource;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -191,6 +196,101 @@ class AuthorizationHttpTest {
         client.put().uri("/public/notice").header(HttpHeaders.CONTENT_TYPE, TURTLE)
                 .bodyValue("<#x> <#y> \"z\" .")
                 .exchange().expectStatus().isUnauthorized();
+    }
+
+    // ---- ACL resource discovery ----------------------------------------------------------
+    //
+    // One writer emits the link (AuthorizationFilter's beforeCommit hook), so the invariant
+    // is pinned per RESPONSE CLASS — handler-written success, PUT (whose handler emits its
+    // own Link values), refusal, error-mapped problem, and the generated storage description
+    // — rather than per endpoint. These run in the one context where the invariant holds:
+    // acl discovery is part of the WAC layer and exists exactly when enforcement does.
+
+    /**
+     * Exactly one {@code rel="acl"} value among the response's {@code Link}s, targeting
+     * {@code aclPath} — parsed with the same {@link LinkHeader} the request side uses, so a
+     * duplicate emission or a wrong target fails, not just an absence.
+     */
+    private void assertAclLink(WebTestClient.ResponseSpec response, String aclPath) {
+        List<String> links = response.expectBody().returnResult()
+                .getResponseHeaders().getOrEmpty(HttpHeaders.LINK);
+        assertEquals(List.of(BASE + aclPath),
+                LinkHeader.targetsWithRelation(links, LinkRelation.ACL),
+                "exactly one acl link expected; got " + links);
+    }
+
+    @Test
+    @DisplayName("a document response advertises its own ACL via Link rel=acl")
+    void documentAdvertisesItsAcl() {
+        put("/notes/hello", "<#a> <#b> \"c\" .");
+
+        assertAclLink(asOwner(client.get().uri("/notes/hello")).exchange()
+                .expectStatus().isOk(), "/notes/hello" + AclResource.SUFFIX);
+    }
+
+    @Test
+    @DisplayName("a container response advertises the ACL inside it")
+    void containerAdvertisesItsAcl() {
+        put("/notes/hello", "<#a> <#b> \"c\" .");
+
+        assertAclLink(asOwner(client.get().uri("/notes/")).exchange()
+                .expectStatus().isOk(), "/notes/" + AclResource.SUFFIX);
+    }
+
+    @Test
+    @DisplayName("an ACL resource advertises itself, not a .acl.acl outside the model")
+    void aclResourceAdvertisesItself() {
+        assertAclLink(asOwner(client.get().uri("/.acl")).exchange()
+                .expectStatus().isOk(), "/" + AclResource.SUFFIX);
+    }
+
+    @Test
+    @DisplayName("a refusal carries the acl link too — discovery does not require access")
+    void refusalStillAdvertisesAcl() {
+        put("/notes/hello", "<#a> <#b> \"c\" .");
+
+        assertAclLink(client.get().uri("/notes/hello").exchange()
+                .expectStatus().isUnauthorized(), "/notes/hello" + AclResource.SUFFIX);
+    }
+
+    @Test
+    @DisplayName("a PUT response carries the acl link, though its handler writes its own Links")
+    void putResponseAdvertisesAcl() {
+        assertAclLink(asOwner(client.put().uri("/notes/put-target")
+                        .header(HttpHeaders.CONTENT_TYPE, TURTLE)
+                        .bodyValue("<#a> <#b> \"c\" ."))
+                .exchange().expectStatus().is2xxSuccessful(),
+                "/notes/put-target" + AclResource.SUFFIX);
+    }
+
+    @Test
+    @DisplayName("an error-mapped response carries the acl link — the hook outlives the handler")
+    void errorResponseAdvertisesAcl() {
+        assertAclLink(asOwner(client.get().uri("/notes/absent")).exchange()
+                .expectStatus().isNotFound(), "/notes/absent" + AclResource.SUFFIX);
+    }
+
+    @Test
+    @DisplayName("the storage description is WAC-governed and advertises its ACL like anything else")
+    void storageDescriptionAdvertisesAcl() {
+        assertAclLink(asOwner(client.get().uri("/.well-known/solid")).exchange()
+                .expectStatus().isOk(), "/.well-known/solid" + AclResource.SUFFIX);
+    }
+
+    @Test
+    @DisplayName("a 304 carries no acl link — conditional responses stay free of discovery links")
+    void notModifiedCarriesNoAclLink() {
+        put("/notes/cached", "<#a> <#b> \"c\" .");
+        String etag = asOwner(client.get().uri("/notes/cached")).exchange()
+                .expectStatus().isOk()
+                .expectBody().returnResult().getResponseHeaders().getFirst(HttpHeaders.ETAG);
+
+        List<String> links = asOwner(client.get().uri("/notes/cached")
+                        .header(HttpHeaders.IF_NONE_MATCH, etag)).exchange()
+                .expectStatus().isNotModified()
+                .expectBody().returnResult().getResponseHeaders().getOrEmpty(HttpHeaders.LINK);
+        assertEquals(List.of(), LinkHeader.targetsWithRelation(links, LinkRelation.ACL),
+                "a 304 must not advertise discovery links; got " + links);
     }
 
     // ---- WAC-Allow -----------------------------------------------------------------------

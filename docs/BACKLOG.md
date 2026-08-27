@@ -236,8 +236,11 @@ regression.
   inheritance chains and root fallback.
   *`AclDiscovery` (reactive walk, no blocking I/O), `AclResource` (the `.acl` naming
   convention in one place, matching CSS so a pod moves between implementations),
-  `EffectiveAcl` (graph + scope + source). The `Link: rel="acl"` header itself is emitted
-  in T5.3 — `EffectiveAcl.aclResource()` supplies the URI.*
+  `EffectiveAcl` (graph + scope + source). The `Link: rel="acl"` header fell through this
+  note's hand-off to T5.3 (whose DoD listed only `WAC-Allow`) and was landed by the first
+  full CTH run's failure (PR #159): a `beforeCommit` hook in `AuthorizationFilter`, and the
+  advertised URI is `AclResource.aclFor(target)` — the target's own ACL, never the effective
+  source, which is the server's business to walk.*
   *Two ways the obvious implementation is more permissive than the spec, both now tested.
   **An ACL that exists but does not parse denies rather than falling through** — continuing
   the walk would substitute an ancestor's `acl:default` (usually the more generous rule)

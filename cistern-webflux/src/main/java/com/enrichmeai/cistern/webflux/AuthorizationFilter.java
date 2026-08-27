@@ -13,6 +13,7 @@ import com.enrichmeai.cistern.wac.RequiredAccess;
 import com.enrichmeai.cistern.webflux.auth.PrincipalResolver;
 
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -21,6 +22,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
@@ -137,6 +139,24 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
         ResourceIdentifier target = paths.identifierFor(request.getPath().value());
         List<AccessRequirement> requirements = requirementsFor(request, target);
 
+        // WAC "ACL Resource Discovery": every response to a request targeting a resource
+        // advertises where that resource's ACL lives, whether or not it has a representation
+        // yet — a client editing permissions starts from a link, not a naming convention it
+        // has to guess. Asserted at beforeCommit, the same shape as OriginVaryFilter and for
+        // the same reason: a functional ServerResponse replaces this field wholesale when it
+        // is written, so the one writer that cannot be clobbered — or forgotten by the next
+        // handler a ticket adds — is the one that runs after whatever the handler finally
+        // wrote. Covers allowed, refused, and error-mapped responses alike. Two responses
+        // deliberately go without: a CORS preflight (returned above — it answers "may this
+        // origin ask?", not a request targeting the resource), and a 400 for a target
+        // identifierFor refuses just below, which has no well-formed ACL to name.
+        ServerHttpResponse response = exchange.getResponse();
+        String aclLink = AclLink.valueFor(target);
+        response.beforeCommit(() -> {
+            addAclLink(response, aclLink);
+            return Mono.empty();
+        });
+
         return principals.resolve(exchange)
                 .flatMap(agent -> accessControl.authorize(requirements, agent)
                         .flatMap(verdict -> sink.record(DecisionRecord.of(clock.instant(), agent, verdict, requestId))
@@ -203,6 +223,33 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
 
     private static boolean isReadMethod(ServerHttpRequest request) {
         return HttpMethod.GET.equals(request.getMethod()) || HttpMethod.HEAD.equals(request.getMethod());
+    }
+
+    /**
+     * Appends the acl link unless it is already present — or the response is a 304, which
+     * this codebase deliberately keeps free of discovery links ({@code ResourceReadHandler}'s
+     * conditional-request contract: a 304 describes the cached representation's validators,
+     * not the resource's interface; the storage-description link is absent there for the
+     * same reason).
+     *
+     * <p>Copy-then-put rather than {@code headers.add}, exactly as {@link OriginVaryFilter}
+     * documents: {@code add} mutates the existing value list in place, and when a functional
+     * {@code ServerResponse} supplied the {@code Link} values that list is immutable —
+     * {@code UnsupportedOperationException}, a 500 on every response a handler set links on,
+     * and only under some servers. Copying is correct in all of them.
+     */
+    private static void addAclLink(ServerHttpResponse response, String aclLink) {
+        if (HttpStatus.NOT_MODIFIED.equals(response.getStatusCode())) {
+            return;
+        }
+        HttpHeaders headers = response.getHeaders();
+        List<String> existing = headers.get(HttpHeaders.LINK);
+        if (existing != null && existing.contains(aclLink)) {
+            return;
+        }
+        List<String> updated = existing == null ? new ArrayList<>() : new ArrayList<>(existing);
+        updated.add(aclLink);
+        headers.put(HttpHeaders.LINK, updated);
     }
 
     /**

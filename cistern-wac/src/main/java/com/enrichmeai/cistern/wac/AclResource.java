@@ -58,6 +58,18 @@ public final class AclResource {
     }
 
     /**
+     * The ACL resource governing {@code resource}, idempotently: an ACL resource is its own
+     * ACL. Editing an ACL is already governed by Control on the resource it protects
+     * ({@link #isAcl} is how enforcement recognises that), so a {@code .acl.acl} would name a
+     * resource outside the model. This is the value WAC's "ACL Resource Discovery" link
+     * advertises, whatever the target.
+     */
+    public static ResourceIdentifier aclFor(ResourceIdentifier resource) {
+        Objects.requireNonNull(resource, "resource");
+        return isAcl(resource) ? resource : of(resource);
+    }
+
+    /**
      * The resource that {@code acl} governs — the inverse of {@link #of}.
      *
      * @throws IllegalArgumentException if {@code acl} does not name an ACL resource
