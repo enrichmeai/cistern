@@ -663,8 +663,7 @@ class ResourcePatchHttpTest {
                     """).exchange()
                     .expectStatus().isCreated()
                     .expectHeader().valueEquals(HttpHeaders.LINK,
-                            "<http://www.w3.org/ns/ldp#Resource>; rel=\"type\"",
-                            "<" + BASE + path + ".acl>; rel=\"acl\"");
+                            "<http://www.w3.org/ns/ldp#Resource>; rel=\"type\"");
         }
     }
 

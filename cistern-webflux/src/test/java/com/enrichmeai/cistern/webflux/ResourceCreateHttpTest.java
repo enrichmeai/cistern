@@ -368,11 +368,10 @@ class ResourceCreateHttpTest {
                 .exchange()
                 .expectStatus().isOk()
                 // The third value is Solid Protocol §4.1's storage-description link (T2.9),
-                // which every GET in the storage carries, and the fourth WAC's acl-discovery
-                // link; the two rel="type" links are what this test is actually about.
+                // which every GET in the storage carries; the two rel="type" links are what
+                // this test is actually about.
                 .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, LDP_BASIC_CONTAINER,
-                        storageDescription.linkValue(),
-                        "<" + BASE_URL + created + ".acl>; rel=\"acl\"");
+                        storageDescription.linkValue());
     }
 
     /**
@@ -591,9 +590,7 @@ class ResourceCreateHttpTest {
 
         postTurtle(container).exchange()
                 .expectStatus().isCreated()
-                // The trailing value is WAC's acl-discovery link for the POSTed-to container.
-                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, LDP_BASIC_CONTAINER,
-                        "<" + BASE_URL + container + ".acl>; rel=\"acl\"")
+                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, LDP_BASIC_CONTAINER)
                 .expectHeader().valueEquals(HttpHeaders.ALLOW,
                         "GET, HEAD, OPTIONS, POST, PUT, PATCH, DELETE")
                 .expectHeader().exists(HttpConstants.ACCEPT_POST)

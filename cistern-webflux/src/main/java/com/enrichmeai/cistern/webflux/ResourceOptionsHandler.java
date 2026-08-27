@@ -127,7 +127,7 @@ public class ResourceOptionsHandler {
                 return serverOptions();
             }
             ResourceIdentifier target = requestPaths.identifierFor(request);
-            return ldp.read(target).flatMap(view -> resourceOptions(ResourceKind.of(view), target));
+            return ldp.read(target).flatMap(view -> resourceOptions(ResourceKind.of(view)));
         });
     }
 
@@ -136,8 +136,8 @@ public class ResourceOptionsHandler {
      * An instance method rather than a static one only because the storage-description link is a
      * property of the storage, so it is injected rather than looked up in {@link ResourceKind}.
      */
-    private Mono<ServerResponse> resourceOptions(ResourceKind kind, ResourceIdentifier target) {
-        return options(kind, storageDescription.linkValue(), target);
+    private Mono<ServerResponse> resourceOptions(ResourceKind kind) {
+        return options(kind, storageDescription.linkValue());
     }
 
     /**
@@ -175,8 +175,7 @@ public class ResourceOptionsHandler {
      * @param storageDescriptionLink the {@code Link} of Solid Protocol §4.1, which names
      *                               {@code OPTIONS} among the three methods that MUST carry it
      */
-    private static Mono<ServerResponse> options(ResourceKind kind, String storageDescriptionLink,
-                                                ResourceIdentifier target) {
+    private static Mono<ServerResponse> options(ResourceKind kind, String storageDescriptionLink) {
         return ServerResponse.noContent()
                 .headers(headers -> {
                     // Includes the Link rel="type" values: LDP §4.2.1.4 makes the interaction
@@ -186,9 +185,6 @@ public class ResourceOptionsHandler {
                     // as well as a HEAD does. The trailing argument is §4.1's storage-description
                     // Link, mandatory on GET/HEAD/OPTIONS alike.
                     InterfaceMetadata.write(headers, kind, storageDescriptionLink);
-                    // WAC ACL discovery: this builder's Link values replace the field the
-                    // AuthorizationFilter wrote, so the acl link is restated here.
-                    headers.add(HttpHeaders.LINK, AclLink.valueFor(target));
                 })
                 .build();
     }

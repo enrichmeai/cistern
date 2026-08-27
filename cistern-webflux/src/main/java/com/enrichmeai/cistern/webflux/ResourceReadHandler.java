@@ -195,9 +195,6 @@ public class ResourceReadHandler {
                     // storage-description Link, which is a property of the storage rather
                     // than of this resource — hence the three-argument form.
                     InterfaceMetadata.write(headers, kind, storageDescription.linkValue());
-                    // WAC ACL discovery: this builder's Link values replace the field the
-                    // AuthorizationFilter wrote, so the acl link is restated here.
-                    headers.add(HttpHeaders.LINK, AclLink.valueFor(selected.view().identifier()));
                     // Set explicitly rather than left to the codec, so a HEAD reports the
                     // same length a GET would have written (RFC 9110 §9.3.2).
                     headers.setContentLength(body.length);

@@ -150,10 +150,6 @@ public class ResourceCreateHandler {
         return ServerResponse.created(created.identifier().uri())
                 .headers(headers -> {
                     InterfaceMetadata.write(headers, targetKind);
-                    // WAC ACL discovery for the request's target — the container POSTed to,
-                    // not the resource created. This builder's Link values replace the field
-                    // the AuthorizationFilter wrote, so the acl link is restated here.
-                    headers.add(HttpHeaders.LINK, AclLink.valueFor(container));
                     writeValidators(headers, created, stored);
                 })
                 .build();
