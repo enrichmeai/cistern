@@ -354,13 +354,13 @@ regression.
 - [x] **T6.1 MCP server.** Using the official MCP Java SDK (Spring integration): expose
   tools `read_resource(uri)`, `write_resource(uri, content, contentType)`,
   `list_container(uri)`, `delete_resource(uri)` and MCP resources for pod browsing.
-  Transport: **stdio only** — see T6.4. DoD: MCP Inspector session
+  Transport: **stdio only** — see T6.7. DoD: MCP Inspector session
   transcript in the PR showing all four tools.
 - [x] **T6.2 Identity binding.** MCP connection config carries either a static WebID
   mapping (dev) or a Solid-OIDC token (prod path); every tool call goes through
   `WacEnforcer` as that agent — verify by test that a WAC-denied resource is denied over
   MCP with a clean MCP error, not a stack trace. DoD: allowed/denied matrix over MCP.
-- [ ] **T6.4 Streamable HTTP transport.** The MCP Java SDK **2.0.0 ships Servlet transports
+- [ ] **T6.7 Streamable HTTP transport.** The MCP Java SDK **2.0.0 ships Servlet transports
   only** (`HttpServletStreamableServerTransportProvider`, `…SseServerTransportProvider`,
   `HttpServletStatelessServerTransport`); `io.modelcontextprotocol.sdk:mcp-spring-webflux`
   stops at **0.18.4** and was not carried to the 2.x line. So a Netty/WebFlux server on SDK 2.0
