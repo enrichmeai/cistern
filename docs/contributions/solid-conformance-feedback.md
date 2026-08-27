@@ -7,24 +7,39 @@ Everything below is offered in the spirit the harness exists for. A specificatio
 tested when a second implementation reads it independently, and every item here is something
 the Solid community's own work made it possible for us to find.
 
-## 1. A new implementation gets no conformance signal until Solid-OIDC is complete
+## 1. The precondition is provisioned accounts, not authentication
 
 **Observed:** the harness registers authenticated `alice`/`bob` clients during
 `registerClients` → `prepareServer`, before executing any feature. There is no skip-auth or
 unauthenticated-subset mode. A server without Solid-OIDC therefore stops at REGISTER CLIENTS
 and emits no results report — not a partial score, but nothing at all.
 
-**Reproduced:** Cistern, with a complete HTTP layer and a passing WAC engine, scored
-0 passed / 0 failed / **41 untested** for six weeks. The run failed on a 404 for a WebID
-document, before the first assertion. Recorded in our `cth/BASELINE.md` with dates and image
-digests.
+**Reproduced twice, and the second run is the interesting one.**
 
-**Why it is worth changing:** authentication is the *last* thing an implementation builds and
-among the hardest. Under the current design an implementer builds the entire protocol and
-access-control surface with no external signal, then turns on authentication and discovers
-what they got wrong months earlier. Conformance is most valuable as a gradient, not a gate.
+Cistern scored 0 passed / 0 failed / **41 untested** for six weeks with a complete HTTP layer
+and a passing WAC engine — the run stopping on a 404 for a WebID document, before the first
+assertion.
 
-**Suggestion:** a documented subset that runs without registered clients — even a handful of
+We then built the whole Solid-OIDC stack: access-token validation, DPoP proof checking to
+RFC 9449 §4.3, WebID issuer verification, and the filter chain composing them. Re-ran the
+harness (1.2.2, suite 0.0.19, 41 cases discovered — 26 protocol + 15 WAC) against that server.
+
+**The score was identical: 0 / 0 / 41, stopping in REGISTER CLIENTS on a 404 for bob's WebID
+document.** Both runs are dated in our `cth/BASELINE.md` with image digests.
+
+That is the finding, and it is sharper than "no signal until Solid-OIDC is done": **completing
+Solid-OIDC is not sufficient.** The precondition is that test accounts *exist and are
+registerable*, which is a provisioning capability, not an authentication one. A server can have
+a complete and correct token-validation stack and still learn nothing at all about its
+conformance.
+
+**Why it is worth changing:** an implementer builds the entire protocol and access-control
+surface with no external signal, completes the hardest part of authentication, and still gets
+zero — then discovers the actual gate was multi-user provisioning. Conformance is most valuable
+as a gradient, not a gate, and the gate here is not the one the failure mode suggests.
+
+**Suggestion:** a documented subset that runs without registered clients — the 26 protocol
+cases include unauthenticated behaviour a server can be judged on long before it has accounts — even a handful of
 protocol assertions against public resources would let an implementation track progress from
 its first week. If that subset already exists and we missed it, that is a documentation gap
 worth closing, and we would happily send the doc change.
