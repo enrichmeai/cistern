@@ -1,0 +1,83 @@
+# The flagship demo (T6.3): a pod and an agent, on one machine, in one command.
+#
+#   CISTERN_DEMO_SECRET=$(openssl rand -hex 32) \
+#   CISTERN_DEMO_HASH=$(printf '%s' "$CISTERN_DEMO_SECRET" | shasum -a 256 | cut -d' ' -f1) \
+#   docker compose -f docs/demo/one-command.yml up
+#
+# What it stands up:
+#   cistern  — the pod. Holds the documents, holds the rules, writes the receipts.
+#   penstock — the agent. Does the work, and asks Cistern for anything it wants to read.
+#
+# The agent authenticates as ITSELF, with its own credential, and Cistern resolves that to
+# the agent's own WebID. So a grant written for the agent is a grant to the agent alone, and
+# revoking it stops the agent without touching anything else in the pod. That is the whole
+# demonstration; everything below is plumbing for it.
+#
+# Local only, deliberately. Both ports bind to 127.0.0.1, and Penstock v0.1.0 has unpatched
+# dependency findings in its own published scan — read it, run it on your machine, do not
+# expose it to a network until that lands.
+#
+# 127.0.0.1 everywhere, never "localhost": on a Mac localhost resolves to ::1 first while
+# Docker binds IPv4 only, so any other process on the port answers instead — with a 401 that
+# looks exactly like this server misbehaving. In a demo whose whole subject is refusals, a
+# spurious 401 is the worst possible failure. Same rule as integration-kit/README.md.
+
+services:
+  cistern:
+    image: ghcr.io/enrichmeai/cistern:0.2.0
+    ports:
+      - "127.0.0.1:${CISTERN_PORT:-3737}:3000"
+    environment:
+      CISTERN_STORAGE_ROOT: /data
+      CISTERN_BASE_URL: http://127.0.0.1:${CISTERN_PORT:-3737}
+
+      # The human. Holds Control over everything, and is the only identity that can
+      # write or revoke a grant.
+      CISTERN_OWNER_WEBID: ${OWNER_WEBID:-https://you.example/profile/card#me}
+      CISTERN_OWNER_TOKEN: ${CISTERN_OWNER_TOKEN:?set this — openssl rand -hex 32}
+
+      # The agent, as its own principal. Cistern stores only the digest: the secret itself
+      # never appears in this file or in the pod's configuration.
+      #
+      # Note the env spelling. Spring's relaxed binding REMOVES hyphens rather than turning
+      # them into underscores, so cistern.auth.service-principals[0].web-id is
+      # CISTERN_AUTH_SERVICEPRINCIPALS_0_WEBID. The intuitive SERVICE_PRINCIPALS_0_WEB_ID
+      # spelling binds nothing, silently, and the pod then starts with no agent principal and
+      # refuses the agent for a reason that looks nothing like a typo.
+      CISTERN_AUTH_SERVICEPRINCIPALS_0_WEBID: http://127.0.0.1:${CISTERN_PORT:-3737}/agents/penstock#id
+      CISTERN_AUTH_SERVICEPRINCIPALS_0_CREDENTIALHASH: sha256:${CISTERN_DEMO_HASH:?set this — see the header}
+
+      # One pod for the human, so there is something to grant access to.
+      CISTERN_PODS_SEED_0_ROOT: /notes/
+      CISTERN_PODS_SEED_0_OWNERWEBID: ${OWNER_WEBID:-https://you.example/profile/card#me}
+    volumes:
+      - demo-pod:/data
+    restart: unless-stopped
+
+  penstock:
+    image: ghcr.io/enrichmeai/penstock:0.1.0
+    depends_on: [cistern]
+    ports:
+      - "127.0.0.1:${PENSTOCK_PORT:-8080}:8080"
+    environment:
+      # Auth on, because an audit trail that attributes everything to "anonymous" proves
+      # nothing. This is the demo's whole claim, so it is not optional here.
+      AGENT_AUTH_ENABLED: "true"
+      AGENT_AUTH_MODE: basic
+      AGENT_AUTH_USERNAME: ${PENSTOCK_USER:-demo}
+      AGENT_AUTH_PASSWORD: ${PENSTOCK_PASSWORD:?set this — openssl rand -hex 16}
+
+      # Where the agent reaches the pod, and the credential it reaches it with. Container to
+      # container, so the service name rather than localhost.
+      CISTERN_BASE_URL: http://cistern:3000
+      CISTERN_AGENT_TOKEN: ${CISTERN_DEMO_SECRET:?set this — see the header}
+
+      # A local model keeps the whole demo offline. Point at any provider you prefer.
+      AGENT_LLM_PROVIDER: ${AGENT_LLM_PROVIDER:-ollama}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  demo-pod:
