@@ -114,10 +114,11 @@ leaves it. The demo works the same way — which is the point.
 
 ## Honest limits
 
-**Penstock v0.1.0 has unpatched dependency findings** in its own published vulnerability
-scan. It is fine on your own machine; do not expose it to a network until the fix ships. The
-scan is published with the release, which is how you can check this claim rather than believe
-it.
+**Penstock v0.1.1 fixed the criticals that had a released fix** — 138 findings down to 89,
+both Tomcat criticals gone. One app-level finding remains (`spring-security-web`
+CVE-2026-22732) because upstream has not published a fixed version yet; the rest of the tail
+is the bundled Gradle toolchain. Both scans ship with their releases, so the before and the
+after are public and you can check this rather than believe it.
 
 **The WebIDs here are local and made up.** A real deployment uses WebIDs that resolve, with
 their own identity provider — Cistern validates Solid-OIDC tokens for that case, and this
