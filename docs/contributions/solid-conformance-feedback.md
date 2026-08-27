@@ -44,6 +44,42 @@ protocol assertions against public resources would let an implementation track p
 its first week. If that subset already exists and we missed it, that is a documentation gap
 worth closing, and we would happily send the doc change.
 
+## 1b. The harness's own client omits a claim RFC 9449 makes required, and we can measure what it costs
+
+**Observed:** `Client.generateDpopToken` (`src/main/java/org/solid/testharness/http/Client.java`)
+builds DPoP proofs with `jti`, `htm`, `htu` and `iat`. It does not set `ath`. RFC 9449 §4.3
+step 12 requires `ath` on any proof accompanying an access token, and requires the resource
+server to check that it hashes to that token.
+
+A server implementing §4.3 as written therefore rejects every authenticated request the
+harness makes. Ours does: the proof fails on the missing `ath`, the request falls through to
+anonymous, and the run stops in PREPARE SERVER unable to find an ACL link.
+
+**Already reported, twice.** Issues #767 (27 May 2026) and #786 (30 July 2026), both open,
+neither with a comment. We are not the first to hit this; we may be the first able to put a
+number on it.
+
+**And that is the useful part — the cost is measurable.** We ran the suite twice against the
+same server build, changing only one guarded line in the harness client to add `ath`:
+
+| Harness | MustFeatures | MustScenarios |
+|---|---|---|
+| Official, unmodified | **0 passed / 0 failed / 41 untested** | run halts in PREPARE SERVER |
+| Same harness, `ath` added | **24 passed / 11 failed** | **613 passed / 28 failed** |
+
+The gap between those two rows is not a property of the server. It is the cost of one absent
+claim in the test client, and it is the difference between a specification-conformant
+implementation receiving no signal at all and receiving 613 passing scenarios plus an
+itemised list of 28 real defects to fix.
+
+**The uncomfortable implication, stated plainly because it is the point:** the stricter a
+server is about §4.3, the worse it scores — and a server that ignores `ath` entirely does
+better on the official harness than one that implements the RFC. That is an incentive
+pointing the wrong way, and it is fixable in about a line.
+
+**We would like to contribute the fix**, and we have it. Say the word and we will open a PR
+rather than a third issue.
+
 ## 2. Resource-server validation is left to follow from the authorization server
 
 **Observed:** Solid-OIDC §9.2/§9.3/§8.1.1 specify the authorization server. The resource
