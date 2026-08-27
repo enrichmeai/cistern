@@ -89,6 +89,7 @@ public enum AuthMessage {
     DPOP_TARGET_UNBUILDABLE("the DPoP comparison target could not be constructed: %s"),
     SOLID_RESOLVER_WIRED("Solid-OIDC resolver wired: base %s, proof window %s, WebID cache %s"),
     ISSUER_BOUND_INVALID("the discovered-issuer bound must be positive, was %s"),
+    WEBID_ORIGIN_UNPARSEABLE("a trusted WebID origin must be scheme://host[:port], was %s"),
 
     /** Printed on every boot that trusts a non-public origin, so the trust cannot go unnoticed. */
     WEBID_ORIGINS_TRUSTED("WebID dereferencing additionally permits %s non-public origin(s): %s"

@@ -135,7 +135,13 @@ public record WebIdFetchPolicy(Duration connectTimeout, int maxRedirects, int ma
         }
         // The allow-list is consulted first, because an entry carries its own scheme: naming
         // http://localhost:3939 permits that origin and nothing else, never http generally.
-        if (trustedOrigins.contains(canonicalOrigin(uri.toString()))) {
+        //
+        // Strictness is asymmetric on purpose. A configured entry that is not an origin is a
+        // boot failure, because an operator must not believe they allowed something they did
+        // not. A *request* for something that is not an origin is simply refused by the rules
+        // below — this method is on the request path and must never throw, whatever a caller
+        // puts in a token.
+        if (!trustedOrigins.isEmpty() && matchesTrustedOrigin(uri)) {
             return java.util.Optional.empty();
         }
         // Scheme before host: file:///etc/passwd has no host, and reporting that as "malformed"
@@ -180,17 +186,40 @@ public record WebIdFetchPolicy(Duration connectTimeout, int maxRedirects, int ma
         }
     }
 
+    /** Whether {@code uri}'s origin is one of the configured ones; false if it has none. */
+    private boolean matchesTrustedOrigin(URI uri) {
+        try {
+            return trustedOrigins.contains(canonicalOrigin(uri.toString()));
+        } catch (IllegalArgumentException notAnOrigin) {
+            return false;
+        }
+    }
+
     /**
      * Scheme, host and port, lowercased, with the default port made explicit — so that
      * {@code https://idp.example} and {@code https://idp.example:443/} are one origin, and a
      * configured entry cannot miss its own WebID over a trailing slash.
      */
     static String canonicalOrigin(String uri) {
-        java.net.URI parsed = java.net.URI.create(uri);
-        String scheme = parsed.getScheme() == null ? "" : parsed.getScheme().toLowerCase(java.util.Locale.ROOT);
-        String host = parsed.getHost() == null ? "" : parsed.getHost().toLowerCase(java.util.Locale.ROOT);
+        java.net.URI parsed;
+        try {
+            parsed = new java.net.URI(uri);
+        } catch (java.net.URISyntaxException e) {
+            throw new IllegalArgumentException(AuthMessage.WEBID_ORIGIN_UNPARSEABLE.format(uri), e);
+        }
+        String scheme = parsed.getScheme();
+        String host = parsed.getHost();
+        // An origin with no scheme or no host is not an origin. Earlier this quietly produced
+        // "http://:80" from a value it could not parse — a configured entry that matches
+        // nothing, so an operator's allow-list silently did not include what they wrote, and
+        // the failure surfaced later as an authentication problem.
+        if (scheme == null || scheme.isBlank() || host == null || host.isBlank()) {
+            throw new IllegalArgumentException(AuthMessage.WEBID_ORIGIN_UNPARSEABLE.format(uri));
+        }
+        scheme = scheme.toLowerCase(java.util.Locale.ROOT);
         int port = parsed.getPort() != -1 ? parsed.getPort() : defaultPort(scheme);
-        return scheme + "://" + host + (port == -1 ? "" : ":" + port);
+        return scheme + "://" + host.toLowerCase(java.util.Locale.ROOT)
+                + (port == -1 ? "" : ":" + port);
     }
 
     private static int defaultPort(String scheme) {
