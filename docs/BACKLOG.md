@@ -372,6 +372,37 @@ regression.
   mapping (dev) or a Solid-OIDC token (prod path); every tool call goes through
   `WacEnforcer` as that agent — verify by test that a WAC-denied resource is denied over
   MCP with a clean MCP error, not a stack trace. DoD: allowed/denied matrix over MCP.
+- [ ] **T6.4 OAuth resource-server metadata.** Cistern serves OAuth 2.0 Protected Resource
+  Metadata (RFC 9728) at `/.well-known/oauth-protected-resource` and carries `resource_metadata`
+  in `WWW-Authenticate` on 401 (MCP authorization spec). An external authorization server
+  exposes AS metadata (RFC 8414), dynamic client registration (RFC 7591, with its
+  anonymous-registration policy recorded), PKCE, and resource indicators (RFC 8707) so tokens
+  carry Cistern's audience and `cistern-auth` rejects the rest. **No IdP code in Cistern** — we
+  validate, we do not issue. Depends on T6.7, which supplies the transport a remote MCP client
+  needs before any of this is reachable. DoD: fixtures of the real client OAuth flows captured
+  (ground rule 6); `claude mcp add --transport http` and a desktop custom connector both
+  complete OAuth and list the tools, transcript in the PR; WebTestClient for the
+  401 / wrong-audience / valid cases; `INTEGRATION.md` "MCP clients" step. Issue #118.
+
+- [ ] **T6.5 (user, client) principal — the deferred half of #89.** `Agent(webId, client)`
+  already carries the field (ruled 2026-08-23, #131); this is the half that *uses* it. Client
+  from the token's `client_id` — T4.1's capture confirmed a real access token carries
+  `client_id` and not `azp`. `WacEngine` matcher for a client-scoped authorization and the
+  intersection cap `effective = modes(user) ∩ modes(client)`; `cistern grant` can target
+  `(webId, client)`. DoD: allowed/denied matrix over (user-only, client-only, both, neither)
+  with the cap proven; ARCHITECTURE load-bearing decision recorded and #89 closed; no CTH
+  regression. Issue #119.
+
+- [ ] **T6.6 Distribution pack.** Client plugin manifest (`plugin.json` + `.mcp.json` with a
+  configure-later `url`; skills: save to pod / recall / grant-revoke an agent), tool annotations
+  on every MCP tool (`title`, `readOnlyHint`/`destructiveHint`), connector-directory submission
+  pack (privacy policy URL, docs, support contact, reviewer test account), MCP registry
+  `server.json`. **Nothing in the pack claims "first" or "the only open one"** (#100) — Inrupt
+  shipped ESS 3.0 with MCP in May 2026. DoD: plugin installs on a clean machine and connects to
+  a deployed URL with the three skills working, transcript in the PR; pre-submission checklist
+  passes with evidence. Where that deployment is hosted, and anything to do with signup, is not
+  this ticket and not this repository. Issue #120.
+
 - [x] **T6.7 Streamable HTTP transport.** Written rather than imported: the MCP Java SDK
   2.0.0 ships Servlet transports only, and `io.modelcontextprotocol.sdk:mcp-spring-webflux`
   stops at 0.18.4 — never carried to the 2.x line — so a Netty/WebFlux server on SDK 2.0 has
