@@ -354,12 +354,29 @@ regression.
 - [x] **T6.1 MCP server.** Using the official MCP Java SDK (Spring integration): expose
   tools `read_resource(uri)`, `write_resource(uri, content, contentType)`,
   `list_container(uri)`, `delete_resource(uri)` and MCP resources for pod browsing.
-  Transport: stdio (for desktop clients) + streamable HTTP. DoD: MCP Inspector session
+  Transport: **stdio only** — see T6.4. DoD: MCP Inspector session
   transcript in the PR showing all four tools.
 - [x] **T6.2 Identity binding.** MCP connection config carries either a static WebID
   mapping (dev) or a Solid-OIDC token (prod path); every tool call goes through
   `WacEnforcer` as that agent — verify by test that a WAC-denied resource is denied over
   MCP with a clean MCP error, not a stack trace. DoD: allowed/denied matrix over MCP.
+- [ ] **T6.4 Streamable HTTP transport.** The MCP Java SDK **2.0.0 ships Servlet transports
+  only** (`HttpServletStreamableServerTransportProvider`, `…SseServerTransportProvider`,
+  `HttpServletStatelessServerTransport`); `io.modelcontextprotocol.sdk:mcp-spring-webflux`
+  stops at **0.18.4** and was not carried to the 2.x line. So a Netty/WebFlux server on SDK 2.0
+  has **no first-party HTTP transport**, which is why T6.1 shipped stdio alone — the ticket
+  text claimed both and only stdio exists. Until this lands, Cistern is reachable only by a
+  client that can spawn a local subprocess: no remote MCP client, no hosted deployment, no
+  connector for an assistant running anywhere else.
+  **Options, for the architect:** (a) implement `McpServerTransportProvider` over WebFlux —
+  ~900 lines ported from the Servlet version (sessions, SSE, `Mcp-Session-Id`, `DELETE`;
+  resumability via `Last-Event-ID` could be a stated non-goal at first), ours to own, and
+  **contributable upstream** where it would serve every Spring reactive MCP server; (b) pin the
+  SDK back to 0.18.x to use `mcp-spring-webflux`, losing 2.x; (c) run the Servlet transport on
+  a second HTTP stack beside Netty, against ground rule 3; (d) wait for upstream.
+  Recommendation: (a). DoD: MCP Inspector over HTTP against a running pod, session lifecycle
+  covered by tests, ground rule 3 held.
+
 - [ ] **T6.3 Flagship demo.** `docs/demo/claude-desktop.md`: config + walkthrough — Claude
   reads and writes a note in a pod, is denied on another user's private container. Record
   the transcript; this is the launch asset. DoD: reproducible from the doc on a clean
