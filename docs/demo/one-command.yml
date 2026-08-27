@@ -13,9 +13,9 @@
 # revoking it stops the agent without touching anything else in the pod. That is the whole
 # demonstration; everything below is plumbing for it.
 #
-# Local only, deliberately. Both ports bind to 127.0.0.1, and Penstock v0.1.0 has unpatched
-# dependency findings in its own published scan — read it, run it on your machine, do not
-# expose it to a network until that lands.
+# Local only, deliberately. Both ports bind to 127.0.0.1. Penstock v0.1.1 cleared the
+# criticals that had a released fix; one app-level finding is waiting on an upstream release,
+# and the scan ships with the release so you can check rather than believe that.
 #
 # 127.0.0.1 everywhere, never "localhost": on a Mac localhost resolves to ::1 first while
 # Docker binds IPv4 only, so any other process on the port answers instead — with a 401 that
@@ -55,7 +55,7 @@ services:
     restart: unless-stopped
 
   penstock:
-    image: ghcr.io/enrichmeai/penstock:0.1.0
+    image: ghcr.io/enrichmeai/penstock:0.1.1
     depends_on: [cistern]
     ports:
       - "127.0.0.1:${PENSTOCK_PORT:-8080}:8080"
