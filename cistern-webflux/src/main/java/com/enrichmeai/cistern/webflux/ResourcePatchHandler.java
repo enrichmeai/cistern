@@ -188,6 +188,9 @@ public class ResourcePatchHandler {
         return ServerResponse.status(statusOf(outcome))
                 .headers(headers -> {
                     InterfaceMetadata.write(headers, kind);
+                    // WAC ACL discovery: this builder's Link values replace the field the
+                    // AuthorizationFilter wrote, so the acl link is restated here.
+                    headers.add(HttpHeaders.LINK, AclLink.valueFor(view.identifier()));
                 })
                 .build();
     }

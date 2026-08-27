@@ -4,8 +4,11 @@ import com.enrichmeai.cistern.core.Representation;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.ResourceStore;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -191,6 +194,48 @@ class AuthorizationHttpTest {
         client.put().uri("/public/notice").header(HttpHeaders.CONTENT_TYPE, TURTLE)
                 .bodyValue("<#x> <#y> \"z\" .")
                 .exchange().expectStatus().isUnauthorized();
+    }
+
+    // ---- ACL resource discovery ----------------------------------------------------------
+
+    /** The acl link among possibly many {@code Link} values (type, storage description, …). */
+    private void assertAclLink(WebTestClient.ResponseSpec response, String aclUri) {
+        List<String> links = response.expectBody().returnResult()
+                .getResponseHeaders().getOrEmpty(HttpHeaders.LINK);
+        assertTrue(links.contains("<" + BASE + aclUri + ">; rel=\"acl\""),
+                "expected an acl link to " + aclUri + "; got " + links);
+    }
+
+    @Test
+    @DisplayName("a document response advertises its own ACL via Link rel=acl")
+    void documentAdvertisesItsAcl() {
+        put("/notes/hello", "<#a> <#b> \"c\" .");
+
+        assertAclLink(asOwner(client.get().uri("/notes/hello")).exchange()
+                .expectStatus().isOk(), "/notes/hello.acl");
+    }
+
+    @Test
+    @DisplayName("a container response advertises the ACL inside it")
+    void containerAdvertisesItsAcl() {
+        put("/notes/hello", "<#a> <#b> \"c\" .");
+
+        assertAclLink(asOwner(client.get().uri("/notes/")).exchange(), "/notes/.acl");
+    }
+
+    @Test
+    @DisplayName("an ACL resource advertises itself, not a .acl.acl outside the model")
+    void aclResourceAdvertisesItself() {
+        assertAclLink(asOwner(client.get().uri("/.acl")).exchange(), "/.acl");
+    }
+
+    @Test
+    @DisplayName("a refusal carries the acl link too — discovery does not require access")
+    void refusalStillAdvertisesAcl() {
+        put("/notes/hello", "<#a> <#b> \"c\" .");
+
+        assertAclLink(client.get().uri("/notes/hello").exchange()
+                .expectStatus().isUnauthorized(), "/notes/hello.acl");
     }
 
     // ---- WAC-Allow -----------------------------------------------------------------------

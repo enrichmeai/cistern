@@ -41,6 +41,16 @@ enum LinkRelation {
     TYPE("type"),
 
     /**
+     * {@code rel="acl"} — WAC "ACL Resource Discovery": "To advertise the ACL resource
+     * associated with the target resource, the server MUST respond with the {@code Link}
+     * header field with the {@code rel="acl"} parameter, targeting the URI of the ACL
+     * resource, in the response of HTTP requests." The target is the resource's <em>own</em>
+     * ACL by the {@code AclResource} convention, whether or not it has a representation yet —
+     * never the effective (possibly inherited) source, which is the server's business to walk.
+     */
+    ACL("acl"),
+
+    /**
      * {@code rel="http://www.w3.org/ns/solid/terms#storageDescription"} — Solid Protocol §4.1:
      * "Servers MUST include the {@code Link} header field with
      * {@code rel="http://www.w3.org/ns/solid/terms#storageDescription"} targeting the URI of the

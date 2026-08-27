@@ -139,13 +139,14 @@ class ResourceOptionsHttpTest {
         assertEquals(expected.acceptPost(), headers.getFirst(HttpConstants.ACCEPT_POST));
         assertEquals(expected.acceptPatch(), headers.getFirst(HttpHeaders.ACCEPT_PATCH));
 
-        // The kind's rel="type" links, then Solid Protocol §4.1's storage-description link:
-        // "in the response of HTTP GET, HEAD and OPTIONS requests targeting a resource in a
-        // storage". The type links come from the table and the last one does not, because it
-        // describes the storage rather than this resource — asserted together so that neither
-        // can quietly displace the other (Link is a list field, RFC 8288 §3).
+        // The kind's rel="type" links, then Solid Protocol §4.1's storage-description link
+        // ("in the response of HTTP GET, HEAD and OPTIONS requests targeting a resource in a
+        // storage"), then WAC's acl-discovery link for the target itself. The type links come
+        // from the table and the trailing two do not — asserted together so that none can
+        // quietly displace another (Link is a list field, RFC 8288 §3).
         List<String> expectedLinks = Stream.concat(expected.linkTypeValues().stream(),
-                Stream.of(storageDescription.linkValue())).toList();
+                Stream.of(storageDescription.linkValue(),
+                        "<" + BASE + rawPath + ".acl>; rel=\"acl\"")).toList();
         assertEquals(expectedLinks, headers.get(HttpHeaders.LINK));
 
         // No representation was selected, so there is no validator this response could be

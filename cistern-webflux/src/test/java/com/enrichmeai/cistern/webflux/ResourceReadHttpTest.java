@@ -297,18 +297,25 @@ class ResourceReadHttpTest {
 
     // ---------------------------------------------------------------- Link rel="type"
 
+    /** WAC's acl-discovery link, the trailing {@code Link} value on every resource response. */
+    private static String aclLink(String path) {
+        return "<" + BASE + path + ".acl>; rel=\"acl\"";
+    }
+
     @Test
     void everyResourceAdvertisesLdpResource() {
         get("/notes/a.ttl").exchange()
                 .expectStatus().isOk()
-                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, storageDescriptionLink());
+                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, storageDescriptionLink(),
+                        aclLink("/notes/a.ttl"));
     }
 
     @Test
     void binaryResourceAlsoAdvertisesLdpResource() {
         get("/logo.png").exchange()
                 .expectStatus().isOk()
-                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, storageDescriptionLink());
+                .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, storageDescriptionLink(),
+                        aclLink("/logo.png"));
     }
 
     @Test
@@ -316,7 +323,8 @@ class ResourceReadHttpTest {
         get("/notes/").exchange()
                 .expectStatus().isOk()
                 .expectHeader().valueEquals(HttpHeaders.LINK,
-                        LDP_RESOURCE, LDP_BASIC_CONTAINER, storageDescriptionLink());
+                        LDP_RESOURCE, LDP_BASIC_CONTAINER, storageDescriptionLink(),
+                        aclLink("/notes/"));
     }
 
     /**
@@ -330,7 +338,8 @@ class ResourceReadHttpTest {
         get("/").exchange()
                 .expectStatus().isOk()
                 .expectHeader().valueEquals(HttpHeaders.LINK, LDP_RESOURCE, LDP_BASIC_CONTAINER,
-                        HttpConstants.linkType(Pim.STORAGE.getURI()), storageDescriptionLink());
+                        HttpConstants.linkType(Pim.STORAGE.getURI()), storageDescriptionLink(),
+                        aclLink("/"));
     }
 
     /** §4.1 puts {@code pim:Storage} on the storage's request URI and on no other resource. */
@@ -668,7 +677,8 @@ class ResourceReadHttpTest {
                 .exchange()
                 .expectStatus().isOk()
                 .expectHeader().valueEquals(HttpHeaders.LINK,
-                        LDP_RESOURCE, LDP_BASIC_CONTAINER, storageDescriptionLink())
+                        LDP_RESOURCE, LDP_BASIC_CONTAINER, storageDescriptionLink(),
+                        aclLink("/notes/"))
                 .expectHeader().valueEquals(HttpHeaders.ALLOW,
                         "GET, HEAD, OPTIONS, POST, PUT, PATCH, DELETE");
     }

@@ -137,6 +137,14 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
         ResourceIdentifier target = paths.identifierFor(request.getPath().value());
         List<AccessRequirement> requirements = requirementsFor(request, target);
 
+        // WAC "ACL Resource Discovery": every response to a request targeting a resource
+        // advertises where that resource's ACL lives, whether or not it has a representation
+        // yet — a client editing permissions starts from a link, not a naming convention it
+        // has to guess. This early write is what the refused and error-mapped responses
+        // carry; a handler that emits its own Link values replaces this field when its
+        // response is written and adds the same value itself (see AclLink).
+        exchange.getResponse().getHeaders().add(HttpHeaders.LINK, AclLink.valueFor(target));
+
         return principals.resolve(exchange)
                 .flatMap(agent -> accessControl.authorize(requirements, agent)
                         .flatMap(verdict -> sink.record(DecisionRecord.of(clock.instant(), agent, verdict, requestId))
@@ -204,6 +212,7 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
     private static boolean isReadMethod(ServerHttpRequest request) {
         return HttpMethod.GET.equals(request.getMethod()) || HttpMethod.HEAD.equals(request.getMethod());
     }
+
 
     /**
      * Refuse, without a body. A problem document here would be the one place in the server
