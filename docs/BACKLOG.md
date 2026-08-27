@@ -420,22 +420,17 @@ regression.
   `WebTestClient.bindToRouterFunction`; full build green. *Renumbered from T6.4 — #121
   reserved T6.4–T6.6 first.*
 
-- [ ] **T6.3 Flagship demo.** `docs/demo/claude-desktop.md`: config + walkthrough — Claude
-  reads and writes a note in a pod, is denied on another user's private container. Record
-  the transcript; this is the launch asset. DoD: reproducible from the doc on a clean
-  machine.
-  *Script drafted ahead of the code in `docs/demo/walkthrough.md` (2026-07-21) — the demo
-  is the product claim, and a claim is cheaper to reject in prose than in Java. Four
-  beats: it works, **the refusal**, **live revocation**, the receipt. A demo without a
-  refusal is a file browser, and beat 3 is what no token-scoping product can match.
-  Two open questions it raises are not technical: which corpus (a demo over invented
-  notes makes the refusal abstract), and how the owner authors the rule — a Turtle file
-  proves enforcement works while demonstrating the product is unusable by its intended
-  user. Recommendation there is a single-purpose CLI (`cistern grant claude --read
-  /notes/ --for 24h`), roughly a day against a file format that must exist anyway.*
-
-## Phase 7 — Packaging & announcement
-
+- [x] **T6.3 Flagship demo.** `docs/demo/README.md` + `docs/demo/one-command.yml`: one
+  compose file brings up a pod and Penstock together, the agent holding its own service
+  credential so Cistern resolves it to the agent's own WebID. Five beats — put a document in,
+  ask and be **refused**, grant one document read-only, ask and be answered, revoke and be
+  refused **on the next request** — then read the receipt from the pod. Runs entirely offline
+  with Ollama, both ports bound to loopback. Honest limits stated in the doc: Penstock v0.1.0
+  has unpatched findings in its own published scan so it is a local demo, the WebIDs are local
+  rather than resolvable, and conformance is whatever `cth/BASELINE.md` currently says.
+  *The Claude Desktop walkthrough the ticket originally described is superseded: the
+  interesting demonstration turned out to be an agent that authenticates as itself and gets
+  refused, which stdio MCP with a statically bound identity cannot show.*
 - [ ] **T7.1 Starter.** cistern-spring-boot-starter: `@AutoConfiguration` wiring core+
   file-storage+webflux+auth+wac from `cistern.*` properties; a consumer app with only the
   starter dep + 3 lines of yaml serves a pod. DoD: sample in `docs/embedding.md` verified.
