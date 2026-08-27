@@ -108,12 +108,12 @@ This reframing is not cosmetic. It changes four things:
    subset, this long — enforced at the store, revocable instantly, fully audited.
 5. Open, self-hostable, any agent. Apache 2.0.
 
-Against Inrupt: **Charlie is the product; Cistern is the infrastructure.** Retain this — it
+Against the commercial offerings: **theirs is the product; Cistern is the infrastructure.** Retain this — it
 was right before and the reframe sharpens rather than replaces it.
 
 ## Competitive picture
 
-**Inrupt is pitching this exact thesis.** Their Solid-plus-MCP post argues that the current
+**The incumbent is pitching this exact thesis.** Their Solid-plus-MCP writing argues that the current
 MCP model "treats AI agents like they're you — full access to everything," and pitches
 natural-language, time-bounded grants ("share my driver's license with the rental agency
 for the next 48 hours"). That is our argument, nearly verbatim.
@@ -122,9 +122,9 @@ Read it two ways, both true. It **validates the thesis** — the incumbent indep
 reached the same conclusion. And it is **the clock** — as of the survey it was a prototype
 seeking release partners, with no dates, no repos and no GA.
 
-**Update 2026-08-18 — the clock has run.** Inrupt shipped it: ESS 3.0 (27 May 2026,
-inrupt.com/blog/ess-version-3-0-making-consumer-data-ready-for-ai-assistants) includes an
-**MCP Server** microservice for per-consumer "Data Vaults"; "third-party AI agents must
+**Update 2026-08-18 — the clock has run.** The incumbent shipped it in May 2026 (
+vendor blog, cited in the private competitive notes) includes an
+**MCP Server** microservice for per-consumer vaults; "third-party AI agents must
 request an Access Grant from the consumer", "users can revoke access at any time", "every
 interaction is recorded in the audit trail"; native IdP mapping (Okta, Azure AD, Ping);
 stable identifiers; 5-minute access tokens. It is closed, on a 60-day evaluation licence,
@@ -141,7 +141,7 @@ company's own application stack." Consequences for this document:
   grant the consumer approves), **proof** (public conformance record and source vs take
   their word), and **ecosystem shape** (a horizontal primitive vs a vertical stack).
 - "Enforced at the store, revoked instantly, receipted" is no longer a differentiator
-  against Inrupt — they have it. Do not pitch the mechanism as unique; pitch the licence
+  against the incumbent — they have it. Do not pitch the mechanism as unique; pitch the licence
   and the shape.
 
 Broader timing: AuthZEN COAZ reached WG draft in June 2026 and the IETF is scheduled to

@@ -124,7 +124,7 @@ Three options, in increasing cost:
   who find a triple readable.
 - **A single-purpose CLI.** `cistern grant claude --read /notes/ --for 24h`, which writes
   the same file. Small, and turns beat 2 into something a non-RDF audience can follow.
-- **Natural-language authoring**, which is what Inrupt is pitching. Not v1, and worth
+- **Natural-language authoring**, which the commercial offerings are pitching. Not v1, and worth
   noting the recursion: an agent authoring the constraints on agents needs its own trust
   story.
 

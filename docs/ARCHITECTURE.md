@@ -58,7 +58,7 @@ first-cut interfaces for the authority-layer work — see `INTEGRATION.md`.
 ## Ideas parked
 
 - `docs/ideas/privacy-fuzzing.md` — pluggable "controlled distortion" policy at the pod
-  boundary (the trick Inrupt's Charlie markets), as an open, auditable filter.
+  boundary, as an open, auditable filter.
 - `docs/ideas/agent-scoped-delegation.md` — letting a pod owner give an agent *less*
   access than they have themselves, via ACP's `acp:client` plus an intersection cap and
   expiry. **Needs a decision before T4.3 freezes the authenticated principal**, and if

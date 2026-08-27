@@ -397,8 +397,8 @@ regression.
   configure-later `url`; skills: save to pod / recall / grant-revoke an agent), tool annotations
   on every MCP tool (`title`, `readOnlyHint`/`destructiveHint`), connector-directory submission
   pack (privacy policy URL, docs, support contact, reviewer test account), MCP registry
-  `server.json`. **Nothing in the pack claims "first" or "the only open one"** (#100) — Inrupt
-  shipped ESS 3.0 with MCP in May 2026. DoD: plugin installs on a clean machine and connects to
+  `server.json`. **Nothing in the pack claims "first" or "the only open one"** (#100) — a commercial
+  Solid server shipped MCP support in May 2026, and the claim would be false. DoD: plugin installs on a clean machine and connects to
   a deployed URL with the three skills working, transcript in the PR; pre-submission checklist
   passes with evidence. Where that deployment is hosted, and anything to do with signup, is not
   this ticket and not this repository. Issue #120.

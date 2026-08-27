@@ -2,7 +2,7 @@
 
 Parked — do not build before Milestone 3.
 
-Inrupt's Charlie markets deliberate data distortion: personal data sent to an LLM is
+A commercial Solid offering markets deliberate data distortion: personal data sent to an LLM is
 fuzzed (ages bucketed, locations coarsened, identifiers dropped) so the user trades a
 little answer accuracy for privacy. In Cistern this belongs at the pod boundary as an
 open, auditable policy layer:
