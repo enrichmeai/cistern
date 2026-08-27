@@ -42,9 +42,26 @@ import java.util.Objects;
  *                       is one: a rule about DNS answers cannot be tested against a DNS this
  *                       does not control. Not a bypass — the rule itself is unchanged and
  *                       applies to whatever the resolver returns.
+ * @param trustedOrigins origins this pod may dereference beyond public HTTPS, each matched
+ *                       <em>exactly</em> on scheme, host and port. <strong>Empty by
+ *                       default</strong>, which is the strict policy above and unchanged.
+ *                       <p>Deliberately a list of origins rather than a switch. Two real
+ *                       deployments need this — an identity provider on the operator's own
+ *                       private network, and a conformance harness whose test IdP is on
+ *                       loopback — and both want <em>one host</em> opened, not the whole
+ *                       private internet. A boolean would also permit
+ *                       {@code 169.254.169.254}, the cloud metadata endpoint and the most
+ *                       valuable SSRF target on any hosted machine; naming an origin means
+ *                       that address stays refused unless somebody types it, which is a red
+ *                       flag a config review can see. Exact origins rather than CIDR for the
+ *                       same reason: {@code https://idp.internal:8443} cannot accidentally
+ *                       admit a neighbour the way a netmask can.
+ *                       <p>For an allow-listed origin the DNS-rebinding note below stops
+ *                       being a residual risk and becomes an accepted one: the operator has
+ *                       said they trust that name, and this does not re-check where it points.
  */
 public record WebIdFetchPolicy(Duration connectTimeout, int maxRedirects, int maxBodyBytes,
-                               HostResolver hosts) {
+                               HostResolver hosts, java.util.Set<String> trustedOrigins) {
 
     /** How a hostname becomes the addresses a connection would reach. */
     @FunctionalInterface
@@ -69,6 +86,10 @@ public record WebIdFetchPolicy(Duration connectTimeout, int maxRedirects, int ma
     public WebIdFetchPolicy {
         Objects.requireNonNull(connectTimeout, "connectTimeout");
         Objects.requireNonNull(hosts, "hosts");
+        Objects.requireNonNull(trustedOrigins, "trustedOrigins");
+        trustedOrigins = trustedOrigins.stream()
+                .map(WebIdFetchPolicy::canonicalOrigin)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
         if (connectTimeout.isNegative() || connectTimeout.isZero()) {
             throw new IllegalArgumentException(AuthMessage.WEBID_TIMEOUT_INVALID.format(connectTimeout));
         }
@@ -80,10 +101,19 @@ public record WebIdFetchPolicy(Duration connectTimeout, int maxRedirects, int ma
         }
     }
 
-    /** The defaults: 5s, 3 hops, 256 KiB, real DNS. */
+    /** The defaults: 5s, 3 hops, 256 KiB, real DNS, public HTTPS only. */
     public static WebIdFetchPolicy defaults() {
+        return trusting(java.util.Set.of());
+    }
+
+    /**
+     * The defaults, additionally permitting {@code trustedOrigins}.
+     *
+     * @param trustedOrigins exact origins, e.g. {@code http://localhost:3939}
+     */
+    public static WebIdFetchPolicy trusting(java.util.Set<String> trustedOrigins) {
         return new WebIdFetchPolicy(DEFAULT_TIMEOUT, DEFAULT_MAX_REDIRECTS, DEFAULT_MAX_BODY_BYTES,
-                HostResolver.system());
+                HostResolver.system(), trustedOrigins);
     }
 
     /**
@@ -102,6 +132,11 @@ public record WebIdFetchPolicy(Duration connectTimeout, int maxRedirects, int ma
     public java.util.Optional<JwtRejectionReason> refuse(URI uri) {
         if (uri == null || !uri.isAbsolute()) {
             return java.util.Optional.of(JwtRejectionReason.WEBID_INVALID);
+        }
+        // The allow-list is consulted first, because an entry carries its own scheme: naming
+        // http://localhost:3939 permits that origin and nothing else, never http generally.
+        if (trustedOrigins.contains(canonicalOrigin(uri.toString()))) {
+            return java.util.Optional.empty();
         }
         // Scheme before host: file:///etc/passwd has no host, and reporting that as "malformed"
         // would hide the fact that a scheme this must never follow was offered.
@@ -143,6 +178,27 @@ public record WebIdFetchPolicy(Duration connectTimeout, int maxRedirects, int ma
             // Unresolvable is refused rather than allowed: the ruling is fail-closed.
             return false;
         }
+    }
+
+    /**
+     * Scheme, host and port, lowercased, with the default port made explicit — so that
+     * {@code https://idp.example} and {@code https://idp.example:443/} are one origin, and a
+     * configured entry cannot miss its own WebID over a trailing slash.
+     */
+    static String canonicalOrigin(String uri) {
+        java.net.URI parsed = java.net.URI.create(uri);
+        String scheme = parsed.getScheme() == null ? "" : parsed.getScheme().toLowerCase(java.util.Locale.ROOT);
+        String host = parsed.getHost() == null ? "" : parsed.getHost().toLowerCase(java.util.Locale.ROOT);
+        int port = parsed.getPort() != -1 ? parsed.getPort() : defaultPort(scheme);
+        return scheme + "://" + host + (port == -1 ? "" : ":" + port);
+    }
+
+    private static int defaultPort(String scheme) {
+        return switch (scheme) {
+            case "https" -> 443;
+            case "http" -> 80;
+            default -> -1;
+        };
     }
 
     /** {@code fc00::/7}, which {@link InetAddress} has no predicate for. */

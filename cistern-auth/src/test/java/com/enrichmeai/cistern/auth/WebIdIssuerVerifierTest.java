@@ -50,7 +50,7 @@ class WebIdIssuerVerifierTest {
     private static WebIdFetchPolicy publicPolicy() {
         return new WebIdFetchPolicy(WebIdFetchPolicy.DEFAULT_TIMEOUT,
                 WebIdFetchPolicy.DEFAULT_MAX_REDIRECTS, WebIdFetchPolicy.DEFAULT_MAX_BODY_BYTES,
-                host -> new InetAddress[] {InetAddress.getByName("93.184.216.34")});
+                host -> new InetAddress[] {InetAddress.getByName("93.184.216.34")}, java.util.Set.of());
     }
 
     /** A client that proves no fetch happened by failing loudly the moment one is tried. */
@@ -172,7 +172,8 @@ class WebIdIssuerVerifierTest {
                 host -> {
                     resolverThread.set(Thread.currentThread().getName());
                     return new InetAddress[] {InetAddress.getByName("127.0.0.1")};
-                });
+                },
+                java.util.Set.of());
         WebIdIssuerVerifier verifier = new WebIdIssuerVerifier(noNetwork(), policy,
                 Duration.ofMinutes(5), Clock.fixed(Instant.parse("2026-08-25T00:00:00Z"), ZoneOffset.UTC));
 
@@ -198,7 +199,7 @@ class WebIdIssuerVerifierTest {
                         Thread.currentThread().interrupt();
                     }
                     return new InetAddress[] {InetAddress.getByName("93.184.216.34")};
-                });
+                }, java.util.Set.of());
         WebIdIssuerVerifier verifier = new WebIdIssuerVerifier(noNetwork(), policy,
                 Duration.ofMinutes(5), Clock.fixed(Instant.parse("2026-08-25T00:00:00Z"), ZoneOffset.UTC));
 

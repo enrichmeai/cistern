@@ -195,7 +195,7 @@ class CachingJwksClientTest {
         serveDiscoveryNaming("https://keys.internal.example/jwks");
         WebIdFetchPolicy policy = new WebIdFetchPolicy(WebIdFetchPolicy.DEFAULT_TIMEOUT,
                 WebIdFetchPolicy.DEFAULT_MAX_REDIRECTS, WebIdFetchPolicy.DEFAULT_MAX_BODY_BYTES,
-                host -> new java.net.InetAddress[] {java.net.InetAddress.getByName("10.0.0.7")});
+                host -> new java.net.InetAddress[] {java.net.InetAddress.getByName("10.0.0.7")}, java.util.Set.of());
 
         StepVerifier.create(discovering(policy).keys())
                 .expectError(JwksUnavailableException.class)

@@ -90,6 +90,12 @@ public enum AuthMessage {
     SOLID_RESOLVER_WIRED("Solid-OIDC resolver wired: base %s, proof window %s, WebID cache %s"),
     ISSUER_BOUND_INVALID("the discovered-issuer bound must be positive, was %s"),
 
+    /** Printed on every boot that trusts a non-public origin, so the trust cannot go unnoticed. */
+    WEBID_ORIGINS_TRUSTED("WebID dereferencing additionally permits %s non-public origin(s): %s"
+            + " — each may be reached over its own scheme, including plain http. Intended for a"
+            + " private-network identity provider or a conformance harness; remove these to"
+            + " return to public HTTPS only."),
+
     /** The token names an issuer, but not one this pod will fetch keys from. */
     REASON_ISSUER_UNTRUSTED("the token names issuer %s, which this pod does not trust"),
 

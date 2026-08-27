@@ -33,7 +33,7 @@ class DiscoveringIssuersTest {
 
     private static DiscoveringIssuers issuers(int bound) {
         WebIdFetchPolicy policy = new WebIdFetchPolicy(WebIdFetchPolicy.DEFAULT_TIMEOUT,
-                WebIdFetchPolicy.DEFAULT_MAX_REDIRECTS, WebIdFetchPolicy.DEFAULT_MAX_BODY_BYTES, PUBLIC);
+                WebIdFetchPolicy.DEFAULT_MAX_REDIRECTS, WebIdFetchPolicy.DEFAULT_MAX_BODY_BYTES, PUBLIC, java.util.Set.of());
         return new DiscoveringIssuers(WebClient.builder().build(), policy,
                 Duration.ofSeconds(60), bound, CLOCK);
     }
