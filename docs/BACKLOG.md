@@ -221,10 +221,13 @@ regression.
   should the principal be `Agent(webId, Optional<URI> client)` from day one? One extra
   field now; a cross-cutting refactor against a frozen CTH baseline later. This ticket is
   the last cheap moment to choose.
-- [ ] **T4.4 Security wiring.** WebFilter chain: anonymous requests proceed as
+- [x] **T4.4 Security wiring.** WebFilter chain: anonymous requests proceed as
   `Agent.ANONYMOUS` (WAC decides), invalid credentials → 401 + `WWW-Authenticate`. No
   Spring Security session state; stateless only. DoD: WebTestClient auth matrix; no filter
   emits null signals; no `switchIfEmpty` hung off `chain.filter()`.
+  *Code and test matrix landed in #143, hardened in #144. The end-to-end leg ("no CTH
+  regression") verified 2026-08-27: full harness run against main `4121b27`, unchanged
+  at 0 / 0 / 41 — details and the two named walls in `cth/BASELINE.md`.*
 
 ## Phase 5 — Authorization (cistern-wac)
 
