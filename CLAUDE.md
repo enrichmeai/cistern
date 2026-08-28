@@ -46,6 +46,78 @@ data over MCP, with Solid WAC enforcing the consent.
      module (plain Java — `cistern-core` still takes no Spring dependency).
    - **Magic numbers and repeated literals become named constants.**
 
+## Verification (rules of mechanics — 2026-08-22, 2026-08-28)
+
+Every real defect found in two days of intensive work came from **checking a claim that had
+already been asserted confidently** — several of them our own. None came from a failing test.
+
+1. **Verify your own assertions before they reach the user or a public page.** A number you
+   grepped, a config key you remembered, an env var you inferred: check it against the source
+   of truth. This caught a wrong vulnerability count (9 vs the report's own 138), a config key
+   that silently binds nothing, and a safety warning deleted during a rewrite.
+2. **The filter and the handlers each own half of one answer.** Two bugs shipped from that
+   split, in opposite directions: the `Link rel="acl"` header was written by
+   `AuthorizationFilter` and then **replaced** by any handler emitting its own `Link` values
+   (per-key `putAll`), with a slice test pinning the wiped state as correct; `OPTIONS *` was
+   answered correctly by a handler the filter **400'd before it could run**. Both had green
+   handler-level tests. So: anything the filter touches needs a `WebTestClient` test **through
+   the chain**, and when one is wrong, suspect either half.
+3. **Never publish a sentence that promises a future event.** "when Solid-OIDC lands", "no
+   release yet" — both went stale and neither announced it. State the present and its cause.
+4. **A green build proves less than it looks.** A stray `git add -A` once reverted four merged
+   PRs and still compiled and passed, because the tests that would have caught it were among
+   the reverted files.
+5. **Before recommending we build something, check whether it already exists or already
+   works.**
+6. **Ticket, phase and version references are facts** — check them against `docs/BACKLOG.md`.
+7. **A fix version named by a scanner is not a published artifact.** Confirm it resolves on
+   Maven Central before promising a bump.
+
+## Configuration binding (silent-failure traps — mechanics)
+
+Spring's relaxed binding **removes hyphens** rather than converting them:
+`cistern.auth.service-principals[0].web-id` is `CISTERN_AUTH_SERVICEPRINCIPALS_0_WEBID`. The
+intuitive `SERVICE_PRINCIPALS_0_WEB_ID` binds *nothing*, silently.
+
+`@Value` does not reliably split a comma-separated value into a collection. Bind a `String` and
+split it, or use `@ConfigurationProperties`. A two-origin allow-list once arrived as one string
+and canonicalised to a single unusable entry.
+
+**Any property that changes security posture gets a binding test.** Both traps were found that
+way and neither was visible in review.
+
+## Working alongside other sessions (2026-08-28)
+
+Several agents work these repos at once. **Never commit from the shared checkout** — use
+`git worktree add ../cistern-<task> -b <branch> main`. A `git add -A` in a stale shared tree
+silently reverted four merged PRs and still built green.
+
+Announce what you are touching, **and correct it when it changes**. Re-read memory before
+publishing a positioning claim; another session may have already corrected it. Drive review by
+PR number rather than by checkout state — two sessions can be on one branch at different
+staleness and mistake that for a collision.
+
+A stash labelled with someone else's branch is probably bookkeeping, not lost work. Ask before
+dropping it.
+
+> **Rules above are mechanics** — how git, Spring and this codebase behave. Rules carrying a
+> date and "owner directive" are **policy** and can be reversed; check the date before obeying
+> one. A skill teaching a reversed policy propagates it silently, which is how the attribution
+> rule nearly outlived its own reversal.
+
+## Skills
+
+`.claude/skills/` — invoke rather than re-derive. Written from the tasks that recurred and that
+let errors through when rushed:
+
+- **`verify-published-claim`** — check an artifact, number, link or upstream fact before it
+  reaches the site, a README, a PR body or the user.
+- **`ship-site-change`** — edit, validate and publish enrichmeai.com; merging to `main`
+  publishes.
+- **`land-pr`** — worktree through to verified merge.
+- **`write-dispatch-brief`**, **`file-backlog-issue`**, **`probe-running-pod`** — the
+  architect-loop tasks.
+
 ## Build & run
 
 ```bash
