@@ -46,6 +46,65 @@ data over MCP, with Solid WAC enforcing the consent.
      module (plain Java — `cistern-core` still takes no Spring dependency).
    - **Magic numbers and repeated literals become named constants.**
 
+## Verification (learned the hard way, 2026-08-28)
+
+Every real defect found in a day of intensive work came from **checking a claim that had
+already been asserted confidently** — several of them our own. None came from a passing test
+suite. So:
+
+1. **Verify your own assertions before they reach the user or a public page.** A number you
+   grepped, a config key you remembered, an env var you inferred: check it against the source
+   of truth. On one day this caught a wrong vulnerability count (9 vs the report's own 138), a
+   config key that silently binds nothing, and a safety warning deleted during a rewrite.
+2. **Correct behind a filter is not correct.** Two separate bugs shipped because a handler was
+   right and `AuthorizationFilter` in front of it changed the answer — the missing
+   `Link rel="acl"`, and `OPTIONS *` returning 400 before its own handler could run. Both had
+   green handler-level tests. **Anything the filter guards needs a `WebTestClient` test through
+   the chain**, not a call to the handler.
+3. **Never publish a sentence that promises a future event.** "when Solid-OIDC lands", "no
+   release yet" — both became false and neither announced it. Publish the state and its cause;
+   a claim about the present stays true or is visibly wrong.
+4. **A green build proves less than it looks.** A stray `git add -A` once reverted four merged
+   PRs and still compiled and passed, because the tests that would have caught it were among
+   the reverted files.
+
+## Configuration binding (silent-failure traps)
+
+Spring's relaxed binding **removes hyphens** rather than converting them:
+`cistern.auth.service-principals[0].web-id` is `CISTERN_AUTH_SERVICEPRINCIPALS_0_WEBID`. The
+intuitive `SERVICE_PRINCIPALS_0_WEB_ID` binds *nothing*, silently, and the server then starts
+missing the thing you configured.
+
+`@Value` does not reliably split a comma-separated value into a collection. Bind a `String`
+and split it, or use `@ConfigurationProperties`. A two-origin allow-list once arrived as one
+string and canonicalised to a single unusable entry.
+
+**Any property that changes security posture gets a binding test** — a context that loads it
+and asserts the value reached the object. Both traps above were found that way and neither
+was visible in review.
+
+## Working alongside other sessions
+
+Several agents may work these repos at once. **Never commit from the shared checkout** — use
+`git worktree add ../cistern-<task> -b <branch> main`, and leave `~/projects/cistern` parked
+for whoever is running something. Drive review by PR number rather than by checkout state.
+
+Announce what you are touching, and say which files. Two sessions steering one working tree
+produced the four-PR silent revert above.
+
+## Skills
+
+`.claude/skills/` carries three, written from the tasks that recurred most and that let errors
+through when rushed:
+
+- **`verify-published-claim`** — check an artifact, number, link or upstream fact before it
+  reaches the site, a README, a PR body or the user. Includes the GHCR visibility check
+  (a 401 does not mean private) and why counting report rows with `grep` gives wrong numbers.
+- **`ship-site-change`** — edit, validate and publish enrichmeai.com. The site is a separate
+  clone and merging to `main` publishes; covers the four validations and the copy rules.
+- **`land-pr`** — branch from a worktree through to verified merge, including the shared-tree
+  hazard and what `--delete-branch` does to a stacked PR.
+
 ## Build & run
 
 ```bash
