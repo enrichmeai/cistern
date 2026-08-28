@@ -16,3 +16,6 @@ terraform.tfvars
 .DS_Store
 *.log
 .env
+
+# CTH IdP kit credentials — provisioned locally, never tracked
+cth/idp/users.json

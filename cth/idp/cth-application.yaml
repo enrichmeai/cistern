@@ -1,0 +1,19 @@
+# CTH run configuration, mounted at /app/config/application.yaml.
+# Origin strings byte-identical everywhere; issuer exactly as CSS's discovery
+# states it (trailing slash) — WebIdIssuerVerifier compares near-verbatim.
+cistern:
+  owner:
+    web-id: http://host.docker.internal:3737/alice/profile/card#me
+  auth:
+    solid:
+      enabled: true
+      webid:
+        trusted-origins: "http://host.docker.internal:3737,http://host.docker.internal:3939"
+  pods:
+    seed:
+      - root: /alice/
+        owner-web-id: http://host.docker.internal:3737/alice/profile/card#me
+        oidc-issuer: http://host.docker.internal:3939/
+      - root: /bob/
+        owner-web-id: http://host.docker.internal:3737/bob/profile/card#me
+        oidc-issuer: http://host.docker.internal:3939/
