@@ -71,3 +71,10 @@ Pushed without a PR is also lost work. Open the PR.
 Fetch, then state the commit you read and when. Say which claims you verified and which you
 are relaying. A peer acting on your stale summary compounds the error, and correcting it
 costs more than checking did.
+
+## The sibling repo has the same discipline
+
+Penstock carries `pr-sweep` (its PR #29), arrived at independently from the same failure in
+the other direction. Keep the two cross-referenced rather than letting them diverge: a rule
+learned in one repo this week almost certainly applies to the other, because the sessions
+and the shared checkouts are the same.
