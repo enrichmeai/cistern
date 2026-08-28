@@ -129,6 +129,14 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
             // request fail at the first hop, including ones that would have been permitted.
             return chain.filter(exchange);
         }
+        if (isAsteriskForm(request)) {
+            // OPTIONS * asks what the server supports, not what a resource permits (RFC 9110
+            // §9.3.7), so there is no target for WAC to have an opinion about. Exempt rather
+            // than resolved: identifierFor rejects an empty path, so without this the request
+            // is a 400 here and ResourceOptionsHandler's asterisk branch never runs — it was
+            // dead code in every enforced deployment, which handler-level tests could not see.
+            return chain.filter(exchange);
+        }
 
         // Correlation first, so that every response below — allowed, refused, or failed
         // closed by the error mapper — carries the same identifier the receipt does.
@@ -267,6 +275,15 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
                     .set(HttpHeaders.WWW_AUTHENTICATE, HttpConstants.WWW_AUTHENTICATE_CHALLENGE);
         }
         return exchange.getResponse().setComplete();
+    }
+
+    /**
+     * RFC 9110 §9.3.7's asterisk-form, which reaches us as an empty path — the shape
+     * {@link ResourceOptionsHandler#ASTERISK_FORM_PATH} documents and this must agree with.
+     */
+    private static boolean isAsteriskForm(ServerHttpRequest request) {
+        return HttpMethod.OPTIONS.equals(request.getMethod())
+                && ResourceOptionsHandler.ASTERISK_FORM_PATH.equals(request.getPath().value());
     }
 
     private static boolean isCorsPreflight(ServerHttpRequest request) {

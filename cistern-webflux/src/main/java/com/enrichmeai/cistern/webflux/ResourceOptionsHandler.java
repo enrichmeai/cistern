@@ -79,8 +79,13 @@ public class ResourceOptionsHandler {
      * this constant exists rather than a lone {@code "*"} comparison that would never fire. No
      * other request-target produces an empty path: origin-form always begins with {@code /} and
      * absolute-form carries the path through, so empty is an unambiguous marker.
+     *
+     * <p>Package-private rather than private because {@link AuthorizationFilter} has to
+     * recognise the same shape to let the request reach this handler at all, and two
+     * independent spellings of "empty means asterisk" is how that branch became unreachable
+     * in the first place.
      */
-    private static final String ASTERISK_FORM_PATH = "";
+    static final String ASTERISK_FORM_PATH = "";
 
     private final LdpService ldp;
     private final RequestPaths requestPaths;
