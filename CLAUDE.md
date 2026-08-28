@@ -117,6 +117,9 @@ let errors through when rushed:
 - **`land-pr`** — worktree through to verified merge.
 - **`write-dispatch-brief`**, **`file-backlog-issue`**, **`probe-running-pod`** — the
   architect-loop tasks.
+- **`track-open-prs`** — survey what is already in flight before building it: fetch first,
+  check whether an open or merged PR already does this, find PRs touching the same files, and
+  catch instructions a later policy commit reversed.
 
 ## Build & run
 
