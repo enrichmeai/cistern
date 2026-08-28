@@ -425,7 +425,7 @@ regression.
 
 - [x] **T6.3 Flagship demo.** `docs/demo/README.md` + `docs/demo/one-command.yml`: one
   compose file brings up a pod and Penstock together, the agent holding its own service
-  credential so Cistern resolves it to the agent's own WebID. Five beats — put a document in,
+  credential so Cistern resolves it to the agent's own WebID. Six beats — put a document in,
   ask and be **refused**, grant one document read-only, ask and be answered, revoke and be
   refused **on the next request** — then read the receipt from the pod. Runs entirely offline
   with Ollama, both ports bound to loopback. Honest limits stated in the doc: it is a local demo and

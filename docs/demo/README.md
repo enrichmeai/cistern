@@ -91,6 +91,19 @@ curl "http://127.0.0.1:3737/notes/meeting.ttl?receipts" \
 
 Every allow and every deny, with the agent's own WebID, the rule that decided it, and when.
 
+### 6. And ask the agent what it did
+
+Open the **Audit** panel in Penstock's sidebar. Every model call and tool invocation it made,
+attributed to the user who asked.
+
+**These are two different records and both matter.** The pod's receipt is the *owner's* — what
+was asked of their data and what the rules decided, kept by the side that owns the data and
+true whether or not the agent is honest about it. The agent's audit is its own account of the
+work it did. An agent that lied about being refused would still appear in the pod's receipt as
+refused.
+
+That is what "accountability at both ends" means, and this is the beat where you can see both.
+
 ## What this actually demonstrates
 
 **The agent is a principal, not a proxy for you.** It authenticates with its own credential
@@ -117,7 +130,7 @@ leaves it. The demo works the same way — which is the point.
 **Do not put this on a network.** Run it on your own machine, behind the loopback binding
 the compose file already sets, and stop it when you are done.
 
-Penstock has fixed everything it has a fix for. Across three releases its scan went **138 →
+Penstock has fixed everything it has a fix for. Across four releases its scan went **138 →
 89 → 85** findings, and the criticals from fourteen to **one**: v0.1.2's report says
 `CRITICAL: 2`, but both entries are the same CVE — `spring-security-web` CVE-2026-22732,
 counted once in the application and once in the bundled dependency cache. It has **no fixed
