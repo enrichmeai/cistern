@@ -66,21 +66,34 @@ if [ "$coverage_only" = false ]; then
 fi
 
 # The harness hard-requires alice/bob WebIDs at startup (SmallRye config).
-# Cistern provisions no accounts or pods yet (T5.4): these WebIDs point at
-# where the test pods WILL live, so today each deref honestly 404s and a test
-# run stops at "REGISTER CLIENTS" — that is the recorded T0.4 baseline.
-# When T5.4 lands, add credentials here (SOLID_IDENTITY_PROVIDER plus
-# USERS_*_USERNAME/PASSWORD or client credentials — see CTH USAGE.md).
+# Without credentials the run honestly stops at "REGISTER CLIENTS" — the T0.4
+# baseline. An authenticated run (cth/idp/) exports SOLID_IDENTITY_PROVIDER and
+# the USERS_* credential variables before delegating here; each is forwarded
+# into the harness container only when set, so the unauthenticated invocation
+# is byte-identical to what it always was.
+credential_env=()
+for v in SOLID_IDENTITY_PROVIDER \
+         USERS_ALICE_CLIENTID USERS_ALICE_CLIENTSECRET USERS_ALICE_IDP \
+         USERS_BOB_CLIENTID USERS_BOB_CLIENTSECRET USERS_BOB_IDP; do
+  if [ -n "${!v:-}" ]; then
+    credential_env+=(-e "${v}=${!v}")
+  fi
+done
+
+# The WebIDs default to where Cistern seeds them; an authenticated run may
+# override them with the exact strings the IdP bound its credentials to, so the
+# harness asserts the credential's own subject rather than a reconstruction.
 set +e
 docker run --rm \
   --add-host=host.docker.internal:host-gateway \
   -v "$(pwd)/subject-cistern.ttl:/subjects/subject-cistern.ttl:ro" \
   -v "$(pwd)/reports:/reports" \
-  -e USERS_ALICE_WEBID="${SERVER_ROOT}/alice/profile/card#me" \
-  -e USERS_BOB_WEBID="${SERVER_ROOT}/bob/profile/card#me" \
+  -e USERS_ALICE_WEBID="${USERS_ALICE_WEBID:-${SERVER_ROOT}/alice/profile/card#me}" \
+  -e USERS_BOB_WEBID="${USERS_BOB_WEBID:-${SERVER_ROOT}/bob/profile/card#me}" \
   -e RESOURCE_SERVER_ROOT="${SERVER_ROOT}" \
   -e TEST_CONTAINER="/alice/" \
-  solidproject/conformance-test-harness \
+  ${credential_env[@]+"${credential_env[@]}"} \
+  "${CTH_IMAGE:-solidproject/conformance-test-harness}" \
   --output=/reports \
   --subjects=/subjects/subject-cistern.ttl \
   --target=https://github.com/enrichmeai/cistern \

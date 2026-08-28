@@ -1,0 +1,47 @@
+# The authenticated-CTH topology, as an override on the root compose file.
+# Runbook, traps and file map: cth/idp/README.md.
+#
+# Paths are relative to the PROJECT directory — the directory of the first -f
+# file, i.e. the repo root — because that is how Compose resolves bind sources.
+# Spelled ./cth/idp/… on purpose; a ./-relative-to-this-file spelling renders as
+# <root>/cth-application.yaml and mounts a freshly created empty directory over
+# the config (verified with `docker compose … config`).
+#
+# host.docker.internal is Docker-Desktop-native but NOT Linux-native: both
+# services carry the host-gateway alias so the name resolves everywhere the
+# loopback-published ports allow (see README's platform scope).
+services:
+  cistern:
+    environment:
+      CISTERN_BASE_URL: http://host.docker.internal:${CISTERN_HOST_PORT:-3737}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./cth/idp/cth-application.yaml:/app/config/application.yaml:ro
+      # The kit's own storage, NOT the dev cistern-data volume: pod seeding is
+      # deliberately never-overwrite, so a run against an old volume keeps an
+      # old topology no matter what the config says — and a conformance run
+      # should never write into local dev data either. A config change means
+      # `docker compose … down -v` first (see README traps).
+      - cistern-cth-data:/data
+
+  css-idp:
+    image: solidproject/community-server:7.2.0
+    # cth.json is CSS's config/default.json with one import swapped: the WebID
+    # ownership check becomes unsafe-no-check, so a test account can link a
+    # Cistern-hosted WebID without the token-in-your-profile dance. A TEST IdP
+    # ONLY — never a deployment shape. In-memory storage and no restart policy,
+    # deliberately: an IdP that restarted empty while users.json persisted would
+    # authenticate nobody, invisibly — better it stays down and obvious.
+    # CSS normalises -b to a trailing slash before minting its issuer (verified
+    # against its discovery document), matching the seeded solid:oidcIssuer.
+    command: ["-c", "/community-server/config/cth.json", "-p", "3939", "-b", "http://host.docker.internal:3939"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./cth/idp/css-config.json:/community-server/config/cth.json:ro
+    ports:
+      - "127.0.0.1:3939:3939"
+
+volumes:
+  cistern-cth-data:
