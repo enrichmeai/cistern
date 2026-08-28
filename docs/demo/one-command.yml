@@ -55,13 +55,15 @@ services:
     restart: unless-stopped
 
   penstock:
-    image: ghcr.io/enrichmeai/penstock:0.1.1
+    image: ghcr.io/enrichmeai/penstock:0.1.2
     depends_on: [cistern]
     ports:
       - "127.0.0.1:${PENSTOCK_PORT:-8080}:8080"
     environment:
-      # Auth on, because an audit trail that attributes everything to "anonymous" proves
-      # nothing. This is the demo's whole claim, so it is not optional here.
+      # Auth on, because an audit trail attributing everything to "anonymous" proves
+      # nothing. This is the demo's whole claim, so it is not optional here — and setting it
+      # explicitly also means the published image's own default (auth on since 0.1.2, with a
+      # random password logged at startup) never reaches this file either way.
       AGENT_AUTH_ENABLED: "true"
       AGENT_AUTH_MODE: basic
       AGENT_AUTH_USERNAME: ${PENSTOCK_USER:-demo}
