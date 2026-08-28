@@ -121,6 +121,9 @@ let errors through when rushed:
 - **`track-open-prs`** — survey what is already in flight before building it: fetch first,
   check whether an open or merged PR already does this, find PRs touching the same files, and
   catch instructions a later policy commit reversed.
+- **`run-conformance-harness`** — the two-lane discipline (official runs move the baseline row;
+  patched runs are fenced and gate nothing), the patched-image recipe, and a halt-reading
+  ladder ordered by where the hours actually go.
 
 ## Build & run
 
