@@ -26,7 +26,8 @@ provider.
 Conformance against the official
 [Solid test harness](https://github.com/solid-contrib/conformance-test-harness) is the
 project's public health metric — numbers only move forward (see `cth/BASELINE.md`), and we
-publish it whether or not it flatters us. It reads 0 of 41 cases executed. What has changed
+publish it whether or not it flatters us. As of the 28 August 2026 run recorded in
+`cth/BASELINE.md`, it reads 0 of 41 cases executed. What has changed
 is where the run stops: with an external identity provider configured, the harness now
 registers its authenticated test clients against Cistern and gets one step further, halting
 in PREPARE SERVER. Its client sends DPoP proofs with no `ath` claim, which RFC 9449 §4.3
