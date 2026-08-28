@@ -24,15 +24,6 @@ final class HttpConstants {
     static final String WAC_ALLOW_PUBLIC = "public";
 
     /**
-     * The challenge sent with a 401. RFC 9110 §11.6.1 requires at least one on an
-     * Unauthorized response, and Solid Protocol §5.1 repeats it.
-     *
-     * <p>{@code Bearer} because that is what this server currently accepts — see
-     * {@code LocalCredentialResolver}. Solid-OIDC's {@code DPoP} scheme joins it in Phase 4;
-     * advertising a scheme the server cannot yet honour would send clients down a path that
-     * always fails.
-     */
-    /**
      * The challenge sent with a 401 (RFC 9110 §11.6.1, RFC 9449 §7.1).
      *
      * <p>Both schemes, because both are accepted: {@code Bearer} for an application's own

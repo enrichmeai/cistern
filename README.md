@@ -25,10 +25,15 @@ provider.
 **v0.2.0**, built in the open — what changed is in [CHANGELOG.md](CHANGELOG.md).
 Conformance against the official
 [Solid test harness](https://github.com/solid-contrib/conformance-test-harness) is the
-project's public health metric — numbers only move forward (see `cth/BASELINE.md`). It
-currently reads 0 of 41 cases executed: the harness registers authenticated test clients
-before running any assertion, and Solid-OIDC token acceptance is not built yet (Phase 4,
-T4.1–T4.4), so the run stops before the first test. Honest numbers only.
+project's public health metric — numbers only move forward (see `cth/BASELINE.md`), and we
+publish it whether or not it flatters us. It reads 0 of 41 cases executed. What has changed
+is where the run stops: with an external identity provider configured, the harness now
+registers its authenticated test clients against Cistern and gets one step further, halting
+in PREPARE SERVER. Its client sends DPoP proofs with no `ath` claim, which RFC 9449 §4.3
+requires a resource server to reject, so the request arrives anonymous. We have contributed
+the fix upstream
+([conformance-test-harness#789](https://github.com/solid-contrib/conformance-test-harness/pull/789)).
+The number moves when an unmodified harness produces it.
 
 ## Standing on
 
