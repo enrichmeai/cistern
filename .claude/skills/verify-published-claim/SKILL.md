@@ -58,6 +58,25 @@ grep -oE "CVE-[0-9]{4}-[0-9]+" /tmp/trivy-report-*.txt | sort -u | wc -l   # uni
 Then check the *specific* CVE you are claiming is fixed is actually absent, rather than
 reporting a smaller total.
 
+## A fix that "will be applied" — check it exists first
+
+A scanner naming a fixed version is not proof that version is published. `spring-security-web`
+CVE-2026-22732 lists 6.5.9 and 7.0.4 as fixed; neither was on Maven Central, so there was
+nothing to pin and "we will fix it in the next release" would have been a promise nobody could
+keep.
+
+Before writing that a dependency will be bumped, confirm the artifact is actually resolvable:
+
+```bash
+curl -s "https://repo1.maven.org/maven2/GROUP/PATH/ARTIFACT/maven-metadata.xml" \
+  | grep -oE "<version>[^<]*</version>" | tail -5
+```
+
+If the fix version is not there, say **"no fixed release upstream yet"** rather than implying a
+schedule. That is a true sentence and it does not expire.
+
+Credit: `ai-coding-agent-11` found this one on Penstock's v0.1.1 bump.
+
 ## Links and anchors
 
 ```bash

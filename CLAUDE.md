@@ -46,7 +46,7 @@ data over MCP, with Solid WAC enforcing the consent.
      module (plain Java — `cistern-core` still takes no Spring dependency).
    - **Magic numbers and repeated literals become named constants.**
 
-## Verification (learned the hard way, 2026-08-28)
+## Verification (learned the hard way, 2026-08-22 and 2026-08-28)
 
 Every real defect found in a day of intensive work came from **checking a claim that had
 already been asserted confidently** — several of them our own. None came from a passing test
@@ -67,6 +67,20 @@ suite. So:
 4. **A green build proves less than it looks.** A stray `git add -A` once reverted four merged
    PRs and still compiled and passed, because the tests that would have caught it were among
    the reverted files.
+5. **Before recommending we build something, check whether it already exists or already
+   works.** Twice in one session the answer was yes: a client SDK was nearly proposed while
+   Inrupt's `@inrupt/solid-client` already drove Cistern 8/8 unmodified, and a worked
+   integration example was nearly proposed while `integration-kit/` already existed,
+   unlinked. Standing the real thing up settled both in under an hour. See
+   `probe-running-pod`.
+6. **Ticket, phase and version references are facts — check them.** `docs/BACKLOG.md` is
+   the source of truth. "Solid-OIDC (Phase 5)" reached the README before being caught; it
+   is Phase 4. The same applies to version pins: the README said "Pre-0.1" the day after
+   0.2.0 shipped, with six stale `0.1.0` pins in the quickstart.
+7. **The release gate runs on every release, not just the first.** "A stranger can deploy
+   AND use it from published artifacts alone, no stale text in the box" was written for
+   v0.1.0 and not re-run for 0.2.0, which is how the stale pins survived. Re-run it, and
+   check the docs still point at published assets rather than `target/` build output.
 
 ## Configuration binding (silent-failure traps)
 
@@ -89,12 +103,20 @@ Several agents may work these repos at once. **Never commit from the shared chec
 `git worktree add ../cistern-<task> -b <branch> main`, and leave `~/projects/cistern` parked
 for whoever is running something. Drive review by PR number rather than by checkout state.
 
-Announce what you are touching, and say which files. Two sessions steering one working tree
-produced the four-PR silent revert above.
+Announce what you are touching, and say which files — and **correct it when it changes**.
+Telling a peer "this session is read-only" and then editing a tracked file leaves them
+merging blind. Two sessions steering one working tree produced the four-PR silent revert
+above.
+
+**Another session may have already corrected what you are about to assert.** Re-read the
+relevant memory and docs before writing a positioning claim into an issue, a PR or the
+site. A framing corrected by one session was about to be re-published by another in the
+same hour; the contradiction would have shipped. When memory and your draft disagree,
+reconcile before publishing, and fix whichever is wrong.
 
 ## Skills
 
-`.claude/skills/` carries three, written from the tasks that recurred most and that let errors
+`.claude/skills/` carries six, written from the tasks that recurred most and that let errors
 through when rushed:
 
 - **`verify-published-claim`** — check an artifact, number, link or upstream fact before it
@@ -104,6 +126,14 @@ through when rushed:
   clone and merging to `main` publishes; covers the four validations and the copy rules.
 - **`land-pr`** — branch from a worktree through to verified merge, including the shared-tree
   hazard and what `--delete-branch` does to a stacked PR.
+- **`write-dispatch-brief`** — the brief that sends a dev agent from ticket to merged PR:
+  decisions already taken, verified file references, DoD, and the out-of-scope list that
+  stops scope creep.
+- **`file-backlog-issue`** — turn a finding into a well-formed issue: duplicate check
+  first, house labels and milestones, evidence with file references.
+- **`probe-running-pod`** — answer "does X actually work against Cistern?" by standing the
+  real server up and driving it with a real client. Carries the base-URL, `localhost`
+  vs `127.0.0.1`, relaxed-binding and Node-version traps.
 
 ## Build & run
 
