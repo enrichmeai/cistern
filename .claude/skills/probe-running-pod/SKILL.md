@@ -26,7 +26,7 @@ docker run -d --name cistern --network probe-net \
   -v probe-data:/data ghcr.io/enrichmeai/cistern:0.2.0
 ```
 
-The owner WebID is **never dereferenced** — no deref machinery exists in main source; it is
+The owner WebID is **never dereferenced** — the probe does not dereference the owner WebID (T4.3 added WebID dereferencing for Solid-OIDC, but it is not on this path); it is
 an opaque ACL subject validated only as an absolute URI. The placeholder works as written.
 
 ## Known traps

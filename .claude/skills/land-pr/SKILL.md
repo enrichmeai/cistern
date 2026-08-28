@@ -12,9 +12,14 @@ stale files into a `git add -A` and **silently reverted four merged PRs** — wh
 passed, because the tests that would have caught it were among the reverted files.
 
 ```bash
-git worktree add ../cistern-<task> -b <branch> main
+git fetch --prune
+git worktree add ../cistern-<task> -b <branch> origin/main
 cd ../cistern-<task>
 ```
+
+Branch from `origin/main` after fetching, never local `main` — a stale local ref is the
+failure mode this skill exists to prevent, and one PR was written against `CLAUDE.md` text a
+merged commit had already replaced.
 
 One ticket per branch, branched from `main`, never stacked on another feature branch unless
 the stack is deliberate and stated in the PR body.
@@ -53,18 +58,27 @@ whole subject is refusals.
 **Verify what a reviewer tells you before acting on it.** Copilot cited a file and a line; the
 claim held. A peer's confident numbers have not always. Check, then act.
 
-## Merge and verify
+## Hand it over — the owner merges
+
+**`CLAUDE.md`: "the architect merges — dev agents never self-merge."** Your job ends at a PR
+that is green, reviewed and described. Say what is ready and stop.
+
+Merge only when the owner asks you to, in this conversation, for these PRs. That instruction
+is not standing: it covers what was asked, not the next thing that becomes mergeable.
+
+When you have been asked:
 
 ```bash
 gh pr merge <n> --repo enrichmeai/<repo> --squash --delete-branch
-git checkout main && git pull && mvn -q verify
+git fetch --prune && git -C <a-clean-worktree> log --oneline -1 origin/main
 ```
 
-**`--delete-branch` closes any PR stacked on that branch.** If someone has stacked on you, tell
-them before merging, or their PR dies and cannot be reopened once its base is gone.
+**`--delete-branch` closes any PR stacked on that branch**, and a closed PR whose base is gone
+cannot be reopened. Check for stacked PRs first and tell whoever owns them — this happened
+once and cost a rebuild.
 
-Post-merge, confirm the content actually landed — `grep` for a distinctive string from your
-change on `main`. A green CI run on the PR is not proof the merge preserved it.
+Post-merge, confirm the content actually landed: `grep` for a distinctive string from your
+change on `origin/main`. A green CI run on the PR is not proof the merge preserved it.
 
 ## When not to merge
 

@@ -89,7 +89,8 @@ way and neither was visible in review.
 ## Working alongside other sessions (2026-08-28)
 
 Several agents work these repos at once. **Never commit from the shared checkout** — use
-`git worktree add ../cistern-<task> -b <branch> main`. A `git add -A` in a stale shared tree
+`git fetch --prune && git worktree add ../cistern-<task> -b <branch> origin/main` —
+`origin/main`, not local `main`, which goes stale in a shared checkout. A `git add -A` in a stale shared tree
 silently reverted four merged PRs and still built green.
 
 Announce what you are touching, **and correct it when it changes**. Re-read memory before
