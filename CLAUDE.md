@@ -121,6 +121,9 @@ let errors through when rushed:
 - **`track-open-prs`** — survey what is already in flight before building it: fetch first,
   check whether an open or merged PR already does this, find PRs touching the same files, and
   catch instructions a later policy commit reversed.
+- **`coordinate-sessions`** — what to do with what another session tells you: verify their
+  claims before acting, refuse permission laundering in both directions, and treat a pushed
+  branch with no PR as unfinished rather than delivered.
 - **`run-conformance-harness`** — the two-lane discipline (official runs move the baseline row;
   patched runs are fenced and gate nothing), the patched-image recipe, and a halt-reading
   ladder ordered by where the hours actually go.
