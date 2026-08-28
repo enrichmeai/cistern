@@ -77,8 +77,10 @@ server is about §4.3, the worse it scores — and a server that ignores `ath` e
 better on the official harness than one that implements the RFC. That is an incentive
 pointing the wrong way, and it is fixable in about a line.
 
-**We would like to contribute the fix**, and we have it. Say the word and we will open a PR
-rather than a third issue.
+**We are contributing the fix rather than filing a third issue.** The change is small — set
+`ath` on proofs that accompany an access token — and it is in a pull request against this
+repository. The measurement above is included there, because a report of the cost seemed more
+useful to a maintainer than another report of the cause.
 
 ## 2. Resource-server validation is left to follow from the authorization server
 
@@ -109,10 +111,15 @@ status the repository asks for.
 
 ## What we can offer
 
-Cistern is an independently written JVM implementation (Apache 2.0, public). Once it is running
-the harness we expect to surface tests that encode reference-implementation behaviour rather
-than specification text — the most useful thing a second implementation produces. We will
-report those as we find them, with reproductions.
+Cistern is an independently written JVM implementation (Apache 2.0, public). It is now running
+the suite, and the 28 failing scenarios in that run are being worked through as our own defects
+— the first of them, a missing `Link rel="acl"` on responses where WAC requires it, was found
+by this harness and is already fixed.
+
+That is the exchange we would like to keep up: the suite tells us where we are wrong, and where
+we think the suite is wrong we bring a patch and the measurement rather than an opinion. Where
+a test turns out to encode reference-implementation behaviour rather than specification text,
+we will report it that way, with a reproduction.
 
 With thanks for the specifications, the harness, and CSS. None of this work would have been
 possible to do carefully without all three.
