@@ -28,6 +28,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -464,8 +465,13 @@ class ConditionalRequestHttpTest {
 
         // §15.4.5: the 304 MUST carry the ETag a 200 would have carried...
         assertEquals(etag, result.getResponseHeaders().getFirst(HttpHeaders.ETAG));
-        // ...and Vary, for a representation that was negotiated.
-        assertEquals(HttpHeaders.ACCEPT, result.getResponseHeaders().getFirst(HttpHeaders.VARY));
+        // ...and Vary, for a representation that was negotiated. Origin is listed too —
+        // it always was, on a second field line this assertion never read; the
+        // OriginVaryFilter fold made the full cache key visible on the one line. Vary is
+        // cache metadata, which a 304 legitimately carries (unlike discovery links), and a
+        // 304's ACAO does vary by Origin.
+        assertEquals(List.of(HttpHeaders.ACCEPT, HttpHeaders.ORIGIN),
+                result.getResponseHeaders().getVary());
         // "A 304 response is terminated by the end of the header section; it cannot contain
         // content or trailers."
         byte[] body = result.getResponseBodyContent();

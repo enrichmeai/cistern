@@ -293,6 +293,50 @@ class AuthorizationHttpTest {
                 "a 304 must not advertise discovery links; got " + links);
     }
 
+    // ---- CORS on refusals, and one Vary line -----------------------------------------------
+
+    /**
+     * Solid Protocol §8.1 through the whole chain, on the response class that used to lose
+     * it: a browser app must be able to read the CORS fields on a refusal, so the CORS
+     * filter runs ahead of authorization ({@code CorsFirstWebFilter}) — a 401 written by
+     * {@code refuse()} still carries the echoed origin and the expose list.
+     */
+    @Test
+    @DisplayName("a 401 still carries the CORS fields — refusal happens after CORS, not instead")
+    void refusalCarriesCorsHeaders() {
+        put("/notes/hello", "<#a> <#b> \"c\" .");
+
+        // Absolute URI, deliberately: a mock-bound request otherwise has no scheme/host,
+        // and Spring's CORS processor rejects a cross-origin request it cannot compare
+        // origins for. Real transports always carry an absolute request URI.
+        client.get().uri(BASE + "/notes/hello")
+                .header(HttpHeaders.ORIGIN, "https://app.example")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "https://app.example")
+                .expectHeader().exists(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS);
+    }
+
+    /**
+     * {@code Vary} is ONE comma-joined field line: a consumer that reads only the first
+     * {@code Vary} line (the conformance harness's matcher does) must still see the whole
+     * list, so {@code OriginVaryFilter} folds rather than appends a second line.
+     */
+    @Test
+    @DisplayName("Vary is a single folded value naming Accept and Origin")
+    void varyIsOneFoldedLine() {
+        put("/notes/hello", "<#a> <#b> \"c\" .");
+
+        List<String> vary = asOwner(client.get().uri(BASE + "/notes/hello")
+                        .header(HttpHeaders.ORIGIN, "https://app.example"))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody().returnResult().getResponseHeaders().get(HttpHeaders.VARY);
+        assertEquals(1, vary.size(), "one folded Vary line, not one line per entry: " + vary);
+        assertTrue(vary.get(0).contains(HttpHeaders.ACCEPT) && vary.get(0).contains(HttpHeaders.ORIGIN),
+                "the folded line names both entries: " + vary);
+    }
+
     // ---- WAC-Allow -----------------------------------------------------------------------
 
     @Test

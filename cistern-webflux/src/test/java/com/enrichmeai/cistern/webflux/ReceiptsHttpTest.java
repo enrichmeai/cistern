@@ -562,6 +562,7 @@ class ReceiptsHttpTest {
     void newHeadersAreExposed() {
         assertTrue(ExposedResponseHeader.fieldNames().contains(HttpConstants.X_REQUEST_ID));
         assertTrue(ExposedResponseHeader.fieldNames().contains(HttpHeaders.CACHE_CONTROL));
-        assertTrue(AllowedRequestHeader.fieldNames().contains(HttpConstants.X_REQUEST_ID));
+        // Request-side allowance needs no list entry: the preflight grant echoes whatever a
+        // script requests (CorsHttpTest.anArbitraryHeaderIsEchoed pins that).
     }
 }

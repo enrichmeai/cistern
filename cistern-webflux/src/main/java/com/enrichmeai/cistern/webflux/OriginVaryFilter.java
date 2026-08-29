@@ -57,7 +57,15 @@ public class OriginVaryFilter implements WebFilter {
     }
 
     /**
-     * Appends {@code Origin} to {@code Vary} unless it is already there.
+     * Rebuilds {@code Vary} as ONE comma-joined field line, with {@code Origin} added unless
+     * already listed.
+     *
+     * <p>One line rather than one-per-entry, because the two RFC 9110 §5.6.1-equivalent forms
+     * are not equivalent to consumers: a reader that takes the first {@code Vary} line — the
+     * conformance harness's header matcher does, and it is not alone — sees only the first
+     * entry of a multi-line answer. Verified against a live run: {@code Vary: Accept} +
+     * {@code Vary: Origin} on two lines read back as just {@code Accept}. Folding is
+     * idempotent, so a response that already lists {@code Origin} is normalised, not doubled.
      *
      * <p>Written as "replace the field with a new list" rather than the obvious
      * {@code headers.add(VARY, ORIGIN)} because {@code add} mutates the existing value list in
@@ -69,23 +77,12 @@ public class OriginVaryFilter implements WebFilter {
      * failed. Copying first is correct in both.
      */
     private static void addOriginToVary(HttpHeaders headers) {
-        if (variesByOrigin(headers)) {
-            return;
+        // getVary() splits the entries across however many field lines and commas they
+        // arrived on, so this sees the list itself rather than the punctuation.
+        List<String> entries = new ArrayList<>(headers.getVary());
+        if (entries.stream().noneMatch(HttpHeaders.ORIGIN::equalsIgnoreCase)) {
+            entries.add(HttpHeaders.ORIGIN);
         }
-        List<String> existing = headers.get(HttpHeaders.VARY);
-        List<String> updated =
-                existing == null ? new ArrayList<>() : new ArrayList<>(existing);
-        updated.add(HttpHeaders.ORIGIN);
-        headers.put(HttpHeaders.VARY, updated);
-    }
-
-    /**
-     * Whether {@code Origin} is already listed. {@link HttpHeaders#getVary()} splits the
-     * comma-delimited list of RFC 9110 §5.6.1 across however many field lines it arrived on, so
-     * this sees the entries themselves rather than the punctuation. Field names are
-     * case-insensitive (RFC 9110 §5.1), hence the case-insensitive comparison.
-     */
-    private static boolean variesByOrigin(HttpHeaders headers) {
-        return headers.getVary().stream().anyMatch(HttpHeaders.ORIGIN::equalsIgnoreCase);
+        headers.put(HttpHeaders.VARY, List.of(String.join(HttpConstants.LIST_SEPARATOR, entries)));
     }
 }

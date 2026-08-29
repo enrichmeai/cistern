@@ -491,9 +491,14 @@ public class CisternWebFluxConfiguration {
         // may preflight, with no second list to keep in step (the architect requirement on #19).
         ResourceKind.supportedMethods()
                 .forEach(method -> configuration.addAllowedMethod(method.name()));
-        // Enumerated, never "*": Fetch excludes Authorization from the wildcard, and §8.1 asks
-        // for Accept by name. See AllowedRequestHeader.
-        AllowedRequestHeader.fieldNames().forEach(configuration::addAllowedHeader);
+        // Echo, not enumerate (reversed 2026-08-29 on CTH evidence): §8.1 asks the server to
+        // let a Solid app send "any request and combination of request headers", and the
+        // harness holds both directions — a preflight requesting X-CUSTOM must see it in
+        // Access-Control-Allow-Headers, and one NOT requesting Accept must NOT see Accept
+        // there. No fixed list satisfies both; echoing the request's own list does, and
+        // Spring's processor does exactly that when the wildcard is configured: the response
+        // names the headers the preflight asked for, never a literal "*".
+        configuration.addAllowedHeader(CorsConfiguration.ALL);
         // §8.1: "The server MUST make all used response headers readable for the Solid app
         // through Access-Control-Expose-Headers". See ExposedResponseHeader.
         ExposedResponseHeader.fieldNames().forEach(configuration::addExposedHeader);
@@ -502,7 +507,9 @@ public class CisternWebFluxConfiguration {
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration(ALL_PATHS, configuration);
-        return new CorsWebFilter(source);
+        // Ordered ahead of authorization — a refusal must still carry the CORS fields; see
+        // CorsFirstWebFilter for the evidence.
+        return new CorsFirstWebFilter(source);
     }
 
     /**
