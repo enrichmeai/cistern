@@ -55,7 +55,7 @@ services:
     restart: unless-stopped
 
   penstock:
-    image: ghcr.io/enrichmeai/penstock:0.1.2
+    image: ghcr.io/enrichmeai/penstock:0.2.0
     depends_on: [cistern]
     ports:
       - "127.0.0.1:${PENSTOCK_PORT:-8080}:8080"
