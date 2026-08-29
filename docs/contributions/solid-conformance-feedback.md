@@ -82,6 +82,39 @@ pointing the wrong way, and it is fixable in about a line.
 repository. The measurement above is included there, because a report of the cost seemed more
 useful to a maintainer than another report of the cause.
 
+## 1c. The suite and the specification point different ways on `Accept` in CORS
+
+**The specification, verbatim** (Solid Protocol, CORS section):
+
+> Servers SHOULD explicitly list `Accept` under `Access-Control-Allow-Headers`, because header
+> field values longer than 128 characters (not uncommon for RDF-based Solid apps) would
+> otherwise be blocked, despite shorter `Accept` header field values being allowed without
+> explicit mention.
+
+**The suite's `accept-acah` feature** asserts that `Access-Control-Allow-Headers` must **not**
+contain `Accept` when the preflight did not request it.
+
+Under echo semantics — reflect the headers that were asked for — those cannot both be
+satisfied. Always listing `Accept` fails the suite. Echoing only what was requested departs
+from the SHOULD.
+
+**Why this is worth raising rather than shrugging at.** The specification does not merely state
+a preference; it states a reason, and the reason describes a real browser behaviour. `Accept`
+is CORS-safelisted only up to a value-length limit, and RDF content negotiation produces long
+`Accept` values routinely. So a server that satisfies the suite's reading will block exactly
+the long-`Accept` RDF requests the SHOULD exists to protect — in a browser, not in a test.
+Following the suite has a cost the specification predicted.
+
+**What we did.** We followed the suite, because the harness is the operative contract for an
+implementation trying to interoperate, and recorded the trade in a comment where the echo is
+configured. We are offering this as a datapoint, not a complaint: both documents come from the
+same community's work, and the disagreement is only visible from outside because we
+implemented against both at once.
+
+**What would help.** Whichever way it resolves, an implementer would benefit from the two
+documents agreeing — either the feature relaxed to permit an always-listed `Accept`, or the
+SHOULD amended to describe what conforming servers actually do.
+
 ## 2. Resource-server validation is left to follow from the authorization server
 
 **Observed:** Solid-OIDC §9.2/§9.3/§8.1.1 specify the authorization server. The resource
