@@ -119,35 +119,13 @@ class CorsHttpTest {
         }
     }
 
-    /**
-     * The headers a Solid client must be able to send: Solid-OIDC's two credential fields —
-     * Authorization by name, because the Fetch standard excludes it from any literal
-     * {@code *} in the response, so the grant must name it — plus the fields the protocol
-     * surface reads. Under echo semantics the grant names whatever was requested, so the
-     * assertion is that requesting exactly these yields exactly these.
-     */
-    private static final List<String> SOLID_CLIENT_HEADERS = List.of(
-            HttpHeaders.AUTHORIZATION, HttpConstants.DPOP, HttpHeaders.ACCEPT,
-            HttpHeaders.CONTENT_TYPE, HttpHeaders.IF_MATCH, HttpHeaders.IF_NONE_MATCH,
-            HttpHeaders.LINK, HttpConstants.SLUG, HttpConstants.X_REQUEST_ID);
-
     @Test
-    @DisplayName("the headers a Solid client sends are all granted, Authorization by name")
-    void everyHeaderASolidClientSendsIsAllowed() {
-        String requested = String.join(HttpConstants.LIST_SEPARATOR, SOLID_CLIENT_HEADERS);
-
-        RawHttp.Response response = RawHttp.request(port, HttpMethod.OPTIONS, "/notes/a.ttl")
-                .header(HttpHeaders.ORIGIN, FAKE_ORIGIN)
-                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, HttpMethod.PUT.name())
-                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, requested)
-                .send();
-
+    @DisplayName("a preflight's Vary is one folded line — the fold runs outermost")
+    void preflightVaryIsOneFoldedLine() {
+        RawHttp.Response response = preflight("/notes/a.ttl", HttpMethod.PUT);
         assertSuccessful(response);
-        List<String> granted = listOf(response.first(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS));
-        for (String header : SOLID_CLIENT_HEADERS) {
-            assertTrue(granted.stream().anyMatch(header::equalsIgnoreCase),
-                    () -> header + " is not granted by preflight, so a browser will never send it");
-        }
+        assertEquals(1, response.all(HttpHeaders.VARY).size(),
+                () -> "one folded Vary field line on a preflight; got " + response.all(HttpHeaders.VARY));
     }
 
     /**
@@ -158,19 +136,29 @@ class CorsHttpTest {
      * fixed list can satisfy. §8.1's "any request and combination of request headers" is the
      * spec text the suite is holding us to; the grant now echoes the request.
      */
+    /** A header no spec names — the echo must grant it anyway; send site and assert site share it. */
+    private static final String ARBITRARY_HEADER = "X-Cistern-Not-A-Real-Header";
+
     @Test
     @DisplayName("an arbitrary header is granted by echo — and only what was asked for")
     void anArbitraryHeaderIsEchoed() {
         RawHttp.Response response = RawHttp.request(port, HttpMethod.OPTIONS, "/notes/a.ttl")
                 .header(HttpHeaders.ORIGIN, FAKE_ORIGIN)
                 .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, HttpMethod.PUT.name())
-                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "X-Cistern-Not-A-Real-Header")
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, ARBITRARY_HEADER
+                        + HttpConstants.LIST_SEPARATOR + HttpHeaders.AUTHORIZATION
+                        + HttpConstants.LIST_SEPARATOR + HttpConstants.DPOP)
                 .send();
 
         assertSuccessful(response);
         List<String> granted = listOf(response.first(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS));
-        assertTrue(granted.stream().anyMatch("X-Cistern-Not-A-Real-Header"::equalsIgnoreCase),
-                () -> "the requested header is not echoed; got " + granted);
+        // The arbitrary header and BOTH Solid-OIDC credential fields: Authorization must be
+        // granted by name, because the Fetch standard excludes it from any literal wildcard —
+        // echo is what makes a browser Solid client able to authenticate at all.
+        for (String header : List.of(ARBITRARY_HEADER, HttpHeaders.AUTHORIZATION, HttpConstants.DPOP)) {
+            assertTrue(granted.stream().anyMatch(header::equalsIgnoreCase),
+                    () -> header + " is not echoed by the preflight grant; got " + granted);
+        }
         assertTrue(granted.stream().noneMatch(HttpHeaders.ACCEPT::equalsIgnoreCase),
                 () -> "Accept was granted without being requested; got " + granted);
     }

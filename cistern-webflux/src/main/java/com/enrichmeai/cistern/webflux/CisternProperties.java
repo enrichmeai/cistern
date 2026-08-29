@@ -146,7 +146,7 @@ public record CisternProperties(
      * cross-origin pod requests — ambient authority that any page on the web could then spend
      * on the user's behalf. Cistern has no such state to attach: Solid-OIDC authenticates with
      * an explicit {@code Authorization} header plus a {@code DPoP} proof (both granted by
-     * preflight — the allow-list echoes what a script requests), set deliberately per request and
+     * preflight, which echoes the request's own header list), set deliberately per request and
      * which the browser never adds by itself. So credentials mode would grant no capability the
      * protocol uses while opening a hole the protocol does not need. See
      * {@code CisternWebFluxConfiguration#cisternCorsWebFilter} for the Fetch-standard

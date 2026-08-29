@@ -64,9 +64,9 @@ Failure clusters, itemised for T3.3/T5.5 (updated 2026-08-29 after the CORS fix)
 write-access ×3 (`write-access-agent`/`-bob`/`-public`), `method-not-allowed`,
 `content-type-reject`, `containment`, `content-negotiation-named-graphs`, and the two
 CORS preflight features' remaining scenarios — all tagged `@http-redirect`, expecting an
-http→https 301/308 that an http-only test base can never produce; they cap those two
-features until a TLS-fronted run (or a documented skip-tag decision, which would change
-the denominator and so belongs to the architect). Reports for the provisional run are not committed;
+http→https 301/308 that an http-only test base can never produce. Architect ruling
+2026-08-29: NO skip-tags — the denominator stays whole so every run stays comparable; the
+scenarios stay red until the kit gains a TLS front (#187). Reports for the provisional run are not committed;
 the run log and reproduction recipe live with the session that produced them, and the
 recipe (CSS 7.2.0, `trusted-origins`, `pods.seed`, client credentials) is in the notes
 above. The official row moves only on an unmodified `solidproject/conformance-test-harness`

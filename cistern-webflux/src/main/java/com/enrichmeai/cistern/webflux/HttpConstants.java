@@ -76,9 +76,9 @@ final class HttpConstants {
 
     /**
      * RFC 9449 §7.1 — the DPoP proof JWT a Solid-OIDC client sends alongside its bound access
-     * token. Read by cistern-auth from T4.x; named here for the same reason as
-     * {@link #WAC_ALLOW}: T2.8 must allow it through CORS preflight or no browser-based Solid
-     * client can authenticate at all.
+     * token. Read on the wire by cistern-auth (which owns its own spelling); named here as the
+     * webflux layer's one canonical spelling for tests and docs — preflight no longer needs an
+     * allow-list entry, since the grant echoes whatever a script requests.
      */
     static final String DPOP = "DPoP";
 

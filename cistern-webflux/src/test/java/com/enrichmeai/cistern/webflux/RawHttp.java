@@ -29,8 +29,11 @@ import java.util.Map;
  *       origin it was sent <em>to</em>, so Spring's {@code CorsUtils.isSameOrigin} asserts all
  *       three are present ("Actual request scheme must not be null");
  *       {@code DefaultCorsProcessor} catches the assertion, logs "Reject: origin is malformed"
- *       and answers 403. Setting a {@code baseUrl} does not help — it does not change the URI
- *       the server side sees.</li>
+ *       and answers 403. A configured {@code baseUrl} does not change the URI the server side
+ *       sees — but an ABSOLUTE URI passed to {@code .uri(...)} does, and that is the one
+ *       mock-side escape: {@code AuthorizationHttpTest}'s CORS-on-refusal cases use it,
+ *       because only that context configures an owner and can produce a WAC refusal at all.
+ *       For everything CORS that does not need enforcement, this class stays the way.</li>
  *   <li><b>Bound to a real port</b>, the request goes out through an HTTP client library that
  *       this build environment intercepts: the response comes back 403 carrying headers no part
  *       of Cistern emits ({@code X-Correlation-ID}, {@code X-Frame-Options},

@@ -64,6 +64,27 @@ class CorsRestrictedOriginsHttpTest {
         }
     }
 
+    /**
+     * The half Spring's default gets wrong: an actual request from a disallowed origin is
+     * NOT refused here. The absent Access-Control-Allow-Origin is the refusal — the browser
+     * enforces it — while the request itself still flows to authorization and earns its
+     * real status, receipt and correlation id. Only preflights answer (or 403) at this layer.
+     */
+    @Test
+    void anActualRequestFromADisallowedOriginStillReachesTheServer() {
+        RawHttp.Response response = RawHttp.request(port, HttpMethod.GET, "/notes/a.ttl")
+                .header(HttpHeaders.ORIGIN, "https://not-configured.example")
+                .send();
+
+        assertFalse(response.has(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN),
+                "no grant for a disallowed origin — absence is the Fetch-layer refusal");
+        assertFalse(HttpStatus.FORBIDDEN.value() == response.status(),
+                "a bare CORS 403 would mean the request never reached the pod's own pipeline");
+        // This context runs unenforced (no owner), so correlation cannot be asserted here;
+        // AuthorizationHttpTest.refusalCarriesCorsHeaders pins X-Request-Id on the enforced
+        // cross-origin path.
+    }
+
     @Test
     @DisplayName("the configured origin is granted, and still echoed rather than wildcarded")
     void theConfiguredOriginIsGranted() {

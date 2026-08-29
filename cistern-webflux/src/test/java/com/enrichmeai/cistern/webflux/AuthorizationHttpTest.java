@@ -45,6 +45,9 @@ class AuthorizationHttpTest {
     static final String TOKEN = "test-token";
     private static final String BEARER = "Bearer " + TOKEN;
     private static final String TURTLE = "text/turtle";
+    /** Cross-origin caller for the CORS-on-refusal cases; these live here, not CorsHttpTest,
+     * because only this context configures an owner and can produce a WAC refusal at all. */
+    private static final String APP_ORIGIN = "https://app.example";
 
     @Autowired private WebTestClient client;
     @Autowired private ResourceStore store;
@@ -304,17 +307,25 @@ class AuthorizationHttpTest {
     @Test
     @DisplayName("a 401 still carries the CORS fields — refusal happens after CORS, not instead")
     void refusalCarriesCorsHeaders() {
-        put("/notes/hello", "<#a> <#b> \"c\" .");
-
+        // No fixture: the refusal happens before storage is consulted, so the resource's
+        // existence cannot affect this test.
         // Absolute URI, deliberately: a mock-bound request otherwise has no scheme/host,
         // and Spring's CORS processor rejects a cross-origin request it cannot compare
         // origins for. Real transports always carry an absolute request URI.
         client.get().uri(BASE + "/notes/hello")
-                .header(HttpHeaders.ORIGIN, "https://app.example")
+                .header(HttpHeaders.ORIGIN, APP_ORIGIN)
                 .exchange()
                 .expectStatus().isUnauthorized()
-                .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "https://app.example")
-                .expectHeader().exists(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS);
+                .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, APP_ORIGIN)
+                .expectHeader().exists(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS)
+                // Cross-origin or not, the request reached the decision point: correlated.
+                .expectHeader().exists(HttpConstants.X_REQUEST_ID)
+                // The fold applies to refusals too — OriginVaryFilter runs ahead of
+                // authorization for exactly this response class.
+                .expectHeader().value(HttpHeaders.VARY, v ->
+                        assertTrue(v != null && java.util.Arrays.stream(v.split(","))
+                                        .anyMatch(e -> HttpHeaders.ORIGIN.equalsIgnoreCase(e.trim())),
+                                "folded Vary names Origin as an entry: " + v));
     }
 
     /**
@@ -327,14 +338,35 @@ class AuthorizationHttpTest {
     void varyIsOneFoldedLine() {
         put("/notes/hello", "<#a> <#b> \"c\" .");
 
-        List<String> vary = asOwner(client.get().uri(BASE + "/notes/hello")
-                        .header(HttpHeaders.ORIGIN, "https://app.example"))
+        var headers = asOwner(client.get().uri(BASE + "/notes/hello")
+                        .header(HttpHeaders.ORIGIN, APP_ORIGIN))
                 .exchange()
                 .expectStatus().isOk()
-                .expectBody().returnResult().getResponseHeaders().get(HttpHeaders.VARY);
-        assertEquals(1, vary.size(), "one folded Vary line, not one line per entry: " + vary);
-        assertTrue(vary.get(0).contains(HttpHeaders.ACCEPT) && vary.get(0).contains(HttpHeaders.ORIGIN),
-                "the folded line names both entries: " + vary);
+                .expectBody().returnResult().getResponseHeaders();
+        List<String> lines = headers.getOrEmpty(HttpHeaders.VARY);
+        assertEquals(1, lines.size(), "one folded Vary line, not one line per entry: " + lines);
+        // Entry membership via the parsing accessor, case-insensitively (RFC 9110 §5.1) —
+        // a substring check would let Accept-Encoding satisfy "contains Accept".
+        for (String entry : List.of(HttpHeaders.ACCEPT, HttpHeaders.ORIGIN)) {
+            assertTrue(headers.getVary().stream().anyMatch(entry::equalsIgnoreCase),
+                    () -> entry + " missing from the folded cache key: " + lines);
+        }
+    }
+
+    /**
+     * The exemption is exactly Spring's preflight definition. A bare OPTIONS carrying only
+     * Access-Control-Request-Method — no Origin — is NOT a preflight, and used to skip WAC:
+     * an anonymous existence-and-capability oracle on protected resources, with no receipt.
+     */
+    @Test
+    @DisplayName("OPTIONS without Origin is not a preflight — WAC still applies")
+    void optionsWithoutOriginIsNotExemptFromWac() {
+        put("/notes/hello", "<#a> <#b> \"c\" .");
+
+        client.options().uri(BASE + "/notes/hello")
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET")
+                .exchange()
+                .expectStatus().isUnauthorized();
     }
 
     // ---- WAC-Allow -----------------------------------------------------------------------

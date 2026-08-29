@@ -1,5 +1,6 @@
 package com.enrichmeai.cistern.webflux;
 
+import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.web.server.ServerWebExchange;
@@ -7,7 +8,6 @@ import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -40,11 +40,27 @@ import java.util.List;
  * rather than overwrites.
  *
  * <p>Unconditional because it is unconditionally true: every response can carry an echoed
- * {@code Access-Control-Allow-Origin}, so every response varies by {@code Origin}. Responses
- * that already list it — anything that never reached a handler, such as a preflight — are left
- * alone rather than given a duplicate entry.
+ * {@code Access-Control-Allow-Origin}, so every response varies by {@code Origin} — and the
+ * fold covers every response class, because this filter is the OUTERMOST in the chain: its
+ * hook is registered before the CORS filter can answer a preflight and before authorization
+ * can refuse, so preflights, refusals, error-mapped responses and handler responses all
+ * commit through it.
  */
-public class OriginVaryFilter implements WebFilter {
+public class OriginVaryFilter implements WebFilter, Ordered {
+
+    /**
+     * Outermost — ahead even of {@link CorsFirstWebFilter#ORDER}. Anything that can complete
+     * the response without continuing the chain (the CORS filter answering a preflight,
+     * {@code AuthorizationFilter.refuse()}) never lets a later filter register its hook; a
+     * filter that must see EVERY commit therefore registers before all of them. Chain order,
+     * outermost first: this fold, then CORS, then authorization.
+     */
+    public static final int ORDER = CorsFirstWebFilter.ORDER - 10;
+
+    @Override
+    public int getOrder() {
+        return ORDER;
+    }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
@@ -78,11 +94,28 @@ public class OriginVaryFilter implements WebFilter {
      */
     private static void addOriginToVary(HttpHeaders headers) {
         // getVary() splits the entries across however many field lines and commas they
-        // arrived on, so this sees the list itself rather than the punctuation.
-        List<String> entries = new ArrayList<>(headers.getVary());
-        if (entries.stream().noneMatch(HttpHeaders.ORIGIN::equalsIgnoreCase)) {
+        // arrived on, so this sees the list itself rather than the punctuation. The list it
+        // returns is freshly built (never a view), so it is safe to extend — except the
+        // absent case, which is the shared empty list.
+        List<String> entries = headers.getVary();
+        if (entries.isEmpty()) {
+            headers.set(HttpHeaders.VARY, HttpHeaders.ORIGIN);
+            return;
+        }
+        boolean present = false;
+        for (String entry : entries) {
+            if (HttpHeaders.ORIGIN.equalsIgnoreCase(entry)) {
+                present = true;
+                break;
+            }
+        }
+        if (present && headers.get(HttpHeaders.VARY).size() == 1) {
+            return; // already one folded line naming Origin — nothing to write
+        }
+        if (!present) {
             entries.add(HttpHeaders.ORIGIN);
         }
-        headers.put(HttpHeaders.VARY, List.of(String.join(HttpConstants.LIST_SEPARATOR, entries)));
+        // Spring's own rendering of "these entries, one comma-joined field line".
+        headers.setVary(entries);
     }
 }
