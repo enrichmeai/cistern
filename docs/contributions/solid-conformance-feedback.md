@@ -65,12 +65,16 @@ same server build, changing only one guarded line in the harness client to add `
 | Harness | MustFeatures | MustScenarios |
 |---|---|---|
 | Official, unmodified | **0 passed / 0 failed / 41 untested** | run halts in PREPARE SERVER |
-| Same harness, `ath` added | **24 passed / 11 failed** | **613 passed / 28 failed** |
+| Same harness and build, `ath` added | **24 passed / 11 failed** | **613 passed / 28 failed** |
 
-The gap between those two rows is not a property of the server. It is the cost of one absent
-claim in the test client, and it is the difference between a specification-conformant
-implementation receiving no signal at all and receiving 613 passing scenarios plus an
-itemised list of 28 real defects to fix.
+Both rows are the same server build on 28 August 2026, so the gap between them is not a
+property of the server. It is the cost of one absent claim in the test client — the difference
+between a specification-conformant implementation receiving **no signal at all** and receiving
+613 passing scenarios plus an itemised list of 28 real defects to fix.
+
+Those 28 are being worked through, and the point of the table is the gap rather than either
+number: as of 29 August the patched run reads 27 features and 629 scenarios passing. The
+official row has not moved, and will not until an unmodified harness produces it.
 
 **The uncomfortable implication, stated plainly because it is the point:** the stricter a
 server is about §4.3, the worse it scores — and a server that ignores `ath` entirely does
@@ -81,6 +85,44 @@ pointing the wrong way, and it is fixable in about a line.
 `ath` on proofs that accompany an access token — and it is in a pull request against this
 repository. The measurement above is included there, because a report of the cost seemed more
 useful to a maintainer than another report of the cause.
+
+## 1c. The suite and the specification point different ways on `Accept` in CORS
+
+**The specification, verbatim** (Solid Protocol, CORS section, as published 29 August 2026 —
+if that text has since been revised this item may be stale and is worth re-reading before use):
+
+> Servers SHOULD explicitly list `Accept` under `Access-Control-Allow-Headers`, because header
+> field values longer than 128 characters (not uncommon for RDF-based Solid apps) would
+> otherwise be blocked, despite shorter `Accept` header field values being allowed without
+> explicit mention.
+
+**The suite's `accept-acah` feature** asserts that `Access-Control-Allow-Headers` must **not**
+contain `Accept` when the preflight did not request it.
+
+Under echo semantics — reflect the headers that were asked for — those cannot both be
+satisfied. Always listing `Accept` fails the suite. Echoing only what was requested departs
+from the SHOULD.
+
+**Why this is worth raising rather than shrugging at.** The specification does not merely state
+a preference; it states a reason, and the reason describes a real browser behaviour. `Accept`
+is CORS-safelisted only up to a value-length limit, and RDF content negotiation produces long
+`Accept` values routinely. So a server that satisfies the suite's reading will block exactly
+the long-`Accept` RDF requests the SHOULD exists to protect — in a browser, not in a test.
+Following the suite has a cost the specification predicted.
+
+**What we did.** We echo the request's own header list rather than enumerating a fixed one,
+because §8.1 asks servers to accept "any request and combination of request headers" and the
+suite holds both directions — a preflight requesting `X-CUSTOM` must see it echoed, and one not
+requesting `Accept` must not see `Accept`. No fixed list satisfies both; echoing does. The
+`Accept` SHOULD is the conscious trade that rides along, recorded in a comment where the echo
+is configured rather than resolved locally — a disagreement between suite and specification is
+raised, not decided by the implementer. We are offering this as a datapoint, not a complaint: both documents come from the
+same community's work, and the disagreement is only visible from outside because we
+implemented against both at once.
+
+**What would help.** Whichever way it resolves, an implementer would benefit from the two
+documents agreeing — either the feature relaxed to permit an always-listed `Accept`, or the
+SHOULD amended to describe what conforming servers actually do.
 
 ## 2. Resource-server validation is left to follow from the authorization server
 
