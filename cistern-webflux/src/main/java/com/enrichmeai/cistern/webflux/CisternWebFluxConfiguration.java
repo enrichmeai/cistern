@@ -464,9 +464,10 @@ public class CisternWebFluxConfiguration {
      * {@code Access-Control-Allow-Origin} header field value to the valid {@code Origin} header
      * field value from the request and list {@code Origin} in the {@code Vary} header field
      * value." {@code setAllowedOrigins("*")} would emit the literal {@code *} and violate that;
-     * the pattern form echoes the request's own origin. Spring's CORS processor adds
-     * {@code Vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers} either
-     * way, satisfying the second half.
+     * the pattern form echoes the request's own origin. The {@code Vary} half is
+     * {@link OriginVaryFilter}'s: Spring's processor emits its entries as separate field
+     * lines, which first-line consumers misread, so the outermost filter folds the final
+     * list into one line at commit.
      *
      * <h2>Credentials are not allowed, and that is what makes wide-open origins safe</h2>
      * Allowing credentials would tell the browser to attach cookies and HTTP-auth state to
@@ -480,9 +481,13 @@ public class CisternWebFluxConfiguration {
      * needs and drops the one it does not. See {@link CisternProperties.Cors} for why there is
      * no switch.
      */
+    // Declared as CorsFirstWebFilter, deliberately: the missing-bean condition then matches
+    // on the ordered type, so an embedder's plain CorsWebFilter does not silently back this
+    // off into the unordered (CORS-behind-auth) regression. An embedder replacing CORS
+    // supplies a CorsFirstWebFilter — public, with a processor-accepting constructor.
     @Bean
     @ConditionalOnMissingBean
-    public CorsWebFilter cisternCorsWebFilter(CisternProperties properties) {
+    public CorsFirstWebFilter cisternCorsWebFilter(CisternProperties properties) {
         CisternProperties.Cors cors = properties.cors();
         CorsConfiguration configuration = new CorsConfiguration();
         // Patterns, not origins — see the class comment: the request's origin is echoed back.
@@ -491,18 +496,32 @@ public class CisternWebFluxConfiguration {
         // may preflight, with no second list to keep in step (the architect requirement on #19).
         ResourceKind.supportedMethods()
                 .forEach(method -> configuration.addAllowedMethod(method.name()));
-        // Enumerated, never "*": Fetch excludes Authorization from the wildcard, and §8.1 asks
-        // for Accept by name. See AllowedRequestHeader.
-        AllowedRequestHeader.fieldNames().forEach(configuration::addAllowedHeader);
+        // Echo, not enumerate (reversed 2026-08-29 on CTH evidence): §8.1 asks the server to
+        // let a Solid app send "any request and combination of request headers", and the
+        // harness holds both directions — a preflight requesting X-CUSTOM must see it in
+        // Access-Control-Allow-Headers, and one NOT requesting Accept must NOT see Accept
+        // there. No fixed list satisfies both; echoing the request's own list does, and
+        // Spring's processor does exactly that when the wildcard is configured: the response
+        // names the headers the preflight asked for, never a literal "*". One conscious
+        // trade rides along: §8.1 also SAYS servers SHOULD list Accept explicitly, which
+        // echo cannot satisfy for a client that (per Fetch's safelist) never requests it —
+        // the harness asserts the echo reading, and per ground rule 1 the conflict is
+        // recorded here and raised rather than resolved locally. The echo reflects at most
+        // the bytes the client sent (bounded by the server's max header size, 1:1, on a
+        // path that touches no storage) — no amplification beyond any echoed field.
+        configuration.addAllowedHeader(CorsConfiguration.ALL);
         // §8.1: "The server MUST make all used response headers readable for the Solid app
         // through Access-Control-Expose-Headers". See ExposedResponseHeader.
         ExposedResponseHeader.fieldNames().forEach(configuration::addExposedHeader);
         configuration.setAllowCredentials(false);
         configuration.setMaxAge(cors.maxAge());
 
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration(ALL_PATHS, configuration);
-        return new CorsWebFilter(source);
+        // One configuration for the whole path space, as a constant lambda rather than a
+        // UrlBasedCorsConfigurationSource: the /** pattern match answers a per-request
+        // question whose result never varies, and this filter now runs on every request,
+        // refusals included. Ordered ahead of authorization — a refusal must still carry
+        // the CORS fields; see CorsFirstWebFilter for the evidence.
+        return new CorsFirstWebFilter(exchange -> configuration);
     }
 
     /**

@@ -157,7 +157,9 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
         // wrote. Covers allowed, refused, and error-mapped responses alike. Two responses
         // deliberately go without: a CORS preflight (returned above — it answers "may this
         // origin ask?", not a request targeting the resource), and a 400 for a target
-        // identifierFor refuses just below, which has no well-formed ACL to name.
+        // identifierFor refuses just below, which has no well-formed ACL to name. A
+        // disallowed-origin ACTUAL request is not an exception: it flows through here like
+        // any other (BrowserEnforcedCorsProcessor), just with no CORS headers on the way out.
         ServerHttpResponse response = exchange.getResponse();
         String aclLink = AclLink.valueFor(target);
         response.beforeCommit(() -> {
@@ -286,8 +288,18 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
                 && ResourceOptionsHandler.ASTERISK_FORM_PATH.equals(request.getPath().value());
     }
 
+    /**
+     * Spring's definition exactly ({@code CorsUtils.isPreFlightRequest}): OPTIONS + Origin +
+     * Access-Control-Request-Method. The Origin check is load-bearing — without it, a bare
+     * {@code OPTIONS} carrying only ACRM skipped WAC entirely: an anonymous
+     * existence-and-capability oracle on protected resources, reachable with curl, and a
+     * request the decision log never saw. A real preflight never reaches this filter anyway
+     * ({@code CorsFirstWebFilter} answers it first); this exemption is defence in depth for
+     * re-ordered embeddings, and must not be broader than the thing it exempts.
+     */
     private static boolean isCorsPreflight(ServerHttpRequest request) {
         return HttpMethod.OPTIONS.equals(request.getMethod())
+                && request.getHeaders().getOrigin() != null
                 && request.getHeaders().getAccessControlRequestMethod() != null;
     }
 }

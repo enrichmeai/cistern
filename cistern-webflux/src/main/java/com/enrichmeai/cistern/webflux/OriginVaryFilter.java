@@ -1,5 +1,6 @@
 package com.enrichmeai.cistern.webflux;
 
+import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.web.server.ServerWebExchange;
@@ -7,7 +8,6 @@ import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -40,11 +40,27 @@ import java.util.List;
  * rather than overwrites.
  *
  * <p>Unconditional because it is unconditionally true: every response can carry an echoed
- * {@code Access-Control-Allow-Origin}, so every response varies by {@code Origin}. Responses
- * that already list it — anything that never reached a handler, such as a preflight — are left
- * alone rather than given a duplicate entry.
+ * {@code Access-Control-Allow-Origin}, so every response varies by {@code Origin} — and the
+ * fold covers every response class, because this filter is the OUTERMOST in the chain: its
+ * hook is registered before the CORS filter can answer a preflight and before authorization
+ * can refuse, so preflights, refusals, error-mapped responses and handler responses all
+ * commit through it.
  */
-public class OriginVaryFilter implements WebFilter {
+public class OriginVaryFilter implements WebFilter, Ordered {
+
+    /**
+     * Outermost — ahead even of {@link CorsFirstWebFilter#ORDER}. Anything that can complete
+     * the response without continuing the chain (the CORS filter answering a preflight,
+     * {@code AuthorizationFilter.refuse()}) never lets a later filter register its hook; a
+     * filter that must see EVERY commit therefore registers before all of them. Chain order,
+     * outermost first: this fold, then CORS, then authorization.
+     */
+    public static final int ORDER = CorsFirstWebFilter.ORDER - 10;
+
+    @Override
+    public int getOrder() {
+        return ORDER;
+    }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
@@ -57,7 +73,15 @@ public class OriginVaryFilter implements WebFilter {
     }
 
     /**
-     * Appends {@code Origin} to {@code Vary} unless it is already there.
+     * Rebuilds {@code Vary} as ONE comma-joined field line, with {@code Origin} added unless
+     * already listed.
+     *
+     * <p>One line rather than one-per-entry, because the two RFC 9110 §5.6.1-equivalent forms
+     * are not equivalent to consumers: a reader that takes the first {@code Vary} line — the
+     * conformance harness's header matcher does, and it is not alone — sees only the first
+     * entry of a multi-line answer. Verified against a live run: {@code Vary: Accept} +
+     * {@code Vary: Origin} on two lines read back as just {@code Accept}. Folding is
+     * idempotent, so a response that already lists {@code Origin} is normalised, not doubled.
      *
      * <p>Written as "replace the field with a new list" rather than the obvious
      * {@code headers.add(VARY, ORIGIN)} because {@code add} mutates the existing value list in
@@ -69,23 +93,29 @@ public class OriginVaryFilter implements WebFilter {
      * failed. Copying first is correct in both.
      */
     private static void addOriginToVary(HttpHeaders headers) {
-        if (variesByOrigin(headers)) {
+        // getVary() splits the entries across however many field lines and commas they
+        // arrived on, so this sees the list itself rather than the punctuation. The list it
+        // returns is freshly built (never a view), so it is safe to extend — except the
+        // absent case, which is the shared empty list.
+        List<String> entries = headers.getVary();
+        if (entries.isEmpty()) {
+            headers.set(HttpHeaders.VARY, HttpHeaders.ORIGIN);
             return;
         }
-        List<String> existing = headers.get(HttpHeaders.VARY);
-        List<String> updated =
-                existing == null ? new ArrayList<>() : new ArrayList<>(existing);
-        updated.add(HttpHeaders.ORIGIN);
-        headers.put(HttpHeaders.VARY, updated);
-    }
-
-    /**
-     * Whether {@code Origin} is already listed. {@link HttpHeaders#getVary()} splits the
-     * comma-delimited list of RFC 9110 §5.6.1 across however many field lines it arrived on, so
-     * this sees the entries themselves rather than the punctuation. Field names are
-     * case-insensitive (RFC 9110 §5.1), hence the case-insensitive comparison.
-     */
-    private static boolean variesByOrigin(HttpHeaders headers) {
-        return headers.getVary().stream().anyMatch(HttpHeaders.ORIGIN::equalsIgnoreCase);
+        boolean present = false;
+        for (String entry : entries) {
+            if (HttpHeaders.ORIGIN.equalsIgnoreCase(entry)) {
+                present = true;
+                break;
+            }
+        }
+        if (present && headers.get(HttpHeaders.VARY).size() == 1) {
+            return; // already one folded line naming Origin — nothing to write
+        }
+        if (!present) {
+            entries.add(HttpHeaders.ORIGIN);
+        }
+        // Spring's own rendering of "these entries, one comma-joined field line".
+        headers.setVary(entries);
     }
 }

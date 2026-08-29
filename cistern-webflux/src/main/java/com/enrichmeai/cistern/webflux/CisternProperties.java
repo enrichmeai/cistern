@@ -145,8 +145,8 @@ public record CisternProperties(
      * Allowing credentials would tell the browser to attach cookies and HTTP-auth state to
      * cross-origin pod requests — ambient authority that any page on the web could then spend
      * on the user's behalf. Cistern has no such state to attach: Solid-OIDC authenticates with
-     * an explicit {@code Authorization} header plus a {@code DPoP} proof (both listed in
-     * {@link AllowedRequestHeader}), which a script must set deliberately on each request and
+     * an explicit {@code Authorization} header plus a {@code DPoP} proof (both granted by
+     * preflight, which echoes the request's own header list), set deliberately per request and
      * which the browser never adds by itself. So credentials mode would grant no capability the
      * protocol uses while opening a hole the protocol does not need. See
      * {@code CisternWebFluxConfiguration#cisternCorsWebFilter} for the Fetch-standard

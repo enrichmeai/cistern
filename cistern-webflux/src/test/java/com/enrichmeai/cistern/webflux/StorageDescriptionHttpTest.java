@@ -144,10 +144,12 @@ class StorageDescriptionHttpTest {
     @Test
     @DisplayName("the negotiated response varies by Accept, and still by Origin (§8.1)")
     void theResponseVariesByAccept() {
+        // getVary(), not the raw field list: Vary is ONE comma-joined line since the
+        // OriginVaryFilter fold, so the entries live inside a single value.
         List<String> vary = client.get().uri(WELL_KNOWN).exchange()
                 .expectStatus().isOk()
                 .expectBody().returnResult()
-                .getResponseHeaders().getOrEmpty(HttpHeaders.VARY);
+                .getResponseHeaders().getVary();
 
         assertTrue(vary.contains(HttpHeaders.ACCEPT),
                 "two representations are available, so the cache key includes Accept; got " + vary);

@@ -57,12 +57,16 @@ claim, and because the 28 failing scenarios are the current conformance work que
 | Harness client | MustFeatures | MustScenarios |
 |---|---|---|
 | Official, unmodified | 0 passed / 0 failed / 41 untested | halts in PREPARE SERVER |
-| Same + `ath` (provisional) | 24 passed / 11 failed | 613 passed / 28 failed |
+| Same + `ath` (provisional, 2026-08-28, main `75c0281`) | 24 passed / 11 failed | 613 passed / 28 failed |
+| Same + `ath` (provisional, 2026-08-29, with the T3.3 CORS fix) | 27 passed / 8 failed | 629 passed / 12 failed |
 
-Failure clusters, itemised for T3.3/T5.5: CORS ×5 features (`Vary: Origin` missing, ACAO
-not echoed), WAC write-access ×3 (`write-access-agent`/`-bob`/`-public`),
-`method-not-allowed`, `content-type-reject`, `containment`, and
-`content-negotiation-named-graphs`. Reports for the provisional run are not committed;
+Failure clusters, itemised for T3.3/T5.5 (updated 2026-08-29 after the CORS fix): WAC
+write-access ×3 (`write-access-agent`/`-bob`/`-public`), `method-not-allowed`,
+`content-type-reject`, `containment`, `content-negotiation-named-graphs`, and the two
+CORS preflight features' remaining scenarios — all tagged `@http-redirect`, expecting an
+http→https 301/308 that an http-only test base can never produce. Architect ruling
+2026-08-29: NO skip-tags — the denominator stays whole so every run stays comparable; the
+scenarios stay red until the kit gains a TLS front (#187). Reports for the provisional run are not committed;
 the run log and reproduction recipe live with the session that produced them, and the
 recipe (CSS 7.2.0, `trusted-origins`, `pods.seed`, client credentials) is in the notes
 above. The official row moves only on an unmodified `solidproject/conformance-test-harness`

@@ -28,6 +28,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -464,8 +465,15 @@ class ConditionalRequestHttpTest {
 
         // §15.4.5: the 304 MUST carry the ETag a 200 would have carried...
         assertEquals(etag, result.getResponseHeaders().getFirst(HttpHeaders.ETAG));
-        // ...and Vary, for a representation that was negotiated.
-        assertEquals(HttpHeaders.ACCEPT, result.getResponseHeaders().getFirst(HttpHeaders.VARY));
+        // ...and Vary, for a representation that was negotiated. Membership, not equality,
+        // per the convention ResourceReadHttpTest and StorageDescriptionHttpTest record: the
+        // cache key legitimately grows. Origin is asserted too — it always was present, on a
+        // second field line the old first-line read never saw; the fold made it visible.
+        List<String> vary = result.getResponseHeaders().getVary();
+        assertTrue(vary.stream().anyMatch(HttpHeaders.ACCEPT::equalsIgnoreCase),
+                "Accept in the 304 cache key: " + vary);
+        assertTrue(vary.stream().anyMatch(HttpHeaders.ORIGIN::equalsIgnoreCase),
+                "Origin in the 304 cache key: " + vary);
         // "A 304 response is terminated by the end of the header section; it cannot contain
         // content or trailers."
         byte[] body = result.getResponseBodyContent();

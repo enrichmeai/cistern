@@ -120,40 +120,47 @@ class CorsHttpTest {
     }
 
     @Test
-    @DisplayName("the headers a Solid client sends are all allowed, Authorization by name")
-    void everyHeaderASolidClientSendsIsAllowed() {
-        // The Fetch standard excludes Authorization from the Access-Control-Allow-Headers
-        // wildcard, so a "*" configuration would fail exactly this assertion while appearing to
-        // permit everything. That is why AllowedRequestHeader enumerates rather than wildcards.
-        String requested =
-                String.join(HttpConstants.LIST_SEPARATOR, AllowedRequestHeader.fieldNames());
+    @DisplayName("a preflight's Vary is one folded line — the fold runs outermost")
+    void preflightVaryIsOneFoldedLine() {
+        RawHttp.Response response = preflight("/notes/a.ttl", HttpMethod.PUT);
+        assertSuccessful(response);
+        assertEquals(1, response.all(HttpHeaders.VARY).size(),
+                () -> "one folded Vary field line on a preflight; got " + response.all(HttpHeaders.VARY));
+    }
 
+    /**
+     * Reversal, 2026-08-29, on CTH evidence: this test's predecessor asserted that a header
+     * outside an enumerated set was refused (403). The conformance suite requires the
+     * opposite in both directions — a preflight requesting {@code X-CUSTOM} must see it
+     * granted, and one not requesting {@code Accept} must not see {@code Accept} — which no
+     * fixed list can satisfy. §8.1's "any request and combination of request headers" is the
+     * spec text the suite is holding us to; the grant now echoes the request.
+     */
+    /** A header no spec names — the echo must grant it anyway; send site and assert site share it. */
+    private static final String ARBITRARY_HEADER = "X-Cistern-Not-A-Real-Header";
+
+    @Test
+    @DisplayName("an arbitrary header is granted by echo — and only what was asked for")
+    void anArbitraryHeaderIsEchoed() {
         RawHttp.Response response = RawHttp.request(port, HttpMethod.OPTIONS, "/notes/a.ttl")
                 .header(HttpHeaders.ORIGIN, FAKE_ORIGIN)
                 .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, HttpMethod.PUT.name())
-                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, requested)
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, ARBITRARY_HEADER
+                        + HttpConstants.LIST_SEPARATOR + HttpHeaders.AUTHORIZATION
+                        + HttpConstants.LIST_SEPARATOR + HttpConstants.DPOP)
                 .send();
 
         assertSuccessful(response);
         List<String> granted = listOf(response.first(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS));
-        for (String header : AllowedRequestHeader.fieldNames()) {
+        // The arbitrary header and BOTH Solid-OIDC credential fields: Authorization must be
+        // granted by name, because the Fetch standard excludes it from any literal wildcard —
+        // echo is what makes a browser Solid client able to authenticate at all.
+        for (String header : List.of(ARBITRARY_HEADER, HttpHeaders.AUTHORIZATION, HttpConstants.DPOP)) {
             assertTrue(granted.stream().anyMatch(header::equalsIgnoreCase),
-                    () -> header + " is not granted by preflight, so a browser will never send it");
+                    () -> header + " is not echoed by the preflight grant; got " + granted);
         }
-    }
-
-    @Test
-    @DisplayName("a header outside the set is refused rather than silently granted")
-    void anUnlistedHeaderIsRefused() {
-        // The complement of the test above: without this, an implementation that granted
-        // everything unconditionally would pass and the enumeration would be decorative.
-        RawHttp.Response response = RawHttp.request(port, HttpMethod.OPTIONS, "/notes/a.ttl")
-                .header(HttpHeaders.ORIGIN, FAKE_ORIGIN)
-                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, HttpMethod.PUT.name())
-                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "X-Cistern-Not-A-Real-Header")
-                .send();
-
-        assertEquals(HttpStatus.FORBIDDEN.value(), response.status());
+        assertTrue(granted.stream().noneMatch(HttpHeaders.ACCEPT::equalsIgnoreCase),
+                () -> "Accept was granted without being requested; got " + granted);
     }
 
     @Test
