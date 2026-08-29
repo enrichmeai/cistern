@@ -46,6 +46,27 @@ Then ask, in this order:
 4. **Is anything stacked?** A PR whose base is another branch breaks when the base merges
    with `--delete-branch`. Check `baseRefName`.
 
+## Find out whose PR it is
+
+Every session pushes as the same GitHub user, so authorship identifies nobody. An open PR
+with no owner sits indefinitely because each session assumes it belongs to another — and a
+session that assumes a PR is abandoned may redo the work, or worse, "recover" it.
+
+**When you open a PR, name your session in the body** (and say so in the room). The body is
+the durable half: it survives the room's memory and is there for whoever reads the PR next
+week. The room is the fast half.
+
+When surveying, read the body for an owning session before acting:
+
+```bash
+gh pr view <n> --repo <r> --json headRefName,createdAt,body \
+  --jq '{head:.headRefName, created:.createdAt, body:.body}'
+```
+
+**An unclaimed PR is itself a finding.** Do not build on it, land it, or assume it is
+abandoned. Ask in the room whose it is, and say what you checked — branch name, file paths
+and commit timestamps are usually enough to rule your own session in or out.
+
 ## Check for instructions a later change reversed
 
 A PR that has been open for days can carry guidance that policy has since overturned — an
