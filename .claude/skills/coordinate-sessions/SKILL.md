@@ -61,6 +61,22 @@ to the owner immediately with the compare URL, and treat the work as **unfinishe
 delivered-pending-someone-else. Before assuming a branch is gone, check `git ls-remote --heads`
 rather than a `--contains` query against possibly unfetched refs.
 
+## Git authorship identifies nobody — say which session you are
+
+Every session commits and pushes as the owner, so a PR's author, its sign-off and its commits
+all name the same person no matter which session produced them. Nothing in git tells you who
+to ask about a branch.
+
+This has already caused a false alarm: two sessions on one branch at different stalenesses
+were read as one session's work being swept into another's commit, and a second session raised
+an alarm about a diff whose real cause was a moved ref. Tooling cannot close this — a PR
+listing shows that a PR exists, not whether whoever opened it is still working on it.
+
+- **Name your session when you open a PR** — one line in the body, or say so in the room.
+- **Do not infer ownership from authorship.** Ask; the cost is one message and the alternative
+  is acting on someone else's branch.
+- When you report state, say which branches and PRs are yours **and which you are not taking**.
+
 ## When you touch work that belongs to another session
 
 Tell them, with specifics: what you changed, why, and what you verified. If you find a defect
