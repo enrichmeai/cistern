@@ -109,6 +109,15 @@ That is what "accountability at both ends" means, and this is the beat where you
 **The agent is a principal, not a proxy for you.** It authenticates with its own credential
 and appears in the log under its own name. A grant to it is a grant to it alone.
 
+Be precise about which claim that is, because there are two and this demo makes the weaker
+one. What you see here is **application-level consent**: one credential for the agent, so the
+receipt says *this application* read the file. It does **not** say which person asked it to.
+Per-user attribution is available — configure `agent.credentials.per-user.cistern.<userId>`
+and the pod sees a distinct principal per user — but nothing here does that, and a reader will
+assume the stronger claim unless told. The demo stays single-principal on purpose: the point
+being made is that the agent is a principal at all rather than an extension of you, and a
+per-user credential blurs exactly that.
+
 **Refusal is the normal case.** The agent was refused before the grant and after the
 revocation, and it reported that rather than routing around it. A tool that could work around
 a refusal would make the whole arrangement decorative.
