@@ -41,7 +41,7 @@ fi
 # Other sessions switch branches in ~/projects/cistern. Work committed there rides
 # whatever branch happens to be checked out.
 if printf '%s' "$cmd" | grep -qE '(^|[;&|] *)git +(commit|cherry-pick|rebase)\b'; then
-  if [ "$PWD" = "$SHARED_CHECKOUT" ] && ! printf '%s' "$cmd" | grep -q 'cistern-'; then
+  if [ "$PWD" = "$SHARED_CHECKOUT" ] || [ "${PWD#"$SHARED_CHECKOUT/"}" != "$PWD" ]; then
     deny "Committing from the shared checkout is blocked (CLAUDE.md: never commit from ~/projects/cistern).
 
 Other sessions switch branches in this tree, so a commit here rides whatever branch is
