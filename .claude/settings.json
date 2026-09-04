@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "permissions": {
+    "deny": [
+      "Bash(git add -A*)",
+      "Bash(git add --all*)",
+      "Bash(git add .)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/governance-guard.sh\"",
+            "if": "Bash(git *)",
+            "timeout": 10,
+            "statusMessage": "Checking repo governance rules"
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/governance-guard.sh\"",
+            "if": "Bash(gh *)",
+            "timeout": 10,
+            "statusMessage": "Checking repo governance rules"
+          }
+        ]
+      }
+    ]
+  }
+}
