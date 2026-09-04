@@ -19,3 +19,13 @@ terraform.tfvars
 
 # CTH IdP kit credentials — provisioned locally, never tracked
 cth/idp/users.json
+
+# BMAD Method. The framework itself is committed; these two are not — config.user.toml
+# holds per-developer install answers, and _bmad-output is generated artefacts.
+_bmad/config.user.toml
+_bmad-output/
+
+# Python bytecode. The BMAD skills ship .py scripts with tests; running them
+# leaves caches inside the tracked skill directories.
+__pycache__/
+*.pyc
