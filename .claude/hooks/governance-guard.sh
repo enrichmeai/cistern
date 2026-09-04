@@ -7,7 +7,7 @@
 # guard protects nothing.
 set -uo pipefail
 
-SHARED_CHECKOUT="/Users/josepharuja/projects/cistern"
+SHARED_CHECKOUT="${CISTERN_SHARED_CHECKOUT:-${HOME%/}/projects/cistern}"
 
 payload=$(cat 2>/dev/null) || exit 0
 cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
