@@ -5,3 +5,20 @@
 #
 # [agents.bmad-agent-pm]
 # description = "Prefers short, bulleted PRDs over narrative drafts."
+
+# ── Cistern governance (see CLAUDE.md "Governance") ───────────────────────────
+# BMad supplies the method; the nine Cistern skills in .claude/skills/ supply this
+# repository's mechanics and outrank BMad wherever the two overlap.
+[core]
+document_output_language = "English"
+
+# Every bmad-* skill holds these as standing context, so a run cannot quietly
+# re-derive a rule the project already settled.
+[workflow]
+persistent_facts = [
+  "file:{project-root}/CLAUDE.md",
+  "Never commit from the shared checkout ~/projects/cistern — branch from origin/main in a worktree. A PreToolUse guard enforces this.",
+  "Landing is governed by the land-pr skill, not by a BMad workflow's own git steps. Dev agents never self-merge; the architect merges.",
+  "CTH conformance numbers only move forward, and only an unmodified harness moves the baseline.",
+  "_bmad-output/ is gitignored: anything that must survive the run gets folded into docs/ by that run.",
+]

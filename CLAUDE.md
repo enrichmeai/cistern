@@ -106,6 +106,38 @@ dropping it.
 > one. A skill teaching a reversed policy propagates it silently, which is how the attribution
 > rule nearly outlived its own reversal.
 
+## Governance — one method, one precedence, one guard
+
+**BMad is the default method.** Planning, specification, architecture, story breakdown,
+review and retrospective run through the `bmad-*` skills (`_bmad/`, installed 6.11.0, PR
+#192). Start with `bmad-help` when the right entry point is unclear. Outputs land under
+`_bmad-output/`, which is **gitignored** — a run's working memory is not a deliverable, so
+anything that must survive is folded into `docs/` by the run that produced it.
+
+**The nine Cistern skills below outrank BMad wherever they overlap.** BMad supplies the
+method; these encode *this repository's* mechanics — the conformance ratchet, the shared
+checkout, the worktree discipline, the two-lane CTH rule. So `land-pr` governs landing, not
+`bmad-build`'s own git steps; `run-conformance-harness` governs CTH numbers; `track-open-prs`
+runs before anything is dispatched, reviewed or landed. Where BMad and a Cistern skill
+disagree about repository mechanics, the Cistern skill wins and the BMad step is skipped, not
+argued with. Where they disagree about *method*, BMad wins.
+
+**A guard enforces what attention kept nearly missing.** `.claude/settings.json` registers
+`.claude/hooks/governance-guard.sh` on every `git` and `gh` call. It refuses a blanket
+`git add -A`/`git add .`, refuses `git commit` from the shared checkout, refuses a `git merge`
+that would delete 20+ files relative to `origin/main`, and reminds before `gh pr merge`. Each
+rule is one incident, not a hypothesis:
+
+| Guard | The incident it exists for |
+|---|---|
+| No blanket staging | A `git add -A` in a stale tree reverted four merged PRs and still built green. It later swept another session's file into a commit through a `*.md` glob. |
+| No commit from `~/projects/cistern` | Other sessions switch branches in this tree; a commit here rides whatever is checked out. |
+| No mass-deleting merge | `integration-test2` was 10 commits "ahead" and would have deleted 263 files — the entire BMad install — because it predated that merge. Four other stale branches would delete 266–606 each. |
+| Claim before merging | PR #192 sat unclaimed; squash-merged branches stay "ahead" forever, so "ahead" is not evidence of unlanded work. |
+
+The guard fails open: a guard that breaks the session gets disabled, and a disabled guard
+protects nothing. It is a floor, not a substitute for reading `git status` before you commit.
+
 ## Skills
 
 `.claude/skills/` — invoke rather than re-derive. Written from the tasks that recurred and that
