@@ -26,7 +26,7 @@ warn() {
 # A stray `git add -A` in a stale shared tree once reverted four merged PRs and still
 # built green, because the tests that would have caught it were among the reverted files.
 # Today it swept another session's file into a commit via a glob.
-if printf '%s' "$cmd" | grep -qE '(^|[;&|] *)git +add +(-A\b|--all\b|\. *($|[;&|]))'; then
+if printf '%s' "$cmd" | grep -qE '(^|[;&|] *)git +add +(-A\b|--all\b|\.\/? *($|[;&|]))'; then
   deny "git add -A / git add . is blocked in this repo (CLAUDE.md: shared-checkout hazard).
 
 A blanket stage cannot tell your work from another session's, and once reverted four merged
