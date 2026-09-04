@@ -24,3 +24,8 @@ cth/idp/users.json
 # holds per-developer install answers, and _bmad-output is generated artefacts.
 _bmad/config.user.toml
 _bmad-output/
+
+# Python bytecode. The BMAD skills ship .py scripts with tests; running them
+# leaves caches inside the tracked skill directories.
+__pycache__/
+*.pyc
