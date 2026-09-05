@@ -163,14 +163,19 @@ process is not a licence to short-circuit. Correspondingly, **an MCP connection 
 principal**: one credential, one pod address, fixed for the life of the server. Serving a
 second principal means running a second front door.
 
-**AD-14 — The principal carries the client, and only `cistern-acp` may read it.** The
-authenticated principal is `Agent(Optional<URI> webId, Optional<URI> client)`, populated
-once at authentication and read downstream from the Reactor context. `client` is **inert**
-outside a future `cistern-acp`: it may be recorded in decision records and receipts, and it
-must not influence an access decision anywhere else. `WacEngine` matches on the WebID
-alone. Taken at T4.3 because T4.1's capture from a real IdP settled the question — the
-*access* token carries `client_id` (CSS 7.2.0 emits it; `azp` is ID-token only), so the
-client is knowable at authentication with no extra round trip.
+**AD-14 — The principal carries the client, and `WacEngine` reads it under AD-15 and
+AD-16.** The authenticated principal is `Agent(Optional<URI> webId, Optional<URI> client)`,
+populated once at authentication and read downstream from the Reactor context. `WacEngine`
+**may** match on `client`, and only under both guards that make a widening accident
+unreachable: AD-15 admits the client dimension solely as an intersection, so a client match
+can never be another way to be allowed in; and AD-16's third condition keeps the evaluation
+behind a default-off flag until the WAC suite is green. Outside those guards `client` stays
+inert — recordable in decision records and receipts, never a widening term anywhere. Taken
+at T4.3 because T4.1's capture from a real IdP settled the question — the *access* token
+carries `client_id` (CSS 7.2.0 emits it; `azp` is ID-token only), so the client is knowable
+at authentication with no extra round trip. Amended 2026-09-05 by
+[ADR 0004](adr/0004-agent-scoped-delegation.md), which replaces the original confinement of
+client-aware evaluation to a future `cistern-acp`.
 
 **AD-15 — A delegation may only narrow: intersection, never union.**
 `effective(user, client, resource) = accessFor(user, resource) ∩ accessFor(client, resource)`.
@@ -326,7 +331,9 @@ Not decided here, each with the reason it can wait.
   because AD-9 is the rule the whole authority story rests on.
 - **Solid-OIDC provider (issuing tokens).** Cistern validates tokens from any IdP and is
   not an IdP. A v2 decision; nothing in v1 depends on the answer.
-- **ACP evaluator scheduling.** AD-14, AD-15 and AD-16 fix the rules `cistern-acp` must
+- **ACP proper — the matcher algebra and `acp:AccessControlResource`, and its scheduling.**
+  ADR 0004 removes client scoping as `cistern-acp`'s reason to exist; what remains of ACP is
+  still a phase in its own right. AD-14, AD-15 and AD-16 fix the rules `cistern-acp` must
   satisfy; *when* it is built is not decided here. Revisit at the Phase 5 exit, when the WAC
   suite result is known. It is a phase in its own right, and estimating it as a fold-in is
   how the Phase 5 estimate gets wrecked.

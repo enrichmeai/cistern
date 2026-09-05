@@ -7,7 +7,7 @@ paradigm: 'ports and adapters (hexagonal), with a Spring-free domain core'
 scope: 'The whole Cistern server — core, storage backends, HTTP, auth, WAC, MCP, CLI, starter, app. Governs backlog phases 0–7 as epics; T<phase>.<n> tickets are the stories.'
 status: final
 created: '2026-09-03'
-updated: '2026-09-04'
+updated: '2026-09-05'
 binds:
   - 'Phase 0 Bootstrap (#5)'
   - 'Phase 1 Core semantics (#11)'
@@ -242,7 +242,7 @@ graph TD
   — records through that type or extends it there; it does not append a second schema to a
   log `JsonLinesDecisionQuery` and `ReceiptsHandler` must be able to read whole.
 
-### AD-14 — The principal carries the client, and only `cistern-acp` may read it [ADOPTED, extended]
+### AD-14 — The principal carries the client, and `WacEngine` reads it under AD-15 and AD-16 [ADOPTED, extended; AMENDED 2026-09-05]
 
 - **Binds:** `cistern-core`, `cistern-auth`, `cistern-wac`, `cistern-webflux`, `cistern-mcp`
 - **Prevents:** the first consumer of `Agent.client()` setting the precedent by accident —
@@ -250,9 +250,15 @@ graph TD
   allowed in.
 - **Rule:** the authenticated principal is `Agent(Optional<URI> webId, Optional<URI> client)`,
   populated once at authentication and read downstream from the Reactor context.
-  `client` is **inert** outside a future `cistern-acp`: it may be recorded in decision
-  records and receipts, and it must not influence an access decision anywhere else.
-  `WacEngine` matches on the WebID alone.
+  `WacEngine` **may** match on `client`, and only under both guards that make the original
+  fear unreachable: AD-15 admits the client dimension solely as an intersection, so a client
+  match can never be another way to be allowed in; and AD-16(3) keeps the evaluation behind a
+  default-off flag until the WAC suite is green. Outside those guards `client` stays inert —
+  recordable in decision records and receipts, and never a widening term anywhere.
+
+  *Amended 2026-09-05 by [ADR 0004](../adr/0004-agent-scoped-delegation.md).* This AD
+  previously confined client-aware evaluation to a future `cistern-acp`. The epic spine
+  [`delegation/ARCHITECTURE-SPINE.md`](delegation/ARCHITECTURE-SPINE.md) governs the detail.
 
 ### AD-15 — A delegation may only narrow: intersection, never union
 
