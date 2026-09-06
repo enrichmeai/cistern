@@ -30,7 +30,15 @@ public record EffectiveAcl(Model graph, AclScope scope, ResourceIdentifier sourc
         Objects.requireNonNull(source, "source");
     }
 
-    /** The ACL resource this was read from — the URI to advertise as {@code Link: rel="acl"}. */
+    /**
+     * The ACL resource this was read from, which may be an ancestor's when authority is
+     * inherited.
+     *
+     * <p>Not the {@code Link: rel="acl"} URI. That header names the target's <em>own</em> ACL
+     * via {@code AclResource.aclFor}, because advertising the ancestor that happens to govern
+     * would disclose the shape of the tree above the target and would point a client editing
+     * permissions at the wrong resource.
+     */
     public ResourceIdentifier aclResource() {
         return AclResource.of(source);
     }

@@ -92,18 +92,4 @@ public final class AccessControl {
                 .map(acl -> engine.decide(acl, agent))
                 .defaultIfEmpty(AccessDecision.DENIED);
     }
-
-    /**
-     * The ACL resource governing {@code target}, for the {@code Link: rel="acl"} header.
-     *
-     * <p>Falls back to the target's own ACL URI when none exists yet, because the header
-     * advertises <em>where the ACL would live</em> — a client needs that URI precisely in
-     * order to create one.
-     */
-    public Mono<ResourceIdentifier> aclResourceFor(ResourceIdentifier target) {
-        Objects.requireNonNull(target, "target");
-        return discovery.findFor(target)
-                .map(EffectiveAcl::aclResource)
-                .defaultIfEmpty(AclResource.of(target));
-    }
 }
