@@ -173,7 +173,7 @@ class AclDiscoveryTest {
         }
 
         @Test
-        @DisplayName("the walk advertises the ACL URI for the Link: rel=\"acl\" header")
+        @DisplayName("the walk reports which ACL resource authority was read from")
         void advertisesAclUri() {
             writeAcl(ROOT + "notes/", "default", ROOT + "notes/");
 
