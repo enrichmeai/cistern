@@ -159,7 +159,7 @@ flowchart TD
     R[Request] --> P[PrincipalResolver chain]
     P --> A["Agent(webId, client)"]
     A --> F[AuthorizationFilter]
-    F --> E["WacEngine.decide(acl, agent, clock)"]
+    F --> E["WacEngine.decide(acl, agent)"]
     E --> U["accessFor(user)<br/>portable WAC — AD-DEL-1"]
     E --> C["accessFor(client)<br/>empty clients ⇒ unconstrained — AD-15"]
     E --> T["validUntil vs Clock<br/>fail-closed — AD-DEL-4"]
