@@ -159,10 +159,11 @@ flowchart TD
     R[Request] --> P[PrincipalResolver chain]
     P --> A["Agent(webId, client)"]
     A --> F[AuthorizationFilter]
-    F --> E["WacEngine.decide(acl, agent)"]
-    E --> U["accessFor(user)<br/>portable WAC — AD-DEL-1"]
-    E --> C["accessFor(client)<br/>empty clients ⇒ unconstrained — AD-15"]
-    E --> T["validUntil vs Clock<br/>fail-closed — AD-DEL-4"]
+    F --> E["WacEngine.decide(acl, agent)<br/>Clock is a constructor collaborator — AD-DEL-6"]
+    E --> N["one private narrowing path<br/>both overloads funnel here — AD-DEL-6"]
+    N --> U["accessFor(user)<br/>portable WAC — AD-DEL-1"]
+    N --> C["accessFor(client)<br/>empty clients ⇒ unconstrained — AD-15"]
+    N --> T["validUntil vs Clock<br/>fail-closed — AD-DEL-4"]
     U --> X["∩ intersection only"]
     C --> X
     T --> X
