@@ -481,7 +481,11 @@ against the jar after `k8s/demo.sh`:
 
 `outcome` is `ALLOWED`, `DENIED_UNAUTHENTICATED` (401 — a scanner or a misconfigured client)
 or `DENIED_FORBIDDEN` (403 — a named agent outside its grant, the line the owner wants to see);
-`required` is the `AccessMode` the request needed on `target`. The interval is half-open,
+`required` is the `AccessMode` the request needed on `target`. `requestId` is the request's
+`X-Request-Id` — the client's own when it was well-formed (1–128 characters from
+`A-Za-z0-9._~:/+=-`; anything else is replaced, never refused), otherwise the UUID the server
+minted — and is the value echoed on that request's response, so the refusal an application
+logged in step 5 and this receipt meet on one value. The interval is half-open,
 `[from, to)`, ISO 8601 instants; both default to the whole log. The query is itself a decision
 (Control on the resource) and appears in the log like any other. Records are read back in the
 order they were taken.

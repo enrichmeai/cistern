@@ -30,11 +30,15 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -501,11 +505,35 @@ class ReceiptsHttpTest {
     @DisplayName("X-Request-Id: honoured, minted, echoed, recorded")
     class Correlation {
 
-        @Test
+        /**
+         * Well-formed client identifiers, through the whole chain: an application's own trace
+         * id, and one exactly at the cap — the boundary {@code RequestIdTest} pins on the value
+         * type, pinned here on the wire so the filter cannot be trimming or refusing early.
+         */
+        static Stream<Arguments> wellFormedClientIds() {
+            return Stream.of(
+                    Arguments.of("an application trace id", "app-trace-" + UNIQUE.incrementAndGet()),
+                    Arguments.of("an id exactly at the cap", "c".repeat(RequestId.MAX_LENGTH)));
+        }
+
+        /**
+         * Not identifiers, through the whole chain: whitespace, one character over the cap, and
+         * a non-ASCII value — the three shapes a proxy or a careless client most plausibly
+         * sends. {@code RequestIdTest} covers the alphabet exhaustively on the value type; these
+         * pin that the filter replaces rather than refuses, on the response and in the receipt.
+         */
+        static Stream<Arguments> malformedClientIds() {
+            return Stream.of(
+                    Arguments.of("whitespace", "has spaces in it"),
+                    Arguments.of("one character over the cap", "x".repeat(RequestId.MAX_LENGTH + 1)),
+                    Arguments.of("non-ASCII", "über"));
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("wellFormedClientIds")
         @DisplayName("a well-formed client id is echoed and written into the receipt")
-        void clientIdIsHonoured() {
+        void clientIdIsHonoured(String shape, String requestId) {
             String note = unique("/notes-%d/hello");
-            String requestId = "app-trace-" + UNIQUE.incrementAndGet();
 
             client.get().uri(note).header(HttpConstants.X_REQUEST_ID, requestId).exchange()
                     .expectStatus().isUnauthorized()
@@ -528,18 +556,22 @@ class ReceiptsHttpTest {
             assertEquals(new RequestId(echoed), theOneRecord().requestId());
         }
 
-        @Test
-        @DisplayName("a malformed client id is not an error — it is replaced")
-        void malformedIdIsReplaced() {
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("malformedClientIds")
+        @DisplayName("a malformed client id is not an error — a minted one replaces it on the response and in the receipt")
+        void malformedIdIsReplaced(String shape, String malformed) {
             String note = unique("/notes-%d/hello");
 
-            String echoed = client.get().uri(note).header(HttpConstants.X_REQUEST_ID, "has spaces in it").exchange()
+            String echoed = client.get().uri(note).header(HttpConstants.X_REQUEST_ID, malformed).exchange()
                     .expectStatus().isUnauthorized()
                     .returnResult(Void.class).getResponseHeaders().getFirst(HttpConstants.X_REQUEST_ID);
 
             assertNotNull(echoed);
-            assertNotEquals("has spaces in it", echoed);
+            assertNotEquals(malformed, echoed);
             assertTrue(RequestId.parse(echoed).isPresent());
+            // The receipt carries the minted id, never the client's malformed value: what the
+            // owner can query and what the client was told are one value.
+            assertEquals(new RequestId(echoed), theOneRecord().requestId());
         }
 
         @Test
