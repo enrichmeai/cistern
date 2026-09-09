@@ -478,6 +478,10 @@ regression.
   rate limiting, request-id propagation for T5.9. DoD: a ValueDocs test instance over TLS with
   T4.0 auth and the owner secret unset; `k8s/demo.sh` passes remotely with a JWT/service
   credential; restore drill documented in `docs/deploy.md`. Issue #94.
+  *Request-id propagation shipped in #114 (`X-Request-Id` honoured when well-formed, minted
+  otherwise, echoed on every response, written into the receipt) and #122 (forwarded across
+  the edge); the oversize and non-ASCII cases are pinned through the filter chain and into the
+  receipt in `ReceiptsHttpTest.Correlation`. The rest of this ticket is unchanged.*
 - [ ] **T7.8 Integration architecture & application playbook.** `docs/INTEGRATION.md`:
   architecture as built, integration model, step-by-step playbook (ValueDocs worked example)
   with curl verified against the jar, derived-data rule, first-cut interfaces and module
