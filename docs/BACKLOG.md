@@ -480,8 +480,8 @@ regression.
   credential; restore drill documented in `docs/deploy.md`. Issue #94.
   *Request-id propagation shipped in #114 (`X-Request-Id` honoured when well-formed, minted
   otherwise, echoed on every response, written into the receipt) and #122 (forwarded across
-  the edge); the oversize and non-ASCII cases are pinned through the filter chain and into the
-  receipt in `ReceiptsHttpTest.Correlation`. The rest of this ticket is unchanged.*
+  the edge); #198 pins the oversize and non-ASCII cases through the filter chain and into the
+  receipt (`ReceiptsHttpTest.Correlation`). The rest of this ticket is unchanged.*
 - [ ] **T7.8 Integration architecture & application playbook.** `docs/INTEGRATION.md`:
   architecture as built, integration model, step-by-step playbook (ValueDocs worked example)
   with curl verified against the jar, derived-data rule, first-cut interfaces and module
