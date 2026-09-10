@@ -29,9 +29,12 @@ import reactor.core.publisher.Mono;
  * {@code PUT} whose content the server transformed, which is every Turtle or JSON-LD document.
  * Either way the state file ends up holding what a later {@code If-Match} needs.
  *
- * <p>The local file is read and the state file written inside the chain. This is a
- * command-line tool with one thing to do; ground rule 3 is about request threads on the
- * server, and there are none here.
+ * <p>The local file is read and the state file written inside the chain, on whichever thread
+ * the previous step left off on. This is a command-line tool with one thing to do: the actions
+ * are sequenced by {@code concatMap}, so exactly one request and one file operation are in
+ * flight at any moment and there is nothing for a blocking read to delay. Ground rule 3 is
+ * about request threads on the server, where blocking one starves other requests; there are no
+ * other requests here (architect ruling on Copilot's review of PR #202).
  */
 final class Synchronizer {
 

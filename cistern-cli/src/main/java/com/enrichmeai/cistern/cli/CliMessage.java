@@ -227,6 +227,11 @@ public enum CliMessage {
     /** path, cause */
     STATE_FILE_UNWRITABLE("Could not write %s: %s"),
 
+    /** path — the state file, or its temporary, is a symbolic link */
+    STATE_FILE_IS_A_LINK(
+            "%s is a symbolic link. The sync state is never read or written through one, since"
+                    + " that would read or overwrite whatever it points at; remove the link"),
+
     /** path, detail — the state file exists but is not this tool's shape */
     STATE_FILE_MALFORMED(
             "%s cannot be read as this tool's sync state (%s). Move it aside to start afresh;"

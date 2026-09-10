@@ -846,6 +846,8 @@ aside to start afresh, or to send the folder somewhere else as well.
 what the folder once sent and no longer holds — documents under `If-Match`, then their emptied
 containers; without it such entries are counted and left. Symbolic links and files named
 `*.acl` are skipped, with a message: a mirrored `.acl` would change who may read the folder.
+The state file is not read or written through a link either, so a folder that arrived from
+elsewhere cannot point it at something outside the folder.
 The document loops in `governed-ai-demo/seed.sh` and `integration-kit/seed.sh` are the intended
 next users of this command (#201).
 

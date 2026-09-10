@@ -1,5 +1,6 @@
 package com.enrichmeai.cistern.cli;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -83,6 +84,10 @@ class SyncStateTest {
             "[]",
             "{\"target\": \"T\", \"resources\": {}}",
             "{\"version\": 2, \"target\": \"T\", \"resources\": {}}",
+            // intValue() truncates, so these must be refused on their own account, not read as 1.
+            "{\"version\": 1.5, \"target\": \"T\", \"resources\": {}}",
+            "{\"version\": \"1\", \"target\": \"T\", \"resources\": {}}",
+            "{\"version\": true, \"target\": \"T\", \"resources\": {}}",
             "{\"version\": 1, \"resources\": {}}",
             "{\"version\": 1, \"target\": \"docs/\", \"resources\": {}}",
             "{\"version\": 1, \"target\": \"http://127.0.0.1:3737/docs\", \"resources\": {}}",
@@ -144,6 +149,52 @@ class SyncStateTest {
             assertEquals(CliMessage.STATE_FILE_OTHER_TARGET.format(folder.resolve(SyncStateFile.NAME), TARGET.uri(), ELSEWHERE.uri()),
                     failure.getMessage());
             assertEquals(ExitCode.FAILURE, CisternCli.exitCodeFor(failure));
+        }
+
+        /**
+         * A folder can arrive from somewhere else. A planted link where the state file — or its
+         * temporary — goes would otherwise have this class read, or overwrite, whatever it points
+         * at: {@code Files.writeString} through a symlink writes the target, measured.
+         */
+        @Test
+        void neverReadsOrWritesThroughASymbolicLink() throws IOException {
+            Path elsewhere = Files.writeString(folder.resolve("private.txt"), "a private file\n");
+            Path state = folder.resolve(SyncStateFile.NAME);
+            Files.createSymbolicLink(state, elsewhere);
+
+            CliFailure.LocalFolder onRead = assertThrows(CliFailure.LocalFolder.class,
+                    () -> SyncStateFile.in(folder, TARGET));
+            assertEquals(CliMessage.STATE_FILE_IS_A_LINK.format(state), onRead.getMessage());
+            assertEquals("a private file\n", Files.readString(elsewhere), "not read, and certainly not written");
+
+            Files.delete(state);
+            SyncStateFile file = SyncStateFile.in(folder, TARGET);
+            Files.createSymbolicLink(folder.resolve(SyncStateFile.NAME + ".tmp"), elsewhere);
+
+            CliFailure.LocalFolder onWrite = assertThrows(CliFailure.LocalFolder.class,
+                    () -> file.remember(REPORT, SENT));
+            assertEquals(CliMessage.STATE_FILE_IS_A_LINK.format(folder.resolve(SyncStateFile.NAME + ".tmp")),
+                    onWrite.getMessage());
+            assertEquals("a private file\n", Files.readString(elsewhere), "the link's target is untouched");
+            assertEquals(ExitCode.FAILURE, CisternCli.exitCodeFor(onWrite));
+        }
+
+        /**
+         * {@code Files.readString}/{@code writeString} are specified as UTF-8 whatever the
+         * platform default is, and the stream write in {@code save()} says UTF-8 explicitly. A
+         * non-ASCII path is the case that would show a lapse either way.
+         */
+        @Test
+        void nonAsciiPathsRoundTripThroughTheFile() throws IOException {
+            RelativePath accented = new RelativePath("rapports/résumé — été.md");
+            SyncStateFile file = SyncStateFile.in(folder, TARGET);
+
+            file.remember(accented, SENT);
+
+            assertArrayEquals(Files.readAllBytes(folder.resolve(SyncStateFile.NAME)),
+                    Files.readString(folder.resolve(SyncStateFile.NAME)).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    "the bytes on disk are UTF-8");
+            assertEquals(SENT, SyncStateFile.in(folder, TARGET).current().get(accented).orElseThrow());
         }
 
         @Test

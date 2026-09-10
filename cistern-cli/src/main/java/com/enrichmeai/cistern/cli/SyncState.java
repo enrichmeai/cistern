@@ -123,7 +123,9 @@ record SyncState(ResourceIdentifier target, SortedMap<RelativePath, SyncedResour
             throw new IllegalArgumentException(CliMessage.STATE_FILE_NOT_JSON.format(e.getMessage()), e);
         }
         JsonValue version = root.get(VERSION_FIELD);
-        if (!(version instanceof JsonNumber number) || number.intValue() != FORMAT_VERSION) {
+        // isIntegral as well as the value: JsonNumber.intValue() truncates, so a version of 1.5
+        // would otherwise read as 1 and a file this class never wrote would be treated as its own.
+        if (!(version instanceof JsonNumber number) || !number.isIntegral() || number.intValue() != FORMAT_VERSION) {
             throw new IllegalArgumentException(
                     CliMessage.STATE_FILE_VERSION.format(version == null ? null : version.toString(), FORMAT_VERSION));
         }
