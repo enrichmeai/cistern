@@ -79,7 +79,7 @@ Facts an integrator relies on, all observed on 2026-08-18:
 | `cistern-mcp` | built (T6.1/T6.2, #37/#38) | the MCP front door: seven tools (`read-resource`, `list-container`, `write-resource`, `delete-resource`, `grant`, `revoke`, `receipts`) over stdio, every call a real loopback HTTP request as one statically bound principal (`cistern.mcp.credential`); ships the standalone bridge jar Claude Desktop launches. Not needed for an HTTP application |
 | `cistern-spring-boot-starter` | scaffold | T7.1 |
 | `cistern-app` | built | runnable server; config only |
-| `cistern-cli` | built (T5.7, T5.6) | the `cistern` command: `pod create`, `grant`, `revoke` over HTTP with the caller's credential (picocli, shaded jar; `bin/cistern`). |
+| `cistern-cli` | built (T5.7, T5.6, T7.17) | the `cistern` command: `pod create`, `sync`, `grant`, `revoke` over HTTP with the caller's credential (picocli, shaded jar; `bin/cistern`). |
 | Packaging | built | Docker, `docker-compose.yml`, `k8s/`, `infra/terraform` (gated by ADR 0001) |
 
 ### 1.3 Built vs planned, for an application
@@ -93,6 +93,7 @@ Facts an integrator relies on, all observed on 2026-08-18:
 | A person through one application only | ✅ T6.5 (#119): `cistern grant <webid> --client <client-id>` writes `cistern:client`; the server evaluates it with `cistern.wac.delegation.enabled=true` (default off), a delegation only narrows, and the receipt says `narrowedBy: CLIENT` when it capped a request | expiry (#92) |
 | Create pods/matters on demand | ✅ T5.6 (#90): `cistern.pods.seed[]` at boot, `cistern pod create` over HTTP, `PodProvisioner` for embedders | — |
 | Author grants without hand-writing Turtle | ✅ T5.7 (#91): `cistern grant` / `revoke` + `GrantService` | — |
+| Get a folder of documents into a pod | ✅ T7.17 (#200): `cistern sync <local-dir> <pod-path>` — conditional writes, a state file, `--dry-run`, `--delete` (§6.6) | — |
 | Grants that expire | ❌ | **#92** T5.8 |
 | Receipts (who read what, under which grant) | ✅ T5.9 (#93): every decision recorded with the deciding ACL; `GET ?receipts` for the Control holder | — |
 | Internet-facing deployment | ✅ T7.7 (#94): ADR 0002 conditions, enforcement guard, Terraform HTTPS-LB path, k8s production overlay, backups + restore drill (`deploy.md`) — built and validated, not yet applied by EnrichMeAI | a first ValueDocs instance over TLS (their project); hosted model #103 |
@@ -813,6 +814,7 @@ public interface ResourceStore { Mono<StoredResource> get(ResourceIdentifier); M
 
 ```
 cistern pod create   --root </firms/acme/> --owner <webid>                     [--base <url>] [--token <cred>]   built
+cistern sync         <local-dir> <pod-path> [--dry-run] [--delete]             [--base <url>] [--token <cred>]   built (#200)
 cistern grant        <webid|public> --read|--write|--append|--control <path>   [--base <url>] [--token <cred>]   built
 cistern revoke       <webid|public> <path>                                     [--base <url>] [--token <cred>]   built
 cistern receipts     <path> [--from … --to …]                            not built — GET <path>?receipts is the surface today (#93)
@@ -821,6 +823,31 @@ cistern receipts     <path> [--from … --to …]                            not
 `pod create` is `GET <root>.acl` (200 → already a pod, nothing written), then `PUT <root>/`
 and `PUT <root>.acl` both under `If-None-Match: *`; the server enforces Write and Control at
 the root. Exit 0 created or already there (as the owner); 2 refused; 3 conflict.
+
+`sync` mirrors a folder into a container (T7.17, #200) — the way a company's documents get
+into a pod without a hand-written loop of `PUT`s. Each sub-folder becomes a container
+(`PUT` under `If-None-Match: *`; one already there is left as it is), each file a resource at
+`<pod-path>` plus its relative path, sent as the media type its extension names (`.md`,
+`.pdf`, `.csv`, `.ttl`, … — a closed table, `FileMediaType`; anything else
+`application/octet-stream`). A `.ttl` goes as `text/turtle` and the server parses it; the CLI
+never does. Every write is conditional — `If-None-Match: *` for a file never sent,
+`If-Match: <etag>` for one sent before — and a 412 is exit 3 naming the resource: the pod's
+copy stands, nothing is retried, and the message says how to reconcile.
+
+What was sent is remembered in **`<local-dir>/.cistern-sync.json`**: the container it was
+sent to, then relative path → `etag` + `sha256` for a document, a container by its trailing
+slash. A second run with nothing changed therefore sends nothing at all; a run cut short resumes
+from what arrived; a folder mirrors into one place, so a run against a different container is
+refused rather than carrying the first one's validators there. The file is plain JSON, meant to
+be read — and, after a conflict, corrected — by the person whose folder it sits in. Move it
+aside to start afresh, or to send the folder somewhere else as well.
+
+`--dry-run` prints the plan and sends nothing. **`--delete`** (off by default) also removes
+what the folder once sent and no longer holds — documents under `If-Match`, then their emptied
+containers; without it such entries are counted and left. Symbolic links and files named
+`*.acl` are skipped, with a message: a mirrored `.acl` would change who may read the folder.
+The document loops in `governed-ai-demo/seed.sh` and `integration-kit/seed.sh` are the intended
+next users of this command (#201).
 
 `--until <ISO-8601>` on `grant` arrives with #92. `cistern-cli` is a shaded executable jar
 (`cistern-cli/target/cistern-cli-<version>.jar`, picocli); `bin/cistern` wraps it; `--token`

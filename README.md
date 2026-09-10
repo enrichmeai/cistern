@@ -117,6 +117,20 @@ owner** — no authorization layer, which is fine for hacking on the server and 
 holding anything. To run your own build the way the published image runs, use the
 `docker run` command above with `cistern:local` in place of the tag.
 
+The CLI you build here (`cistern-cli/target/cistern-cli-*.jar`) also has **`cistern sync`**
+(T7.17, #200), which the `0.2.0` release above predates: it mirrors a folder into a pod
+container, sending each file once under a conditional `PUT` and remembering what it sent in
+`<local-dir>/.cistern-sync.json`, so a second run with nothing changed sends nothing.
+
+```bash
+java -jar cistern-cli/target/cistern-cli-*.jar sync ./documents /firms/acme/docs/ --dry-run   # the plan, nothing sent
+java -jar cistern-cli/target/cistern-cli-*.jar sync ./documents /firms/acme/docs/             # 201s, then 204s only for what changed
+```
+
+`--delete` (off by default) also removes what the folder no longer holds; a copy that changed on
+the pod since it was sent is never overwritten (exit `3`). Details in
+[docs/INTEGRATION.md §6.6](docs/INTEGRATION.md#66-cli-90-built-91-built).
+
 ## Modules
 
 `cistern-core` (LDP semantics, storage SPI) · `cistern-storage-file` · `cistern-webflux`

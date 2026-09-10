@@ -10,9 +10,9 @@ final class Usage {
 
     static final String COMMAND_NAME = "cistern";
     static final String COMMAND_DESCRIPTION =
-            "Provisions pods and authors Web Access Control grants against a running Cistern"
-                    + " server, with your own credential. The server enforces acl:Control; this"
-                    + " tool only writes the files.";
+            "Provisions pods, mirrors folders into them and authors Web Access Control grants"
+                    + " against a running Cistern server, with your own credential. The server"
+                    + " enforces acl:Write and acl:Control; this tool only writes the files.";
 
     static final String POD_NAME = "pod";
     static final String POD_DESCRIPTION = "Pods: containers with an owner of their own.";
@@ -32,6 +32,32 @@ final class Usage {
     static final String OWNER_OPTION = "--owner";
     static final String OWNER_DESCRIPTION = "The owner's WebID: an absolute URI.";
     static final String WEBID_PARAM = "<webid>";
+
+    static final String SYNC_NAME = "sync";
+    static final String DRY_RUN_OPTION = "--dry-run";
+    static final String DELETE_OPTION = "--delete";
+    static final String SYNC_DESCRIPTION =
+            "Mirror a folder into a container on the pod: sub-folders become containers, new"
+                    + " files are created, changed files replaced, unchanged files not sent, and"
+                    + " — only with " + DELETE_OPTION + " — resources this folder once sent and no"
+                    + " longer holds are removed. Every write is conditional: a copy edited on"
+                    + " the pod since it was sent is never overwritten (exit 3).%nWhat was sent is"
+                    + " remembered in the folder's " + SyncStateFile.NAME + " file, so a second run"
+                    + " with nothing changed sends nothing.";
+    static final String LOCAL_DIR_PARAM = "<local-dir>";
+    static final String LOCAL_DIR_DESCRIPTION =
+            "The folder to mirror. Symbolic links and files named *.acl are skipped, with a"
+                    + " message; the state file is never sent.";
+    static final String SYNC_TARGET_DESCRIPTION =
+            "The container on the server to mirror into, ending in '/', e.g. /firms/acme/docs/."
+                    + " Each file lands at that path plus its relative path, media type from its"
+                    + " extension (.md, .pdf, .csv, .ttl, …; anything else application/octet-stream).";
+    static final String DRY_RUN_DESCRIPTION =
+            "Print what would be sent and stop: nothing is sent, nothing is remembered.";
+    static final String DELETE_DESCRIPTION =
+            "Also remove from the pod what this folder once sent and no longer holds. Off by"
+                    + " default. A document is removed only if it is still the one that was sent"
+                    + " (If-Match); a container only once it is empty.";
 
     static final String GRANT_NAME = "grant";
     static final String GRANT_DESCRIPTION =
@@ -82,11 +108,12 @@ final class Usage {
     static final String EXIT_CODES_HEADING = "Exit codes:%n";
     static final String EXIT_OK = ExitCode.Values.OK + ":ok";
     static final String EXIT_FAILURE =
-            ExitCode.Values.FAILURE + ":failure (bad arguments, network, unexpected response)";
+            ExitCode.Values.FAILURE + ":failure (bad arguments, network, unexpected response, unusable folder)";
     static final String EXIT_REFUSED =
             ExitCode.Values.REFUSED + ":refused (401/403 from the server, or a revoke that would drop Control)";
     static final String EXIT_CONFLICT =
-            ExitCode.Values.CONFLICT + ":conflict (the ACL changed while being edited; nothing written)";
+            ExitCode.Values.CONFLICT + ":conflict (the resource changed underneath — an ACL while being"
+                    + " edited, a pod copy since it was synced; nothing written)";
 
     private Usage() {
         // constants only

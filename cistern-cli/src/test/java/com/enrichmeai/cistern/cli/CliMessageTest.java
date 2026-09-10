@@ -15,8 +15,12 @@ import org.junit.jupiter.params.provider.EnumSource;
  */
 class CliMessageTest {
 
-    /** More arguments than any template consumes; format ignores the surplus. {@code %d} slots get ints. */
-    private static final Object[] ARGUMENTS = {"a", "b", 3, "d"};
+    /**
+     * More arguments than any template consumes; format ignores the surplus. All numbers, because
+     * {@code %s} takes anything and {@code %d} takes only a number — so every slot of every
+     * template is satisfied, wherever its counts fall.
+     */
+    private static final Object[] ARGUMENTS = {1, 2, 3, 4, 5, 6, 7, 8};
 
     @ParameterizedTest
     @EnumSource(CliMessage.class)
