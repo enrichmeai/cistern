@@ -16,6 +16,7 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
@@ -97,6 +98,8 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
     private final RequestPaths paths;
     private final DecisionSink sink;
     private final Clock clock;
+    private final ServerEndpoints endpoints;
+    private final AuthenticationChallenge challenge;
 
     /**
      * @param sink where receipts go — already wrapped in the deployment's {@code AuditPolicy},
@@ -107,12 +110,16 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
             AccessControl accessControl,
             RequestPaths paths,
             DecisionSink sink,
-            Clock clock) {
+            Clock clock,
+            ServerEndpoints endpoints,
+            AuthenticationChallenge challenge) {
         this.principals = Objects.requireNonNull(principals, "principals");
         this.accessControl = Objects.requireNonNull(accessControl, "accessControl");
         this.paths = Objects.requireNonNull(paths, "paths");
         this.sink = Objects.requireNonNull(sink, "sink");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.endpoints = Objects.requireNonNull(endpoints, "endpoints");
+        this.challenge = Objects.requireNonNull(challenge, "challenge");
     }
 
     @Override
@@ -143,6 +150,17 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
         RequestId requestId = RequestId.parse(request.getHeaders().getFirst(HttpConstants.X_REQUEST_ID))
                 .orElseGet(RequestId::generate);
         exchange.getResponse().getHeaders().set(HttpConstants.X_REQUEST_ID, requestId.value());
+
+        // A reserved server endpoint (T6.4) is not a pod resource: it has no ACL, so Web Access
+        // Control cannot judge it, and its access policy is stated rather than discovered. The
+        // OAuth protected resource metadata a client must read *before* it holds a credential is
+        // one of these, served to anyone; the MCP door is another, open to any authenticated
+        // agent, with per-tool-call WAC deciding what the pod itself then permits. Neither leaves
+        // a receipt here (there is no target to record) nor carries an acl link (there is none).
+        Optional<ServerEndpoint> reserved = endpoints.at(request.getPath().value());
+        if (reserved.isPresent()) {
+            return serveEndpoint(exchange, chain, reserved.get());
+        }
 
         ResourceIdentifier target = paths.identifierFor(request.getPath().value());
         List<AccessRequirement> requirements = requirementsFor(request, target);
@@ -274,9 +292,28 @@ public final class AuthorizationFilter implements WebFilter, Ordered {
                 unauthenticated ? HttpStatus.UNAUTHORIZED : HttpStatus.FORBIDDEN);
         if (unauthenticated) {
             exchange.getResponse().getHeaders()
-                    .set(HttpHeaders.WWW_AUTHENTICATE, HttpConstants.WWW_AUTHENTICATE_CHALLENGE);
+                    .set(HttpHeaders.WWW_AUTHENTICATE, challenge.headerValue());
         }
         return exchange.getResponse().setComplete();
+    }
+
+    /**
+     * Serve a reserved endpoint under its stated {@link EndpointAccess}. A {@link EndpointAccess#PUBLIC}
+     * one is passed straight through — the metadata document is what a client reads before it can
+     * authenticate, so requiring a credential here would make the whole discovery flow a dead end.
+     * An {@link EndpointAccess#AUTHENTICATED} one resolves the principal and refuses an anonymous
+     * request with the same 401 and challenge a pod resource would, publishing the agent for the
+     * endpoint's own handler; it takes no Web Access Control decision, because the endpoint names
+     * no resource for one to be about — the door opens for anyone who proved who they are, and the
+     * pod decides the rest when the door makes a request of it.
+     */
+    private Mono<Void> serveEndpoint(ServerWebExchange exchange, WebFilterChain chain, ServerEndpoint endpoint) {
+        if (endpoint.access() == EndpointAccess.PUBLIC) {
+            return chain.filter(exchange);
+        }
+        return principals.resolve(exchange).flatMap(agent -> agent.isAuthenticated()
+                ? chain.filter(exchange).contextWrite(context -> context.put(AGENT_CONTEXT_KEY, agent))
+                : refuse(exchange, agent));
     }
 
     /**

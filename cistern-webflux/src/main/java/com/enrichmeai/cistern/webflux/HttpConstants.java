@@ -24,16 +24,26 @@ final class HttpConstants {
     static final String WAC_ALLOW_PUBLIC = "public";
 
     /**
-     * The challenge sent with a 401 (RFC 9110 §11.6.1, RFC 9449 §7.1).
+     * RFC 9728 §5.1 — the {@code WWW-Authenticate} parameter carrying "the URL of the protected
+     * resource metadata". Named once: the template below emits it and the tests read it.
+     */
+    static final String RESOURCE_METADATA_PARAMETER = "resource_metadata";
+
+    /**
+     * The challenge sent with a 401 (RFC 9110 §11.6.1, RFC 9449 §7.1, RFC 9728 §5.1), as a
+     * template over the metadata URL; {@link AuthenticationChallenge} renders it once.
      *
      * <p>Both schemes, because both are accepted: {@code Bearer} for an application's own
      * credential, {@code DPoP} for Solid-OIDC. A client choosing between them reads this, and
      * advertising only {@code Bearer} would tell a Solid client to retry the one way that
      * cannot work — RFC 9449 §7.1 has the resource server list {@code DPoP} with the
-     * signature algorithms it will accept, which is what {@code algs} carries.
+     * signature algorithms it will accept, which is what {@code algs} carries. Each scheme
+     * names the metadata document (T6.4), so a client following either learns where to obtain
+     * a credential without reading the other's parameters.
      */
-    static final String WWW_AUTHENTICATE_CHALLENGE =
-            "Bearer realm=\"cistern\", DPoP realm=\"cistern\", algs=\"ES256 RS256\"";
+    static final String WWW_AUTHENTICATE_CHALLENGE_TEMPLATE =
+            "Bearer realm=\"cistern\", " + RESOURCE_METADATA_PARAMETER + "=\"%s\","
+                    + " DPoP realm=\"cistern\", algs=\"ES256 RS256\", " + RESOURCE_METADATA_PARAMETER + "=\"%s\"";
 
     /** LDP 1.0 §7.1.2 — media types acceptable in a {@code POST} to this container. */
     static final String ACCEPT_POST = "Accept-Post";

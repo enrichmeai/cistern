@@ -279,11 +279,72 @@ public class CisternWebFluxConfiguration {
     @ConditionalOnProperty(prefix = "cistern.owner", name = "web-id")
     public AuthorizationFilter cisternAuthorizationFilter(
             PrincipalResolver principals, AccessControl accessControl, RequestPaths paths,
-            DecisionSink decisionSink, CisternProperties properties) {
+            DecisionSink decisionSink, CisternProperties properties,
+            ServerEndpoints endpoints, AuthenticationChallenge challenge) {
         // The audit policy is applied here, around whatever DecisionSink the context holds, so
         // that replacing the sink (an embedder, a test) does not silently replace the policy.
         DecisionSink guarded = AuditPolicy.of(properties.audit().required()).guard(decisionSink);
-        return new AuthorizationFilter(principals, accessControl, paths, guarded, Clock.systemUTC());
+        return new AuthorizationFilter(principals, accessControl, paths, guarded, Clock.systemUTC(),
+                endpoints, challenge);
+    }
+
+    // ---- OAuth protected resource metadata and reserved endpoints (T6.4) -------------
+
+    /**
+     * The OAuth 2.0 Protected Resource Metadata document (RFC 9728), served — like the storage
+     * description — from a route ordered ahead of the catch-alls, on the three read methods only.
+     * The {@link ServerEndpoint} it declares is {@link EndpointAccess#PUBLIC}: a client reads this
+     * before it holds any credential, so {@code AuthorizationFilter} lets it through even under
+     * enforcement, and {@link #cisternReservedEndpointRoutes} turns a {@code PUT} here into a 405
+     * rather than a stored resource.
+     */
+    @Bean
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    public RouterFunction<ServerResponse> cisternOAuthProtectedResourceRoutes(
+            ProtectedResourceMetadata metadata, ProtectedResourceMetadataHandler handler) {
+        RequestPredicate path = RequestPredicates.path(metadata.endpoint().path());
+        return RouterFunctions
+                .route(RequestPredicates.method(HttpMethod.GET)
+                        .or(RequestPredicates.method(HttpMethod.HEAD))
+                        .and(path), handler::read)
+                .andRoute(RequestPredicates.method(HttpMethod.OPTIONS).and(path), handler::options);
+    }
+
+    /**
+     * Every reserved endpoint the context declared (T6.4), gathered in one place so the filter and
+     * the routes cannot disagree about which paths are not pod storage. The metadata endpoint is
+     * always present; a module that opens a door — cistern-mcp's {@code /mcp} — contributes a
+     * {@link ServerEndpoint} bean, collected here.
+     */
+    @Bean
+    public ServerEndpoints cisternServerEndpoints(
+            ProtectedResourceMetadata metadata, ObjectProvider<ServerEndpoint> contributed) {
+        List<ServerEndpoint> declared = new ArrayList<>();
+        declared.add(metadata.endpoint());
+        contributed.orderedStream().forEach(declared::add);
+        ServerEndpoints endpoints = new ServerEndpoints(declared);
+        OAuthProtectedResource resource = metadata.resource();
+        log.info(WebfluxMessage.PROTECTED_RESOURCE_WIRED.format(
+                metadata.url(), resource.resource(),
+                resource.authorizationServer().map(java.net.URI::toString).orElse("(none configured)")));
+        log.info(WebfluxMessage.SERVER_ENDPOINTS_WIRED.format(
+                endpoints.all().stream()
+                        .map(endpoint -> endpoint.path() + " " + endpoint.access())
+                        .collect(Collectors.joining(RESOLVER_LIST_SEPARATOR))));
+        return endpoints;
+    }
+
+    /**
+     * The method-not-allowed guard for every reserved path (T6.4): a method a reserved endpoint
+     * does not serve is a 405 with {@code Allow}, ordered ahead of the catch-alls so a {@code PUT}
+     * to {@code /.well-known/oauth-protected-resource} or {@code /mcp} is refused rather than
+     * routed to the write handler and stored. The served methods fall through to the endpoint's
+     * own routes.
+     */
+    @Bean
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    public RouterFunction<ServerResponse> cisternReservedEndpointRoutes(ServerEndpoints endpoints) {
+        return endpoints.methodNotAllowedRoutes();
     }
 
     // ---- Receipts (T5.9) -------------------------------------------------------------
