@@ -22,10 +22,12 @@ import reactor.core.publisher.Mono;
  * document's bytes, ask a validator, delete — over the JDK's {@link HttpClient}, composed as
  * {@link Mono}s so the editor, the provisioner and the synchronizer can chain and retry them.
  *
- * <p>Deliberately no other requests. The CLI does not read a document, does not list
+ * <p>Deliberately no other requests. The CLI never fetches a document's body, does not list
  * containers, does not probe permissions: it does exactly what an owner working by hand would
  * do, with the caller's own credential, so that whatever the server would refuse the owner it
- * refuses the CLI. Every non-2xx answer this class has a rule for becomes a
+ * refuses the CLI. The one read of any kind is {@link #validator} — a {@code HEAD}, for the
+ * {@code ETag} a later {@code If-Match} needs, which returns no body and which the server
+ * gates on {@code acl:Read}. Every non-2xx answer this class has a rule for becomes a
  * {@link CliFailure}; every one it does not is {@link CliFailure.UnexpectedStatus} rather than
  * a guess.
  *

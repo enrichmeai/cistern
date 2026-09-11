@@ -65,8 +65,9 @@ record SyncPlan(List<SyncAction> actions, List<RelativePath> unchanged, List<Rel
                     .filter(SyncedResource.Document.class::isInstance)
                     .map(SyncedResource.Document.class::cast);
             if (sent.isEmpty()) {
-                // Never sent — or sent as a container of this name, which on the pod is a
-                // different resource (Solid Protocol §3.1), so still a create.
+                // Never sent. The filter above is a total match over the sealed type rather than
+                // a case that can occur: an entry's kind follows the trailing slash of its key
+                // (Solid Protocol §3.1), so a document's key never carries a container entry.
                 actions.add(new SyncAction.Create(document, resource));
             } else if (sent.get().sha256().equals(document.sha256())) {
                 unchanged.add(document.path());

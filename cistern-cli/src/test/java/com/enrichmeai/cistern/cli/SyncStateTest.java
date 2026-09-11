@@ -84,8 +84,16 @@ class SyncStateTest {
             "[]",
             "{\"target\": \"T\", \"resources\": {}}",
             "{\"version\": 2, \"target\": \"T\", \"resources\": {}}",
-            // intValue() truncates, so these must be refused on their own account, not read as 1.
+            // Three spellings that are not the "1" this class writes, each refused by a different
+            // half of the guard: intValue() truncates a fraction and wraps a long, so 1.5 and
+            // 4294967297 both read as 1; isIntegral() catches 1.5 and 1.0 but not the wrap;
+            // intValueExact() catches the wrap but would accept 1.0.
             "{\"version\": 1.5, \"target\": \"T\", \"resources\": {}}",
+            "{\"version\": 1.0, \"target\": \"T\", \"resources\": {}}",
+            "{\"version\": 4294967297, \"target\": \"T\", \"resources\": {}}",
+            "{\"version\": 18446744073709551617, \"target\": \"T\", \"resources\": {}}",
+            // A document entry carries etag and sha256 and nothing else.
+            "{\"version\": 1, \"target\": \"T\", \"resources\": {\"a.md\": {\"etag\": \"\\\"x\\\"\", \"sha256\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"mtime\": 7}}}",
             "{\"version\": \"1\", \"target\": \"T\", \"resources\": {}}",
             "{\"version\": true, \"target\": \"T\", \"resources\": {}}",
             "{\"version\": 1, \"resources\": {}}",

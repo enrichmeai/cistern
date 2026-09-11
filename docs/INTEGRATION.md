@@ -842,6 +842,17 @@ refused rather than carrying the first one's validators there. The file is plain
 be read — and, after a conflict, corrected — by the person whose folder it sits in. Move it
 aside to start afresh, or to send the folder somewhere else as well.
 
+Two edges of that resume are worth stating, because a run can stop between a write and its
+record. `sync` remembers a document only once it holds that document's validator, and for a
+Turtle or JSON-LD resource the validator comes from a `HEAD` after the `PUT` — RFC 9110 §9.3.4
+forbids one on the response to a `PUT` whose content the server transformed. So **mirroring RDF
+documents needs `acl:Read` alongside `acl:Write`**; with Write alone the run stops and names the
+`HEAD` and the status it got. And where that `HEAD` fails after its `PUT` succeeded, the bytes
+are on the pod but unrecorded: the next run plans a create, the server answers 412, and the run
+stops with the conflict message above rather than overwriting. Both cases stop and say which
+resource; neither writes anything the person did not ask for, and the state file never claims a
+validator it does not have.
+
 `--dry-run` prints the plan and sends nothing. **`--delete`** (off by default) also removes
 what the folder once sent and no longer holds — documents under `If-Match`, then their emptied
 containers; without it such entries are counted and left. Symbolic links and files named

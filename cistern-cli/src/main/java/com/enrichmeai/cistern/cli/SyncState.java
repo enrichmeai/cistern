@@ -9,8 +9,10 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 import jakarta.json.Json;
 import jakarta.json.JsonException;
@@ -123,9 +125,7 @@ record SyncState(ResourceIdentifier target, SortedMap<RelativePath, SyncedResour
             throw new IllegalArgumentException(CliMessage.STATE_FILE_NOT_JSON.format(e.getMessage()), e);
         }
         JsonValue version = root.get(VERSION_FIELD);
-        // isIntegral as well as the value: JsonNumber.intValue() truncates, so a version of 1.5
-        // would otherwise read as 1 and a file this class never wrote would be treated as its own.
-        if (!(version instanceof JsonNumber number) || !number.isIntegral() || number.intValue() != FORMAT_VERSION) {
+        if (!(version instanceof JsonNumber number) || !isFormatVersion(number)) {
             throw new IllegalArgumentException(
                     CliMessage.STATE_FILE_VERSION.format(version == null ? null : version.toString(), FORMAT_VERSION));
         }
@@ -138,6 +138,37 @@ record SyncState(ResourceIdentifier target, SortedMap<RelativePath, SyncedResour
         TreeMap<RelativePath, SyncedResource> resources = new TreeMap<>();
         entries.forEach((key, value) -> resources.put(pathOf(key), resourceOf(key, value)));
         return new SyncState(targetOf(target.getString()), resources);
+    }
+
+    /**
+     * Whether {@code number} is exactly {@link #FORMAT_VERSION}, spelled as this class spells it.
+     * Both guards are needed, and neither alone is enough — measured against jakarta.json 2.0.1,
+     * which is the version the CLI pins:
+     *
+     * <pre>
+     *                        intValue()  isIntegral()  intValueExact()
+     *   1                    1           true          1
+     *   1.0                  1           false         1
+     *   1.5                  1           false         ArithmeticException
+     *   4294967297           1           true          ArithmeticException
+     * </pre>
+     *
+     * {@code intValue()} truncates a fraction <em>and</em> wraps a long, so {@code 1.5} and
+     * {@code 4294967297} both read as {@code 1}. {@code isIntegral()} catches the fraction but
+     * not the wrap; {@code intValueExact()} catches the wrap but accepts {@code 1.0}, which this
+     * class never writes. Together they admit {@code 1} and refuse every other spelling, which
+     * is the rule the rest of this parser follows: refuse what it did not write.
+     */
+    private static boolean isFormatVersion(JsonNumber number) {
+        if (!number.isIntegral()) {
+            return false;
+        }
+        try {
+            return number.intValueExact() == FORMAT_VERSION;
+        } catch (ArithmeticException e) {
+            // "not an int at all" is the answer, not a failure to report.
+            return false;
+        }
     }
 
     private static ResourceIdentifier targetOf(String text) {
@@ -177,6 +208,17 @@ record SyncState(ResourceIdentifier target, SortedMap<RelativePath, SyncedResour
                 || !(fields.get(SHA256_FIELD) instanceof JsonString sha256)) {
             throw new IllegalArgumentException(CliMessage.STATE_FILE_BAD_ENTRY.format(
                     key, CliMessage.STATE_FILE_DOCUMENT_FIELDS.format(ETAG_FIELD, SHA256_FIELD)));
+        }
+        // A document entry carries these two and nothing else, as a container entry carries
+        // nothing: this class refuses what it did not write, and a field it does not know is
+        // either a hand-edit that will not do what its author expects or another tool's file.
+        // A later shape travels with a new FORMAT_VERSION, which is what tells the two apart.
+        Set<String> unexpected = new TreeSet<>(fields.keySet());
+        unexpected.removeAll(Set.of(ETAG_FIELD, SHA256_FIELD));
+        if (!unexpected.isEmpty()) {
+            throw new IllegalArgumentException(CliMessage.STATE_FILE_BAD_ENTRY.format(key,
+                    CliMessage.STATE_FILE_UNEXPECTED_FIELDS.format(
+                            String.join(CliMessage.LIST_SEPARATOR.format(), unexpected))));
         }
         try {
             return new SyncedResource.Document(new EntityTagHeader(etag.getString()), new ContentHash(sha256.getString()));

@@ -264,6 +264,9 @@ public enum CliMessage {
     /** etag field, sha256 field */
     STATE_FILE_DOCUMENT_FIELDS("a document entry needs string '%s' and '%s'"),
 
+    /** the field names that were not expected */
+    STATE_FILE_UNEXPECTED_FIELDS("unexpected field(s): %s"),
+
     /** The revoke was refused by the grant service (its own message follows). */
     REVOKE_REFUSED("Refused: %s"),
 
