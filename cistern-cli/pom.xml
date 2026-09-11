@@ -10,13 +10,16 @@
   </parent>
   <artifactId>cistern-cli</artifactId>
   <name>Cistern :: CLI</name>
-  <description>The `cistern` command: authors grants and revocations against a running server over HTTP, with the caller's own credential.</description>
+  <description>The `cistern` command: provisions pods, mirrors folders into them and authors grants and revocations against a running server over HTTP, with the caller's own credential.</description>
 
   <properties>
     <cli.main-class>com.enrichmeai.cistern.cli.CisternCli</cli.main-class>
     <!-- 3.6.2 (2026-03-05): latest stable maven-shade-plugin at 2026-08-19. Declared here rather
          than in the parent: this is the only module that ships a fat jar. -->
     <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
+    <!-- The version jena-arq 6.1.0 already brings (through titanium-json-ld), pinned to the same
+         number so the shaded jar carries one copy. -->
+    <jakarta-json-bundle.version>2.0.1</jakarta-json-bundle.version>
   </properties>
 
   <dependencies>
@@ -45,6 +48,15 @@
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
+    </dependency>
+    <!-- Jakarta JSON-P (API and provider in one bundle) for the sync state file,
+         <local-dir>/.cistern-sync.json. Already on the classpath as Jena's JSON-LD dependency;
+         declared because the CLI now uses it directly (SyncState), not left to a transitive path
+         that a Jena upgrade could drop. No new jar. -->
+    <dependency>
+      <groupId>org.glassfish</groupId>
+      <artifactId>jakarta.json</artifactId>
+      <version>${jakarta-json-bundle.version}</version>
     </dependency>
     <!-- Jena and the WAC engine log through SLF4J; a CLI without a binding prints SLF4J's own
          "no providers" warning on every run. Simple binding, WARN and above to stderr. -->

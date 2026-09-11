@@ -1,7 +1,9 @@
 package com.enrichmeai.cistern.cli;
 
-/** The HTTP methods the CLI issues — a closed set of two. */
+/** The HTTP methods the CLI issues — a closed set of four. */
 enum PodMethod {
     GET,
-    PUT
+    HEAD,
+    PUT,
+    DELETE
 }

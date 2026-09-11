@@ -9,25 +9,28 @@ import java.util.Optional;
  */
 enum PodStatus {
 
-    /** {@code GET} of an existing ACL. */
+    /** {@code GET} or {@code HEAD} of an existing resource. */
     OK(200),
 
-    /** {@code PUT} created the ACL. */
+    /** {@code PUT} created the resource. */
     CREATED(201),
 
-    /** {@code PUT} replaced the ACL. */
+    /** {@code PUT} replaced the resource; {@code DELETE} removed it. */
     NO_CONTENT(204),
 
     /** No credential, or an invalid one: the operation is refused. */
     UNAUTHORIZED(401),
 
-    /** Authenticated but not holding {@code acl:Control} on the resource: refused. */
+    /** Authenticated but not holding the required mode: refused. */
     FORBIDDEN(403),
 
-    /** The ACL does not exist here; the effective one is an ancestor's. */
+    /** The resource does not exist here — for an ACL, the effective one is an ancestor's. */
     NOT_FOUND(404),
 
-    /** {@code If-Match} / {@code If-None-Match} failed: the ACL changed since it was read. */
+    /** {@code DELETE} of a container that still has members (Solid Protocol §5.4). */
+    CONFLICT(409),
+
+    /** {@code If-Match} / {@code If-None-Match} failed: the resource changed since it was read. */
     PRECONDITION_FAILED(412);
 
     private final int code;
@@ -40,7 +43,7 @@ enum PodStatus {
         return code;
     }
 
-    /** Whether {@code status} is one of the two refusals the server enforces Control with. */
+    /** Whether {@code status} is one of the two refusals the server enforces access with. */
     boolean isRefusal() {
         return this == UNAUTHORIZED || this == FORBIDDEN;
     }

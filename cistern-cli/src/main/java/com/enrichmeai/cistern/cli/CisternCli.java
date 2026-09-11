@@ -10,23 +10,26 @@ import picocli.CommandLine.IVersionProvider;
 
 /**
  * The {@code cistern} command: {@code grant} and {@code revoke} (T5.7), {@code pod create}
- * (T5.6), over HTTP against a running server, with the caller's own credential.
+ * (T5.6), {@code sync} (T7.17), over HTTP against a running server, with the caller's own
+ * credential.
  *
  * <p>The tool authors the file; the server enforces who may. There is no privileged path — a
  * {@code cistern grant} is exactly the {@code PUT <target>.acl} the owner could do by hand, a
- * {@code cistern pod create} exactly the {@code PUT <root>/} and {@code PUT <root>/.acl}, and
- * each is refused exactly when that would be. What the tool adds is that the file it writes is
- * always the right shape (see {@code GrantService} and {@code PodProvisioner}): the owner is
- * never locked out, a container grant always reaches inside the container, a new pod's owner
- * holds everything and nobody else anything, and the result is read back and reported in plain
- * language.
+ * {@code cistern pod create} exactly the {@code PUT <root>/} and {@code PUT <root>/.acl}, a
+ * {@code cistern sync} exactly the conditional {@code PUT}s of each file, and each is refused
+ * exactly when that would be. What the tool adds is that the file it writes is always the
+ * right shape (see {@code GrantService} and {@code PodProvisioner}): the owner is never locked
+ * out, a container grant always reaches inside the container, a new pod's owner holds
+ * everything and nobody else anything, a folder reaches the pod without a hand-written loop
+ * and without ever overwriting a copy that changed there, and the result is read back and
+ * reported in plain language.
  *
  * <p>Exit codes are {@link ExitCode}; the mapping from a failure to a code happens in one place,
  * {@link #exitCodeFor}, and every message is a {@link CliMessage}.
  */
 @Command(name = Usage.COMMAND_NAME, description = Usage.COMMAND_DESCRIPTION,
         mixinStandardHelpOptions = true, versionProvider = CisternCli.Version.class,
-        subcommands = {PodCommand.class, GrantCommand.class, RevokeCommand.class},
+        subcommands = {PodCommand.class, SyncCommand.class, GrantCommand.class, RevokeCommand.class},
         exitCodeListHeading = Usage.EXIT_CODES_HEADING,
         exitCodeList = {Usage.EXIT_OK, Usage.EXIT_FAILURE, Usage.EXIT_REFUSED, Usage.EXIT_CONFLICT},
         exitCodeOnInvalidInput = ExitCode.Values.FAILURE,
@@ -64,6 +67,8 @@ public final class CisternCli {
             case CliFailure.UnexpectedStatus _ -> ExitCode.FAILURE;
             case CliFailure.MissingValidator _ -> ExitCode.FAILURE;
             case CliFailure.Transport _ -> ExitCode.FAILURE;
+            case CliFailure.ContainerNotEmpty _ -> ExitCode.FAILURE;
+            case CliFailure.LocalFolder _ -> ExitCode.FAILURE;
             case CisternException.Conflict _ -> ExitCode.REFUSED;
             default -> ExitCode.FAILURE;
         };
