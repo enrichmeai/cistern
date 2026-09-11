@@ -4,8 +4,10 @@ import com.enrichmeai.cistern.core.Agent;
 import com.enrichmeai.cistern.webflux.auth.BearerToken;
 import com.enrichmeai.cistern.webflux.auth.PrincipalResolver;
 
+import java.net.URI;
 import java.time.Clock;
 import java.util.Objects;
+import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +29,13 @@ import reactor.core.publisher.Mono;
  * not verify, or an issuer that cannot be reached all resolve to {@link Agent#ANONYMOUS} and
  * are logged (at a level chosen by the {@link JwtRejectionReason}); nothing here signals an
  * error, so a bad token is a 401 where a grant was needed and nothing at all where it was not.
+ *
+ * <p>Since T6.5 the agent also carries the <em>client</em> the token was issued to, read by
+ * {@link ClientIdentifier} — {@code client_id} first, {@code azp} second, because the Keycloak
+ * captures show a user's access token names its client in {@code azp} alone. Only an absolute
+ * URI counts; an opaque client id reads as no client. The client is never a way in: the WAC
+ * engine reads it only to narrow (AD-15), so this resolver populating it can refuse a request a
+ * delegation constrained, and can widen nothing.
  */
 public final class OidcJwtPrincipalResolver implements PrincipalResolver {
 
@@ -65,9 +74,15 @@ public final class OidcJwtPrincipalResolver implements PrincipalResolver {
                 case WebIdMapping.Result.Unmapped unmapped ->
                         anonymous(JwtVerdict.Rejected.of(unmapped.reason(), unmapped.detail()));
                 case WebIdMapping.Result.WebId webId -> {
-                    log.debug(AuthMessage.TOKEN_ACCEPTED.format(
-                            webId.uri(), accepted.claims().getIssuer(), accepted.claims().getSubject()));
-                    yield Agent.of(webId.uri());
+                    Optional<URI> client = ClientIdentifier.from(accepted.claims(), ClientIdentifier.BEARER_CLAIMS);
+                    if (log.isDebugEnabled()) {
+                        log.debug(client.isPresent()
+                                ? AuthMessage.TOKEN_ACCEPTED_VIA_CLIENT.format(webId.uri(), client.get(),
+                                        accepted.claims().getIssuer(), accepted.claims().getSubject())
+                                : AuthMessage.TOKEN_ACCEPTED.format(
+                                        webId.uri(), accepted.claims().getIssuer(), accepted.claims().getSubject()));
+                    }
+                    yield Agent.of(webId.uri(), client);
                 }
             };
         };

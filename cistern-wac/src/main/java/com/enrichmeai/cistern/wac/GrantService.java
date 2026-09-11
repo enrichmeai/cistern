@@ -3,8 +3,10 @@ package com.enrichmeai.cistern.wac;
 import com.enrichmeai.cistern.core.CisternException;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.vocab.Acl;
+import com.enrichmeai.cistern.core.vocab.Cistern;
 import com.enrichmeai.cistern.core.vocab.Foaf;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
@@ -23,7 +25,7 @@ import org.apache.jena.rdf.model.Statement;
 import org.apache.jena.vocabulary.RDF;
 
 /**
- * Authors grants and revocations as edits to an ACL graph (T5.7).
+ * Authors grants and revocations as edits to an ACL graph (T5.7; delegation under T6.5).
  *
  * <p>Pure: no I/O, no Spring, no store. Given the ACL that governs a resource today (as
  * {@link AclDiscovery} finds it) and a request, it returns the graph that should govern the
@@ -50,11 +52,28 @@ import org.apache.jena.vocabulary.RDF;
  *       authorization granting Control is refused ({@link CisternException.Conflict}) rather
  *       than performed. Every agent who held Control on a resource before any sequence of
  *       grants and revokes still holds it after — the property test states exactly that.</li>
+ *   <li><strong>A client constraint is written beside the grantee, never instead of it</strong>
+ *       (ADR 0004, AD-DEL-1, AD-DEL-2). A {@link GrantRequest} with clients writes
+ *       {@code cistern:client} triples onto an authorization that still names the grantee by
+ *       {@code acl:agent} or {@code acl:agentClass}, so a server that does not read the term
+ *       applies the WebID's grant as it stands. A constrained grant merges only into an
+ *       authorization with exactly the same constraint: widening an unconstrained rule with a
+ *       mode the owner meant for one client would grant it through every client, and adding a
+ *       client to a shared rule would narrow someone else's grant. A re-stated Control-holder
+ *       keeps its constraint, for the same reason it keeps its modes — carrying the rule down
+ *       without it would widen it. A request with clients and no grantee is refused by
+ *       {@link GrantRequest} itself, before anything here runs.</li>
  * </ul>
  *
  * <p>Edits are made to the graph, not to a lossy model of it: an authorization the owner wrote
  * by hand keeps whatever else it says ({@code acl:agentGroup}, an {@code rdfs:comment}, a mode
  * this server does not evaluate). Only the triples a request is about are added or removed.
+ *
+ * <p>What the outcome reports is read back through {@link WacEngine#parse(Model, AclScope,
+ * DelegationMode)} with delegation {@link DelegationMode#ENABLED enabled}, whatever the server
+ * that will enforce the ACL has configured: this service writes the constraint, so its report
+ * of the graph names it. Whether a given server <em>evaluates</em> it is that server's
+ * {@code cistern.wac.delegation.enabled}, and the CLI's option text says so.
  *
  * <p>Thread-safe and stateless; a single instance may be shared.
  */
@@ -80,28 +99,32 @@ public final class GrantService {
     /** The predicates that say <em>what</em> an authorization covers. */
     private static final List<Property> TARGET_PREDICATES = List.of(Acl.ACCESS_TO, Acl.DEFAULT);
 
-    /** What is carried over when an inherited Control-holder is re-stated on the target. */
+    /**
+     * What is carried over when an inherited Control-holder is re-stated on the target: who,
+     * what modes, and every Cistern constraint — re-stating a rule without its constraint would
+     * widen it (AD-15).
+     */
     private static final List<Property> RESTATED_PREDICATES =
-            List.of(Acl.AGENT, Acl.AGENT_CLASS, Acl.AGENT_GROUP, Acl.MODE);
+            List.of(Acl.AGENT, Acl.AGENT_CLASS, Acl.AGENT_GROUP, Acl.MODE, Cistern.CLIENT);
 
     private static final Comparator<Resource> STABLE_ORDER = Comparator.comparing(Resource::toString);
-
-    private final WacEngine engine = new WacEngine();
 
     /**
      * The ACL that should govern {@code request.target()} once the grant is applied.
      *
      * <p>Merges into the grantee's existing authorization for the target when there is one
-     * that names exactly this grantee and exactly this target; otherwise adds a new one.
-     * WAC composes authorizations additively, so a shared authorization ("Alice and Bob may
-     * read") is left alone and the grantee gets their own — the effective modes are the union
-     * either way, and widening a rule that also names someone else would be a grant to them.
+     * that names exactly this grantee, exactly this target and exactly this client constraint;
+     * otherwise adds a new one. WAC composes authorizations additively, so a shared
+     * authorization ("Alice and Bob may read") is left alone and the grantee gets their own —
+     * the effective modes are the union either way, and widening a rule that also names someone
+     * else would be a grant to them. The same holds across constraints: a rule for "Alice via
+     * one client" and a rule for "Alice" are different grants, and each keeps its own.
      *
      * @param current the ACL that governs the target today, as discovery found it — the
      *                target's own, or an ancestor's under {@link AclScope#INHERITED}
      * @param request what to grant
      * @return the graph to write at {@code <target>.acl}, or (unchanged) the ACL as it stands if
-     *     the grantee already held every requested mode there
+     *     the grantee already held every requested mode there under the same constraint
      * @throws IllegalArgumentException if {@code current} cannot govern the target
      */
     public GrantOutcome grant(EffectiveAcl current, GrantRequest request) {
@@ -113,14 +136,18 @@ public final class GrantService {
         ResourceIdentifier aclResource = AclResource.of(target);
         Model acl = baseline(current, target, aclResource);
         Resource targetNode = acl.createResource(target.uri().toString());
+        Set<RDFNode> clientTerms = clientTerms(request);
         boolean changed = !isOwn(current, target);
 
-        Optional<Resource> existing = ownAuthorization(acl, request.grantee(), targetNode);
+        Optional<Resource> existing = ownAuthorization(acl, request.grantee(), targetNode, clientTerms);
         Resource authorization;
         if (existing.isPresent()) {
             authorization = existing.get();
         } else {
-            authorization = newAuthorization(acl, aclResource, request.grantee(), targetNode);
+            if (request.isClientConstrained()) {
+                acl.setNsPrefix(Cistern.PREFIX, Cistern.NS);
+            }
+            authorization = newAuthorization(acl, aclResource, request.grantee(), targetNode, clientTerms);
             changed = true;
         }
         for (AccessMode mode : request.modes()) {
@@ -140,10 +167,11 @@ public final class GrantService {
      * The ACL that should govern {@code request.target()} once the grantee's authorizations for
      * it are removed.
      *
-     * <p>Removes exactly the grantee's authority on exactly this target and nothing else. An
-     * authorization that also names other agents keeps them; one that also covers other
-     * resources keeps covering them for the grantee — the graph is split so that every other
-     * (agent, resource) pair reads the same before and after.
+     * <p>Removes exactly the grantee's authority on exactly this target and nothing else —
+     * constrained and unconstrained alike, since a revoke takes back everything the grantee
+     * was granted there. An authorization that also names other agents keeps them; one that
+     * also covers other resources keeps covering them for the grantee — the graph is split so
+     * that every other (agent, resource) pair reads the same before and after.
      *
      * @return the graph to write at {@code <target>.acl}, or (unchanged) the ACL as it stands if
      *     the grantee held nothing on the target
@@ -270,7 +298,8 @@ public final class GrantService {
 
     /**
      * The authorizations that name {@code grantee} and cover {@code target} through any of
-     * {@code predicates} — everything the grantee holds on the target, shared or not.
+     * {@code predicates} — everything the grantee holds on the target, shared or not,
+     * constrained or not.
      */
     private static List<Resource> naming(Model acl, Grantee grantee, Resource target, List<Property> predicates) {
         List<Resource> found = new ArrayList<>();
@@ -284,16 +313,19 @@ public final class GrantService {
     }
 
     /**
-     * The authorization that is the grantee's <em>own</em> for {@code target}: names exactly this
-     * grantee (no other agent, class or group) and exactly this target ({@code acl:accessTo}
-     * the target and nothing else; {@code acl:default} the target or nothing). Only such an
-     * authorization can safely be widened by adding a mode.
+     * The authorization that is the grantee's <em>own</em> for {@code target} under exactly
+     * {@code clientTerms}: names exactly this grantee (no other agent, class or group), exactly
+     * this target ({@code acl:accessTo} the target and nothing else; {@code acl:default} the
+     * target or nothing), and exactly these clients (none, for an unconstrained request). Only
+     * such an authorization can safely be widened by adding a mode.
      */
-    private static Optional<Resource> ownAuthorization(Model acl, Grantee grantee, Resource target) {
+    private static Optional<Resource> ownAuthorization(
+            Model acl, Grantee grantee, Resource target, Set<RDFNode> clientTerms) {
         for (Resource authorization : authorizations(acl)) {
             if (namesOnly(authorization, grantee)
                     && objects(authorization, Acl.ACCESS_TO).equals(Set.of(target))
-                    && Set.of(target).containsAll(objects(authorization, Acl.DEFAULT))) {
+                    && Set.of(target).containsAll(objects(authorization, Acl.DEFAULT))
+                    && objects(authorization, Cistern.CLIENT).equals(clientTerms)) {
                 return Optional.of(authorization);
             }
         }
@@ -317,14 +349,26 @@ public final class GrantService {
         return objects;
     }
 
+    /** The request's clients as the terms an authorization names them by. */
+    private static Set<RDFNode> clientTerms(GrantRequest request) {
+        Set<RDFNode> terms = new LinkedHashSet<>();
+        for (URI client : request.clients()) {
+            terms.add(ResourceFactory.createResource(client.toString()));
+        }
+        return terms;
+    }
+
     // ---- writing --------------------------------------------------------------------------
 
     private static Resource newAuthorization(
-            Model acl, ResourceIdentifier aclResource, Grantee grantee, Resource target) {
+            Model acl, ResourceIdentifier aclResource, Grantee grantee, Resource target, Set<RDFNode> clientTerms) {
         Resource authorization = acl.createResource(fresh(acl, aclResource, fragmentOf(grantee)));
         authorization.addProperty(RDF.type, Acl.AUTHORIZATION);
         authorization.addProperty(grantee.predicate(), grantee.term());
         authorization.addProperty(Acl.ACCESS_TO, target);
+        for (RDFNode client : clientTerms) {
+            authorization.addProperty(Cistern.CLIENT, client);
+        }
         return authorization;
     }
 
@@ -335,7 +379,7 @@ public final class GrantService {
      * <p>Four cases, by whether the authorization also names someone else and whether it also
      * covers something else: remove it whole; remove only the grantee from it; remove only the
      * target from it; or split it — the others keep the original, the grantee gets a copy
-     * without this target.
+     * without this target. A client constraint travels with whichever side keeps the rule.
      */
     private static void withdraw(
             Model acl, ResourceIdentifier aclResource, Resource authorization, Grantee grantee, Resource target) {
@@ -408,9 +452,9 @@ public final class GrantService {
 
     // ---- outcomes -------------------------------------------------------------------------
 
-    private GrantOutcome written(ResourceIdentifier aclResource, Model acl, ResourceIdentifier target) {
+    private static GrantOutcome written(ResourceIdentifier aclResource, Model acl, ResourceIdentifier target) {
         Set<Authorization> governing = new LinkedHashSet<>();
-        for (Authorization authorization : engine.parse(acl, AclScope.ACCESS_TO)) {
+        for (Authorization authorization : WacEngine.parse(acl, AclScope.ACCESS_TO, DelegationMode.ENABLED)) {
             if (authorization.covers(target.uri())) {
                 governing.add(authorization);
             }
@@ -418,9 +462,10 @@ public final class GrantService {
         return new GrantOutcome(aclResource, governing, acl, true);
     }
 
-    private GrantOutcome unchanged(EffectiveAcl current) {
+    private static GrantOutcome unchanged(EffectiveAcl current) {
         Set<Authorization> governing = new LinkedHashSet<>();
-        for (Authorization authorization : engine.parse(current.graph(), current.scope())) {
+        for (Authorization authorization
+                : WacEngine.parse(current.graph(), current.scope(), DelegationMode.ENABLED)) {
             if (authorization.covers(current.source().uri())) {
                 governing.add(authorization);
             }

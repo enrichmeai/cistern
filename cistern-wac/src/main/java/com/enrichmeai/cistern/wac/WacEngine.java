@@ -3,9 +3,11 @@ package com.enrichmeai.cistern.wac;
 import com.enrichmeai.cistern.core.Agent;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.vocab.Acl;
+import com.enrichmeai.cistern.core.vocab.Cistern;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
@@ -15,6 +17,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.apache.jena.rdf.model.Model;
+import org.apache.jena.rdf.model.Property;
 import org.apache.jena.rdf.model.RDFNode;
 import org.apache.jena.rdf.model.Resource;
 import org.apache.jena.rdf.model.Statement;
@@ -40,11 +43,58 @@ import org.slf4j.LoggerFactory;
  * <p><strong>Additive.</strong> Matching authorizations are unioned, per "granted by one or
  * more Authorizations". A second authorization can only ever widen the result.
  *
- * <p>Thread-safe and stateless; a single instance may be shared.
+ * <p><strong>A delegation only narrows</strong> (ADR 0004; AD-14, AD-15, AD-16). With
+ * {@link DelegationMode#ENABLED} the engine also reads Cistern's {@code cistern:client} term
+ * and evaluates it as an intersection, {@code effective = accessFor(agent) ∩ accessFor(client)}:
+ * {@code accessFor(agent)} is what the portable terms grant, and {@code accessFor(client)} is
+ * unconstrained unless an authorization names clients. A client match is therefore never a way
+ * to be allowed in — {@link Authorization#matches} decides that alone — and the result is a
+ * subset of what the same WebID holds with no client, structurally rather than by review. When
+ * the intersection removes something, the decision names the term that bound
+ * ({@link AccessDecision#narrowedBy()}), so a receipt can tell "never had it" from "the
+ * delegation capped it". With {@link DelegationMode#DISABLED} — the default — the term is not
+ * read at all, and every decision is the one this engine took before delegation existed, which
+ * is what keeps the extension invisible to the conformance harness (AD-16).
+ *
+ * <p>Both {@code decide} overloads funnel into one private narrowing path ({@link #narrow});
+ * neither applies a delegation term itself (AD-DEL-6 seam 2). The {@link Clock} is a
+ * constructor collaborator, not a {@code decide} parameter (seam 1): T5.8 (#92) evaluates
+ * {@code cistern:validUntil} against it on the same path, and nothing in this module calls
+ * {@code Instant.now()}.
+ *
+ * <p>Thread-safe and stateless beyond its configuration; a single instance may be shared.
  */
 public final class WacEngine {
 
     private static final Logger log = LoggerFactory.getLogger(WacEngine.class);
+
+    /** How a blank-node authorization is named in a log line: it has no IRI to print. */
+    private static final String BLANK_SUBJECT = "[]";
+
+    private final Clock clock;
+    private final DelegationMode delegation;
+
+    /**
+     * @param clock      the time delegation terms are judged against. T5.8 reads it; the client
+     *                   dimension does not, but the collaborator is fixed here so that adding
+     *                   expiry never changes this signature
+     * @param delegation whether Cistern's delegation terms are read and evaluated —
+     *                   {@code cistern.wac.delegation.enabled}
+     */
+    public WacEngine(Clock clock, DelegationMode delegation) {
+        this.clock = Objects.requireNonNull(clock, "clock");
+        this.delegation = Objects.requireNonNull(delegation, "delegation");
+    }
+
+    /** Whether this engine reads and evaluates delegation terms. */
+    public DelegationMode delegation() {
+        return delegation;
+    }
+
+    /** The clock delegation terms are judged against. */
+    public Clock clock() {
+        return clock;
+    }
 
     /**
      * What {@code agent} may do to the resource {@code acl} was discovered for.
@@ -93,38 +143,84 @@ public final class WacEngine {
         Objects.requireNonNull(aclSubject, "aclSubject");
         Objects.requireNonNull(agent, "agent");
         Objects.requireNonNull(scope, "scope");
-
-        // Additive: matching authorizations are unioned ("granted by one or more
-        // Authorizations"), so a second rule can only ever widen the result — and every rule
-        // that contributed is named, not just the first.
-        Set<AccessMode> granted = EnumSet.noneOf(AccessMode.class);
-        Set<URI> matched = new LinkedHashSet<>();
-        for (Authorization authorization : parse(effectiveAcl, scope)) {
-            if (authorization.covers(aclSubject) && authorization.matches(agent)) {
-                granted.addAll(authorization.modes());
-                authorization.subject().ifPresent(matched::add);
-            }
-        }
-        if (granted.isEmpty()) {
-            if (log.isDebugEnabled()) {
-                log.debug(WacMessage.NO_APPLICABLE_AUTHORIZATION.format(aclSubject, scope));
-            }
-            return AccessDecision.DENIED;
-        }
-        return AccessDecision.of(
-                granted, AclResource.of(new ResourceIdentifier(aclSubject)), matched);
+        return narrow(parse(effectiveAcl, scope), aclSubject, agent, scope);
     }
 
     /**
-     * Every {@code acl:Authorization} in {@code acl}, read under {@code scope}.
+     * The one narrowing path (AD-DEL-6 seam 2): the union WAC defines, intersected with what
+     * the delegation terms admit.
+     *
+     * <p>Two sets are accumulated over the authorizations that cover the subject and name the
+     * agent. {@code portable} is what the WebID holds on its own — the union of every such
+     * rule, which is the whole answer under plain WAC and under {@link DelegationMode#DISABLED}.
+     * {@code granted} is the union of only those rules that also {@link Authorization#admits
+     * admit} the client the request came through. {@code granted ⊆ portable} by construction,
+     * and the two differ exactly when a delegation capped something — which is when the
+     * decision names {@link DelegationTerm#CLIENT} as the term that bound (AD-DEL-5). A rule
+     * excluded by its client constraint that granted nothing the other rules did not is not a
+     * narrowing: the agent holds the same modes either way, and a receipt that said otherwise
+     * would blame the delegation for a refusal it did not cause.
+     */
+    private AccessDecision narrow(
+            List<Authorization> authorizations, URI aclSubject, Agent agent, AclScope scope) {
+        // Additive: matching authorizations are unioned ("granted by one or more
+        // Authorizations"), so a second rule can only ever widen the result — and every rule
+        // that contributed is named, not just the first.
+        Set<AccessMode> portable = EnumSet.noneOf(AccessMode.class);
+        Set<AccessMode> granted = EnumSet.noneOf(AccessMode.class);
+        Set<URI> matched = new LinkedHashSet<>();
+        for (Authorization authorization : authorizations) {
+            if (!authorization.covers(aclSubject) || !authorization.matches(agent)) {
+                continue;
+            }
+            portable.addAll(authorization.modes());
+            if (authorization.admits(agent)) {
+                granted.addAll(authorization.modes());
+                authorization.subject().ifPresent(matched::add);
+            } else if (log.isDebugEnabled()) {
+                log.debug(WacMessage.CLIENT_NOT_PERMITTED.format(
+                        authorization.subject().map(URI::toString).orElse(BLANK_SUBJECT),
+                        authorization.clients(), agent.client().map(URI::toString).orElse(BLANK_SUBJECT)));
+            }
+        }
+        // granted ⊆ portable always; strictly smaller means the client dimension bound.
+        Optional<DelegationTerm> narrowedBy = granted.equals(portable)
+                ? Optional.empty()
+                : Optional.of(DelegationTerm.CLIENT);
+        if (granted.isEmpty() && log.isDebugEnabled()) {
+            log.debug(WacMessage.NO_APPLICABLE_AUTHORIZATION.format(aclSubject, scope));
+        }
+        return AccessDecision.of(
+                granted, AclResource.of(new ResourceIdentifier(aclSubject)), matched, narrowedBy);
+    }
+
+    /**
+     * Every {@code acl:Authorization} in {@code acl}, read under {@code scope} and this engine's
+     * {@link #delegation() delegation mode}.
      *
      * <p>Exposed because ACL discovery and diagnostics both want to see the parsed rules
      * without re-implementing the reading, and because it makes the parse independently
      * testable from the evaluation.
      */
     public List<Authorization> parse(Model acl, AclScope scope) {
+        return parse(acl, scope, delegation);
+    }
+
+    /**
+     * Every {@code acl:Authorization} in {@code acl}, read under {@code scope}, with
+     * {@code cistern:client} read into {@link Authorization#clients()} only when
+     * {@code delegation} is {@link DelegationMode#ENABLED enabled}.
+     *
+     * <p>Static, and parameterised on the mode, because reading a graph is a pure function of
+     * the graph and needs no clock: the authoring surface ({@link GrantService}) reads what it
+     * writes through this, with delegation always on, so that a report of an ACL names the
+     * constraint the owner put in it — whether or not the server it will be sent to has
+     * switched evaluation on.
+     */
+    public static List<Authorization> parse(Model acl, AclScope scope, DelegationMode delegation) {
         Objects.requireNonNull(acl, "acl");
         Objects.requireNonNull(scope, "scope");
+        Objects.requireNonNull(delegation, "delegation");
 
         List<Authorization> authorizations = new ArrayList<>();
         // Only subjects explicitly typed acl:Authorization count. WAC describes authorizations
@@ -149,11 +245,30 @@ public final class WacEngine {
                     if (agents.isEmpty() && agentClasses.isEmpty()) {
                         // Names no subject, so there is nobody it could grant to. Treating an
                         // authorization with no agent as matching everyone would silently make
-                        // a malformed ACL public.
+                        // a malformed ACL public — and an authorization whose only term is
+                        // cistern:client is exactly this case: the client is a constraint on a
+                        // grant, never a grantee (AD-DEL-1, AD-DEL-2), so it grants nothing.
                         return;
                     }
+                    // With delegation off the term is not read, so no authorization is ever
+                    // constrained and the engine is byte-for-byte the pre-delegation one.
+                    Set<URI> clients = Set.of();
+                    if (delegation.isEnabled()) {
+                        clients = uris(subject, Cistern.CLIENT, WacMessage.MALFORMED_CLIENT_IRI);
+                        if (clients.isEmpty() && subject.hasProperty(Cistern.CLIENT)) {
+                            // The owner constrained this rule, and none of the constraint can
+                            // be read (a literal, a malformed IRI). Skipping the bad values would
+                            // leave an EMPTY set, which means unconstrained — a broken constraint
+                            // turned into a wildcard, the one widening AD-15 forbids. So the
+                            // rule contributes nothing: fail closed, as AD-DEL-4 has an
+                            // unreadable validUntil do.
+                            log.debug(WacMessage.CLIENT_CONSTRAINT_UNREADABLE.format(
+                                    subjectIri(subject).map(URI::toString).orElse(BLANK_SUBJECT)));
+                            return;
+                        }
+                    }
                     authorizations.add(new Authorization(
-                            subjectIri(subject), modes, agents, agentClasses, targets));
+                            subjectIri(subject), modes, agents, agentClasses, targets, clients));
                 });
         return authorizations;
     }
@@ -214,10 +329,11 @@ public final class WacEngine {
      * URI objects of {@code predicate}. A value that is not a URI resource, or not parseable as
      * a URI, is skipped rather than failing the parse — it can then match nothing, which is the
      * safe direction. Failing the whole evaluation would be worse in one specific way: it would
-     * make one bad triple deny access that other, valid authorizations grant.
+     * make one bad triple deny access that other, valid authorizations grant. For
+     * {@code cistern:client} the safe direction is the same one: a constraint that cannot be
+     * read is a constraint nobody satisfies, never a wildcard.
      */
-    private static Set<URI> uris(
-            Resource authorization, org.apache.jena.rdf.model.Property predicate, WacMessage onMalformed) {
+    private static Set<URI> uris(Resource authorization, Property predicate, WacMessage onMalformed) {
         Set<URI> uris = new LinkedHashSet<>();
         for (Statement statement : authorization.listProperties(predicate).toList()) {
             RDFNode object = statement.getObject();

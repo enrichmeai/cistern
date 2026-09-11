@@ -1,6 +1,7 @@
 package com.enrichmeai.cistern.webflux;
 
 import com.enrichmeai.cistern.core.ResourceIdentifier;
+import com.enrichmeai.cistern.wac.DelegationMode;
 import com.enrichmeai.cistern.wac.PodSpec;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -37,10 +38,12 @@ import java.util.stream.Collectors;
  * @param pods    further pods, each with its own owner, provisioned at boot (T5.6)
  * @param audit   the decision log (T5.9): whether an unrecordable decision fails the request,
  *                and where the log lives
+ * @param wac     the access-control engine's own switches (T6.5): whether Cistern's delegation
+ *                terms are evaluated
  */
 @ConfigurationProperties(prefix = "cistern")
 public record CisternProperties(
-        String baseUrl, Storage storage, Cors cors, Owner owner, Auth auth, Pods pods, Audit audit) {
+        String baseUrl, Storage storage, Cors cors, Owner owner, Auth auth, Pods pods, Audit audit, Wac wac) {
 
     private static final String DEFAULT_BASE_URL = "http://localhost:3000";
 
@@ -65,6 +68,7 @@ public record CisternProperties(
         auth = auth == null ? new Auth(null, null) : auth;
         pods = pods == null ? new Pods(null) : pods;
         audit = audit == null ? new Audit(false, null) : audit;
+        wac = wac == null ? new Wac(null) : wac;
         // The enforcement guard (T7.7, #94). Enforcement is keyed on the owner's WebID (see
         // CisternWebFluxConfiguration#cisternAuthorizationFilter); a credential source without
         // one is a pod that is open to everyone while its configuration reads as locked. Refused
@@ -127,6 +131,42 @@ public record CisternProperties(
         /** The log's directory: {@code root} if set, else {@code {storage root}/.cistern}. */
         public Path rootOrDefault(Storage storage) {
             return root != null ? root : storage.root().resolve(DEFAULT_DIRECTORY);
+        }
+    }
+
+    /**
+     * The access-control engine's own switches: {@code cistern.wac.*}.
+     *
+     * @param delegation whether Cistern's delegation terms are read and evaluated
+     */
+    public record Wac(Delegation delegation) {
+
+        public Wac {
+            delegation = delegation == null ? new Delegation(false) : delegation;
+        }
+    }
+
+    /**
+     * {@code cistern.wac.delegation.enabled} (T6.5; ADR 0004, AD-16, AD-DEL-6 seam 5): whether
+     * {@code WacEngine} reads {@code cistern:client} — and, under T5.8, {@code cistern:validUntil}
+     * — and narrows decisions by them.
+     *
+     * <p><strong>Off by default</strong>, and off means the engine is byte-for-byte the plain
+     * Web Access Control engine: the terms are not read, so no authorization is constrained, no
+     * decision is narrowed and no receipt carries a narrowing term. That is what keeps the
+     * extension invisible to the conformance harness. One flag for every delegation term,
+     * deliberately: a per-term switch would let half the extension reach the harness.
+     *
+     * <p>Changes security posture, so it carries a binding test (AD-18), the environment form
+     * included: {@code CISTERN_WAC_DELEGATION_ENABLED}.
+     *
+     * @param enabled whether delegation terms are evaluated
+     */
+    public record Delegation(boolean enabled) {
+
+        /** The engine mode this flag selects. */
+        public DelegationMode mode() {
+            return DelegationMode.of(enabled);
         }
     }
 

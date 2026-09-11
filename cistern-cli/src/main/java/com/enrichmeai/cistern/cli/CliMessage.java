@@ -50,6 +50,9 @@ public enum CliMessage {
     /** How {@code acl:AuthenticatedAgent} is named in a verdict. */
     ANY_AUTHENTICATED_AGENT("any authenticated agent"),
 
+    /** who, clients — a grantee constrained to particular clients ({@code cistern:client}). */
+    VIA_CLIENTS("%s via %s"),
+
     /** A container target in a verdict: path, so the reader sees the trailing slash. */
     TARGET_CONTAINER("%s and everything inside it"),
 
@@ -99,6 +102,9 @@ public enum CliMessage {
 
     /** value, keyword */
     INVALID_GRANTEE("'%s' is neither the word '%s' nor an absolute WebID URI"),
+
+    /** value */
+    INVALID_CLIENT("'%s' is not a client identifier: an absolute URI is needed"),
 
     /** value */
     INVALID_PATH(

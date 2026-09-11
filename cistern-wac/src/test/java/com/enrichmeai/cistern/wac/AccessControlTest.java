@@ -11,6 +11,7 @@ import com.enrichmeai.cistern.core.ResourceIdentifier;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,7 +38,7 @@ class AccessControlTest {
     @BeforeEach
     void setUp() {
         store = new InMemoryResourceStore();
-        accessControl = new AccessControl(new AclDiscovery(store), new WacEngine());
+        accessControl = new AccessControl(new AclDiscovery(store), new WacEngine(Clock.systemUTC(), DelegationMode.DISABLED));
         // Root: Alice owns everything, by accessTo and default.
         writeAcl(ROOT, "<#owner> a acl:Authorization ;\n"
                 + "  acl:agent <" + ALICE + "> ;\n"

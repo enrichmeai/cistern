@@ -14,6 +14,7 @@ import com.enrichmeai.cistern.core.vocab.Acl;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -189,7 +190,7 @@ class GrantServicePropertyTest {
 
         private final InMemoryResourceStore store = new InMemoryResourceStore();
         private final AclDiscovery discovery = new AclDiscovery(store);
-        private final WacEngine engine = new WacEngine();
+        private final WacEngine engine = new WacEngine(Clock.systemUTC(), DelegationMode.DISABLED);
         private final AccessControl accessControl = new AccessControl(discovery, engine);
         private final GrantService service = new GrantService();
 

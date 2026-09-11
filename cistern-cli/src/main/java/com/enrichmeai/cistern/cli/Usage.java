@@ -35,9 +35,10 @@ final class Usage {
 
     static final String GRANT_NAME = "grant";
     static final String GRANT_DESCRIPTION =
-            "Let a WebID, or everyone, do something to a resource: writes <path>.acl (re-stating"
-                    + " whoever holds Control there today, so nobody is locked out) and prints what"
-                    + " the ACL now says. A container grant covers everything inside it.";
+            "Let a WebID, or everyone, do something to a resource — optionally only through a named"
+                    + " client: writes <path>.acl (re-stating whoever holds Control there today, so"
+                    + " nobody is locked out) and prints what the ACL now says. A container grant"
+                    + " covers everything inside it.";
 
     static final String REVOKE_NAME = "revoke";
     static final String REVOKE_DESCRIPTION =
@@ -62,6 +63,15 @@ final class Usage {
     static final String CONTROL_OPTION = "--control";
     static final String CONTROL_DESCRIPTION = "Grant acl:Control (read and write the ACL; implies nothing else).";
     static final String MODES_HEADING = "At least one mode:%n";
+
+    static final String CLIENT_OPTION = "--client";
+    static final String CLIENT_PARAM = "<uri>";
+    static final String CLIENT_DESCRIPTION =
+            "Only through this client: an OAuth client identifier as an absolute URI — the client_id"
+                    + " (or azp) the access token carries. Repeatable; each names an alternative."
+                    + " The grant still names <webid|public>, and the client only narrows it"
+                    + " (cistern:client): a server with cistern.wac.delegation.enabled unset, or"
+                    + " one that does not read the term, applies the grant to the WebID as it stands.";
 
     static final String BASE_OPTION = "--base";
     static final String BASE_DESCRIPTION = "The server's base URL (default: ${DEFAULT-VALUE}).";

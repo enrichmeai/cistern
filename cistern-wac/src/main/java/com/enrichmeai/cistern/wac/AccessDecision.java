@@ -40,6 +40,13 @@ import java.util.StringJoiner;
  * {@code decidedBy} and no {@code authorizations}, and a decision with modes must say where they
  * came from.
  *
+ * <p>The one thing a denial <em>may</em> carry is the delegation term that caused it
+ * (ADR 0004 §6, AD-DEL-5). That is not a policy — no rule refused — but it is the difference
+ * between "the user never had this access" and "the delegation capped it", and it is the
+ * difference the receipt exists to record. A decision no delegation touched carries no term,
+ * which is every decision while delegation is off, so such a decision is exactly what this
+ * record was before the component existed.
+ *
  * @param modes          the granted modes, closed under implication; empty for a denial
  * @param decidedBy      the ACL resource whose authorizations granted {@code modes}; empty iff
  *                       {@code modes} is empty
@@ -47,18 +54,24 @@ import java.util.StringJoiner;
  *                       specific rules — in the order they were read; empty on a denial, and
  *                       possibly empty on a grant whose matching rules were all blank nodes,
  *                       which have no IRI to name
+ * @param narrowedBy     the delegation term that removed something from what the agent's WebID
+ *                       holds on its own, when one did; empty otherwise
  */
 public record AccessDecision(
-        Set<AccessMode> modes, Optional<ResourceIdentifier> decidedBy, Set<URI> authorizations) {
+        Set<AccessMode> modes,
+        Optional<ResourceIdentifier> decidedBy,
+        Set<URI> authorizations,
+        Optional<DelegationTerm> narrowedBy) {
 
-    /** Nothing granted, by nothing. WAC denies by default, so this is the result of every non-match. */
-    public static final AccessDecision DENIED =
-            new AccessDecision(Collections.emptySet(), Optional.empty(), Collections.emptySet());
+    /** Nothing granted, by nothing, narrowed by nothing. WAC denies by default, so this is the result of every non-match. */
+    public static final AccessDecision DENIED = new AccessDecision(
+            Collections.emptySet(), Optional.empty(), Collections.emptySet(), Optional.empty());
 
     public AccessDecision {
         Objects.requireNonNull(modes, "modes");
         Objects.requireNonNull(decidedBy, "decidedBy");
         Objects.requireNonNull(authorizations, "authorizations");
+        Objects.requireNonNull(narrowedBy, "narrowedBy");
         modes = modes.isEmpty()
                 ? Collections.emptySet()
                 : Collections.unmodifiableSet(EnumSet.copyOf(modes));
@@ -78,16 +91,31 @@ public record AccessDecision(
      * A grant of {@code modes} by {@code decidedBy} through {@code authorizations}, or
      * {@link #DENIED} if {@code modes} is empty — the constructor an evaluation should use, so
      * that "nothing matched" collapses to the canonical denial rather than to an empty grant
-     * that happens to name a policy.
+     * that happens to name a policy. No delegation term applied.
      */
     public static AccessDecision of(
             Set<AccessMode> modes, ResourceIdentifier decidedBy, Set<URI> authorizations) {
+        return of(modes, decidedBy, authorizations, Optional.empty());
+    }
+
+    /**
+     * As {@link #of(Set, ResourceIdentifier, Set)}, with the delegation term that narrowed the
+     * decision, if one did. A denial that a term caused is <em>not</em> {@link #DENIED}: it
+     * still names no policy, but it says why, which the canonical denial cannot.
+     */
+    public static AccessDecision of(
+            Set<AccessMode> modes, ResourceIdentifier decidedBy, Set<URI> authorizations,
+            Optional<DelegationTerm> narrowedBy) {
         Objects.requireNonNull(modes, "modes");
         Objects.requireNonNull(decidedBy, "decidedBy");
         Objects.requireNonNull(authorizations, "authorizations");
-        return modes.isEmpty()
+        Objects.requireNonNull(narrowedBy, "narrowedBy");
+        if (!modes.isEmpty()) {
+            return new AccessDecision(modes, Optional.of(decidedBy), authorizations, narrowedBy);
+        }
+        return narrowedBy.isEmpty()
                 ? DENIED
-                : new AccessDecision(modes, Optional.of(decidedBy), authorizations);
+                : new AccessDecision(Collections.emptySet(), Optional.empty(), Collections.emptySet(), narrowedBy);
     }
 
     /** Whether {@code required} is granted. */
@@ -98,6 +126,11 @@ public record AccessDecision(
     /** Whether nothing at all is granted. */
     public boolean isDenied() {
         return modes.isEmpty();
+    }
+
+    /** Whether a delegation term removed something the agent's WebID holds on its own. */
+    public boolean isNarrowed() {
+        return narrowedBy.isPresent();
     }
 
     /**

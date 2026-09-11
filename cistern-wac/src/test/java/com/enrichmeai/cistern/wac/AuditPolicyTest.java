@@ -23,7 +23,7 @@ class AuditPolicyTest {
     private static final DecisionRecord RECORD = new DecisionRecord(
             Instant.parse("2026-08-19T09:00:00Z"), Agent.ANONYMOUS,
             new ResourceIdentifier(URI.create("http://localhost:3737/notes/week")),
-            AccessMode.READ, Outcome.DENIED_UNAUTHENTICATED, Optional.empty(), RequestId.generate());
+            AccessMode.READ, Outcome.DENIED_UNAUTHENTICATED, Optional.empty(), RequestId.generate(), Optional.empty());
 
     private static final DecisionSink FAILING =
             record -> Mono.error(new IllegalStateException("disk full (test)"));

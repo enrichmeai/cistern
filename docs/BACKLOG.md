@@ -387,14 +387,18 @@ regression.
   complete OAuth and list the tools, transcript in the PR; WebTestClient for the
   401 / wrong-audience / valid cases; `INTEGRATION.md` "MCP clients" step. Issue #118.
 
-- [ ] **T6.5 (user, client) principal — the deferred half of #89.** `Agent(webId, client)`
+- [x] **T6.5 (user, client) principal — the deferred half of #89.** `Agent(webId, client)`
   already carries the field (ruled 2026-08-23, #131); this is the half that *uses* it. Client
   from the token's `client_id` — T4.1's capture confirmed a real access token carries
   `client_id` and not `azp`. `WacEngine` matcher for a client-scoped authorization and the
   intersection cap `effective = modes(user) ∩ modes(client)`; `cistern grant` can target
   `(webId, client)`. DoD: allowed/denied matrix over (user-only, client-only, both, neither)
   with the cap proven; ARCHITECTURE load-bearing decision recorded and #89 closed; no CTH
-  regression. Issue #119.
+  regression. Issue #119. Built as ADR 0004 decided it: the client is a constraint
+  (`cistern:client`) on an authorization, never a grantee; one narrowing path in `WacEngine`;
+  `narrowedBy` on the receipt; `cistern grant --client`; behind `cistern.wac.delegation.enabled`
+  (default off). The client is read from `client_id`, else `azp` — the Keycloak capture
+  (`fixtures/keycloak-delegation`) shows a user's token carries only `azp`.
 
 - [ ] **T6.6 Distribution pack.** Client plugin manifest (`plugin.json` + `.mcp.json` with a
   configure-later `url`; skills: save to pod / recall / grant-revoke an agent), tool annotations

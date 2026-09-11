@@ -323,6 +323,9 @@ public enum WebfluxMessage {
     /** Startup: which sink and which log root receipts go to, and under which policy. */
     AUDIT_WIRED("Decision log: %s at <%s>; audit policy %s"),
 
+    /** Startup: whether the engine evaluates Cistern's delegation terms (T6.5). Logged at INFO. */
+    DELEGATION_WIRED("Delegation terms (cistern.wac.delegation.enabled): %s"),
+
     /** {@code ?receipts&from=}/{@code &to=} that is not an ISO 8601 instant. */
     RECEIPTS_INSTANT_MALFORMED(
             "Receipts parameter '%s' must be an ISO 8601 instant such as 2026-08-19T00:00:00Z: %s"),

@@ -80,7 +80,10 @@ class CliEndToEndTest {
         int port = freePort();
         base = "http://127.0.0.1:" + port;
         Path storage = Files.createTempDirectory("cistern-cli-e2e");
-        server = new SpringApplicationBuilder(TestServer.class)
+        // DelegatedPrincipals joins the resolver chain so a (person, client) request can be made;
+        // the delegation flag is on so the server evaluates what `cistern grant --client` writes.
+        // Neither changes a decision for the other tests here: their ACLs carry no constraint.
+        server = new SpringApplicationBuilder(TestServer.class, DelegatedPrincipals.class)
                 .properties(
                         "server.port=" + port,
                         "cistern.base-url=" + base,
@@ -88,7 +91,8 @@ class CliEndToEndTest {
                         "cistern.owner.web-id=" + OWNER,
                         "cistern.owner.token=" + TOKEN,
                         "cistern.auth.service-principals[0].web-id=" + ACME,
-                        "cistern.auth.service-principals[0].credential-hash=" + ACME_HASH)
+                        "cistern.auth.service-principals[0].credential-hash=" + ACME_HASH,
+                        "cistern.wac.delegation.enabled=true")
                 .run();
     }
 
@@ -535,6 +539,76 @@ class CliEndToEndTest {
                     .expectNext(new PodProvisioned.AlreadyExists(spec.root()))
                     .verifyComplete();
             assertEquals(1, aclPuts.get(), "our one write hit 412; the re-read found the ACL and wrote nothing");
+        }
+    }
+
+    // ---- grant --client: the (person, client) principal (T6.5, #119) ------------------------
+
+    @Nested
+    @DisplayName("cistern grant --client: alice through one application, and no other")
+    class Delegation {
+
+        private static int as(String token, String method, String path) throws Exception {
+            return request(method, path, token, null, null).statusCode();
+        }
+
+        @Test
+        @DisplayName("the CLI writes cistern:client; alice via claude reads, via another client is refused, alone reads")
+        void grantViaClient() throws Exception {
+            assertEquals(403, as(DelegatedPrincipals.ALICE_VIA_CLAUDE, "GET", "/trips/lisbon"), "no grant yet");
+
+            assertEquals(ExitCode.OK.code(), cistern("grant", DelegatedPrincipals.ALICE.toString(), "--read",
+                    Usage.CLIENT_OPTION, DelegatedPrincipals.CLAUDE.toString(), "/trips/"), stderr.toString());
+            String granted = stdout.toString();
+            assertTrue(granted.contains(CliMessage.GRANTED.format(
+                    CliMessage.VIA_CLIENTS.format(DelegatedPrincipals.ALICE, DelegatedPrincipals.CLAUDE),
+                    AccessMode.READ.headerToken(), CliMessage.TARGET_CONTAINER.format("/trips/"))), granted);
+            assertTrue(granted.contains(CliMessage.AUTHORIZATION_LINE.format(
+                    CliMessage.VIA_CLIENTS.format(DelegatedPrincipals.ALICE, DelegatedPrincipals.CLAUDE),
+                    AccessMode.READ.headerToken(), CliMessage.SCOPE_INHERITABLE.format())), "the report names the client: " + granted);
+
+            String acl = owner("GET", "/trips/.acl", null, null).body();
+            assertTrue(acl.contains(com.enrichmeai.cistern.core.vocab.Cistern.NS), "the namespace is declared: " + acl);
+            assertTrue(acl.contains(DelegatedPrincipals.CLAUDE.toString()), "the constraint is written: " + acl);
+            assertTrue(acl.contains(DelegatedPrincipals.ALICE.toString()), "beside the grantee, in portable WAC: " + acl);
+
+            assertEquals(200, as(DelegatedPrincipals.ALICE_VIA_CLAUDE, "GET", "/trips/lisbon"), "the delegated client");
+            assertEquals(403, as(DelegatedPrincipals.ALICE_VIA_OTHER, "GET", "/trips/lisbon"), "another client: capped");
+            assertEquals(200, as(DelegatedPrincipals.ALICE_ALONE, "GET", "/trips/lisbon"), "alice as herself");
+            assertEquals(403, as(DelegatedPrincipals.ALICE_VIA_CLAUDE, "DELETE", "/trips/lisbon"), "read is not write");
+        }
+
+        @Test
+        @DisplayName("revoke takes the delegated grant back: the very next request via claude is refused")
+        void revokeTakesItBack() throws Exception {
+            assertEquals(ExitCode.OK.code(), cistern("grant", DelegatedPrincipals.ALICE.toString(), "--read",
+                    Usage.CLIENT_OPTION, DelegatedPrincipals.CLAUDE.toString(), "/trips/"), stderr.toString());
+            assertEquals(200, as(DelegatedPrincipals.ALICE_VIA_CLAUDE, "GET", "/trips/lisbon"));
+
+            assertEquals(ExitCode.OK.code(), cistern("revoke", DelegatedPrincipals.ALICE.toString(), "/trips/"), stderr.toString());
+
+            assertEquals(403, as(DelegatedPrincipals.ALICE_VIA_CLAUDE, "GET", "/trips/lisbon"));
+            assertEquals(200, owner("GET", "/trips/lisbon", null, null).statusCode(), "owner unaffected");
+        }
+
+        @Test
+        @DisplayName("two --client options name alternatives")
+        void severalClients() throws Exception {
+            assertEquals(ExitCode.OK.code(), cistern("grant", DelegatedPrincipals.ALICE.toString(), "--read",
+                    Usage.CLIENT_OPTION, DelegatedPrincipals.CLAUDE.toString(),
+                    Usage.CLIENT_OPTION, DelegatedPrincipals.OTHER.toString(), "/trips/"), stderr.toString());
+
+            assertEquals(200, as(DelegatedPrincipals.ALICE_VIA_CLAUDE, "GET", "/trips/lisbon"));
+            assertEquals(200, as(DelegatedPrincipals.ALICE_VIA_OTHER, "GET", "/trips/lisbon"));
+        }
+
+        @Test
+        @DisplayName("a client that is not an absolute URI is a bad argument: exit 1, nothing written")
+        void badClientExitsOne() throws Exception {
+            assertEquals(ExitCode.FAILURE.code(), cistern("grant", DelegatedPrincipals.ALICE.toString(), "--read",
+                    Usage.CLIENT_OPTION, "claude#id", "/trips/"));
+            assertTrue(stderr.toString().contains(CliMessage.INVALID_CLIENT.format("claude#id")), stderr.toString());
+            assertEquals(404, owner("GET", "/trips/.acl", null, null).statusCode());
         }
     }
 
