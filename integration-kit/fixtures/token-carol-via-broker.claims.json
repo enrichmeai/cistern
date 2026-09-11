@@ -5,17 +5,19 @@
     "kid": "qjb2vhgCWilsGooMs5XpvMU4TxlQhUoCZyNEk1KsluE"
   },
   "claims": {
-    "exp": 1789019478,
-    "iat": 1789019178,
-    "jti": "trrtcc:8a36e28f-b7e5-c32c-ac65-b8c88e1b7d7d",
+    "exp": 1789019492,
+    "iat": 1789019192,
+    "auth_time": 1789019192,
+    "jti": "onrtac:8c203a99-6f3a-4743-3d79-5bb59025fc18",
     "iss": "http://keycloak:8080/realms/cistern",
     "aud": [
       "cistern",
       "account"
     ],
-    "sub": "847c51d2-800d-482f-966d-4129370555b4",
+    "sub": "7818c658-34dc-4140-81f4-61200e5ea454",
     "typ": "Bearer",
     "azp": "valuedocs-legal",
+    "sid": "D6ezGzmFpFGJb58PNInLKeA-",
     "acr": "1",
     "allowed-origins": [
       "http://127.0.0.1"
@@ -36,12 +38,12 @@
         ]
       }
     },
-    "scope": "cistern email profile",
-    "clientHost": "172.27.0.1",
-    "email_verified": false,
-    "webid": "https://valuedocs.example/apps/legal#id",
-    "preferred_username": "service-account-valuedocs-legal",
-    "clientAddress": "172.27.0.1",
-    "client_id": "valuedocs-legal"
+    "scope": "openid cistern email profile",
+    "email_verified": true,
+    "name": "Carol Counsel",
+    "preferred_username": "carol",
+    "given_name": "Carol",
+    "family_name": "Counsel",
+    "email": "carol@acme-law.example"
   }
 }

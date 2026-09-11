@@ -47,6 +47,19 @@ services:
       # CISTERN_AUTH_OIDC_AUDIENCES: cistern                              # cistern.auth.oidc.audiences
       # CISTERN_AUTH_OIDC_WEBID_CLAIM: webid                              # cistern.auth.oidc.webid-claim
       #
+      # ---- Brokered sign-in (T7.16): people who exist only in Google Workspace, or in the
+      # kit's stand-in realm, carry no `webid` claim; Cistern builds their WebID from the
+      # token instead. These three lines REPLACE the three above — a claim and a template
+      # are one or the other, never both (docs/INTEGRATION.md §6.1) — and the template then
+      # applies to every token from this issuer, alice's and the apps' included. The value
+      # is quoted because `{` opens a YAML mapping. The environment name has no underscore
+      # inside the word: relaxed binding maps webid-template to WEBIDTEMPLATE.
+      # Then:  ./capture-fixtures.sh  and the README's "Proving it without Google".
+      #
+      CISTERN_AUTH_OIDC_ISSUER: http://keycloak:8080/realms/cistern     # cistern.auth.oidc.issuer
+      CISTERN_AUTH_OIDC_AUDIENCES: cistern                              # cistern.auth.oidc.audiences
+      CISTERN_AUTH_OIDC_WEBIDTEMPLATE: "{iss}/users/{sub}#me"           # cistern.auth.oidc.webid-template
+      #
       # Cistern-local service credentials (cistern.auth.service-principals[n].*) are the
       # alternative for machine clients when you would rather not run an issuer for them;
       # this kit authenticates the apps through Keycloak, so they stay unset. NOTE the
@@ -73,12 +86,17 @@ services:
       # host, Cistern inside the compose network (where `keycloak` resolves), and the
       # fixtures. Left dynamic, Keycloak would mint iss=http://127.0.0.1:8080/... for the host
       # and Cistern could neither match nor fetch it. The admin console keeps a host-side URL.
-      KC_HOSTNAME: http://keycloak:8080
+      # KEYCLOAK_HOSTNAME overrides it for one session only — the Google capture runbook in the
+      # README, where the redirect URI Keycloak sends Google must be a loopback one.
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-http://keycloak:8080}
       KC_HOSTNAME_ADMIN: http://127.0.0.1:${KEYCLOAK_HOST_PORT:-8080}
     volumes:
-      # The realm export (alice, bob, valuedocs-legal, valuedocs-tax, audience `cistern`).
-      # Imported once, on first boot; an existing realm is left alone on later boots.
+      # The realm exports: `cistern` (alice, bob, valuedocs-legal, valuedocs-tax, audience
+      # `cistern`, the stand-in identity provider) and `external-idp` (carol, and the cistern
+      # realm as its client — T7.16). Imported once, on first boot; an existing realm is left
+      # alone on later boots.
       - ./keycloak/realm-cistern.json:/opt/keycloak/data/import/realm-cistern.json:ro
+      - ./keycloak/realm-external-idp.json:/opt/keycloak/data/import/realm-external-idp.json:ro
       - keycloak-data:/opt/keycloak/data      # not data/h2: that dir is not in the image, so a volume there would be root-owned and unwritable
     healthcheck:
       # The image has no curl. Bash's /dev/tcp is enough to ask for the realm's discovery
