@@ -7,6 +7,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
@@ -60,7 +61,11 @@ final class SyncStateFile {
 
     /**
      * The state file in {@code folder} for a sync to {@code target}: read if it is there, empty
-     * if it is not. A file that is there but cannot be read as a state, or that describes a
+     * if it is not — and "not there" means {@link NoSuchFileException} from the read itself,
+     * never {@code Files.exists}, which answers false when it cannot stat at all (a folder
+     * without execute permission, say) and would turn an unreadable memory into an empty one.
+     * That is the same silent restart the malformed case below refuses, and for the same
+     * reason. A file that is there but cannot be read as a state, or that describes a
      * sync to somewhere else, is a {@link CliFailure.LocalFolder}: moving it aside is the way to
      * start afresh, and the message says so — guessing would send every file again under
      * {@code If-None-Match: *} and fail on the first that exists, and using another target's
@@ -70,12 +75,11 @@ final class SyncStateFile {
         Path path = Objects.requireNonNull(folder, "folder").resolve(NAME);
         Objects.requireNonNull(target, "target");
         refuseLink(path);
-        if (!Files.exists(path)) {
-            return new SyncStateFile(path, SyncState.empty(target));
-        }
         String text;
         try {
             text = Files.readString(path);
+        } catch (NoSuchFileException e) {
+            return new SyncStateFile(path, SyncState.empty(target));
         } catch (IOException e) {
             throw new CliFailure.LocalFolder(CliMessage.LOCAL_UNREADABLE, path, describe(e));
         }

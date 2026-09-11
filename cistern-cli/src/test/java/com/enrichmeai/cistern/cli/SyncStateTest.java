@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 
@@ -12,6 +13,8 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.Set;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -203,6 +206,34 @@ class SyncStateTest {
                     Files.readString(folder.resolve(SyncStateFile.NAME)).getBytes(java.nio.charset.StandardCharsets.UTF_8),
                     "the bytes on disk are UTF-8");
             assertEquals(SENT, SyncStateFile.in(folder, TARGET).current().get(accented).orElseThrow());
+        }
+
+        /**
+         * The absence check is the read failing with {@link java.nio.file.NoSuchFileException},
+         * not {@code Files.exists}: that answers false when it cannot stat at all, so a state
+         * file behind an unsearchable folder read as "never synced here". The consequence is the
+         * one this class refuses everywhere else — every document sent again under
+         * {@code If-None-Match: *}, failing on the first that already exists.
+         */
+        @Test
+        void anUnstattableStateFileIsAFailureRatherThanAnEmptyOne() throws IOException {
+            SyncStateFile.in(folder, TARGET).remember(REPORT, SENT);
+            Path state = folder.resolve(SyncStateFile.NAME);
+            Set<PosixFilePermission> original = Files.getPosixFilePermissions(folder);
+
+            Files.setPosixFilePermissions(folder, Set.of());
+            try {
+                assumeTrue(!Files.exists(state), "needs a user that permissions actually apply to");
+
+                CliFailure.LocalFolder failure = assertThrows(CliFailure.LocalFolder.class,
+                        () -> SyncStateFile.in(folder, TARGET));
+
+                assertTrue(failure.getMessage().startsWith(CliMessage.LOCAL_UNREADABLE.format(state, "")),
+                        failure.getMessage());
+                assertEquals(ExitCode.FAILURE, CisternCli.exitCodeFor(failure));
+            } finally {
+                Files.setPosixFilePermissions(folder, original);
+            }
         }
 
         @Test
