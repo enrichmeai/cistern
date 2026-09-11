@@ -187,7 +187,11 @@ public final class WacEngine {
         Optional<DelegationTerm> narrowedBy = granted.equals(portable)
                 ? Optional.empty()
                 : Optional.of(DelegationTerm.CLIENT);
-        if (granted.isEmpty() && log.isDebugEnabled()) {
+        // portable, not granted: a rule the client constraint excluded was still an applicable
+        // authorization, and it has already said so through CLIENT_NOT_PERMITTED above. Keyed on
+        // granted, this line would claim nothing matched in exactly the case someone is debugging
+        // a delegation — the one time the distinction is the thing being looked for.
+        if (portable.isEmpty() && log.isDebugEnabled()) {
             log.debug(WacMessage.NO_APPLICABLE_AUTHORIZATION.format(aclSubject, scope));
         }
         return AccessDecision.of(
