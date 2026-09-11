@@ -56,9 +56,9 @@ services:
       # inside the word: relaxed binding maps webid-template to WEBIDTEMPLATE.
       # Then:  ./capture-fixtures.sh  and the README's "Proving it without Google".
       #
-      CISTERN_AUTH_OIDC_ISSUER: http://keycloak:8080/realms/cistern     # cistern.auth.oidc.issuer
-      CISTERN_AUTH_OIDC_AUDIENCES: cistern                              # cistern.auth.oidc.audiences
-      CISTERN_AUTH_OIDC_WEBIDTEMPLATE: "{iss}/users/{sub}#me"           # cistern.auth.oidc.webid-template
+      # CISTERN_AUTH_OIDC_ISSUER: http://keycloak:8080/realms/cistern   # cistern.auth.oidc.issuer
+      # CISTERN_AUTH_OIDC_AUDIENCES: cistern                            # cistern.auth.oidc.audiences
+      # CISTERN_AUTH_OIDC_WEBIDTEMPLATE: "{iss}/users/{sub}#me"         # cistern.auth.oidc.webid-template
       #
       # Cistern-local service credentials (cistern.auth.service-principals[n].*) are the
       # alternative for machine clients when you would rather not run an issuer for them;
