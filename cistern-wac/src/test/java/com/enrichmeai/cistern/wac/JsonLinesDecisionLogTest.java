@@ -73,13 +73,13 @@ class JsonLinesDecisionLogTest {
 
     private static DecisionRecord allowed(Instant at, Agent agent, ResourceIdentifier target) {
         return new DecisionRecord(at, agent, target, AccessMode.READ, Outcome.ALLOWED,
-                Optional.of(NOTES_ACL), RequestId.generate());
+                Optional.of(NOTES_ACL), RequestId.generate(), Optional.empty());
     }
 
     private static DecisionRecord denied(Instant at, Agent agent, ResourceIdentifier target) {
         return new DecisionRecord(at, agent, target, AccessMode.WRITE,
                 agent.isAuthenticated() ? Outcome.DENIED_FORBIDDEN : Outcome.DENIED_UNAUTHENTICATED,
-                Optional.empty(), RequestId.generate());
+                Optional.empty(), RequestId.generate(), Optional.empty());
     }
 
     private void record(DecisionRecord... records) {

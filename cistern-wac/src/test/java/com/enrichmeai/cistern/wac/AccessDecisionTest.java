@@ -1,6 +1,8 @@
 package com.enrichmeai.cistern.wac;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,16 +28,16 @@ class AccessDecisionTest {
     @DisplayName("a denial names no policy: decidedBy on an empty decision is refused")
     void denialCannotNameAPolicy() {
         assertThrows(IllegalArgumentException.class,
-                () -> new AccessDecision(Set.of(), Optional.of(ACL), Set.of()));
+                () -> new AccessDecision(Set.of(), Optional.of(ACL), Set.of(), Optional.empty()));
         assertThrows(IllegalArgumentException.class,
-                () -> new AccessDecision(Set.of(), Optional.empty(), Set.of(RULE)));
+                () -> new AccessDecision(Set.of(), Optional.empty(), Set.of(RULE), Optional.empty()));
     }
 
     @Test
     @DisplayName("a grant names its policy: modes without a decidedBy are refused")
     void grantMustNameAPolicy() {
         assertThrows(IllegalArgumentException.class,
-                () -> new AccessDecision(EnumSet.of(AccessMode.READ), Optional.empty(), Set.of()));
+                () -> new AccessDecision(EnumSet.of(AccessMode.READ), Optional.empty(), Set.of(), Optional.empty()));
     }
 
     @Test
@@ -55,11 +57,46 @@ class AccessDecisionTest {
     }
 
     @Test
-    @DisplayName("DENIED is denied, names nothing, and is what isDenied() means")
+    @DisplayName("DENIED is denied, names nothing, is narrowed by nothing, and is what isDenied() means")
     void deniedIsEmpty() {
         assertTrue(AccessDecision.DENIED.isDenied());
         assertTrue(AccessDecision.DENIED.decidedBy().isEmpty());
         assertTrue(AccessDecision.DENIED.authorizations().isEmpty());
+        assertTrue(AccessDecision.DENIED.narrowedBy().isEmpty());
         assertEquals("", AccessDecision.DENIED.toHeaderModes());
+    }
+
+    // ---- the delegation term (T6.5, AD-DEL-5) ---------------------------------------------
+
+    @Test
+    @DisplayName("a denial a delegation caused still names no policy, but names the term — and is not DENIED")
+    void narrowedDenialNamesTheTermAndNoPolicy() {
+        AccessDecision capped = AccessDecision.of(Set.of(), ACL, Set.of(RULE), Optional.of(DelegationTerm.CLIENT));
+
+        assertTrue(capped.isDenied());
+        assertTrue(capped.isNarrowed());
+        assertEquals(Optional.of(DelegationTerm.CLIENT), capped.narrowedBy());
+        assertTrue(capped.decidedBy().isEmpty(), "no rule refused; a denial names no policy");
+        assertTrue(capped.authorizations().isEmpty());
+        assertNotSame(AccessDecision.DENIED, capped);
+        assertNotEquals(AccessDecision.DENIED, capped, "'never had it' and 'the delegation capped it' differ");
+    }
+
+    @Test
+    @DisplayName("a grant may be narrowed too: some modes remain, and the term says others were capped")
+    void narrowedGrantKeepsItsPolicy() {
+        AccessDecision capped = AccessDecision.of(
+                EnumSet.of(AccessMode.READ), ACL, Set.of(RULE), Optional.of(DelegationTerm.CLIENT));
+
+        assertTrue(capped.allows(AccessMode.READ));
+        assertEquals(Optional.of(ACL), capped.decidedBy());
+        assertEquals(Optional.of(DelegationTerm.CLIENT), capped.narrowedBy());
+    }
+
+    @Test
+    @DisplayName("the three-argument factory applies no term — what every pre-delegation caller gets")
+    void threeArgumentFactoryIsUnnarrowed() {
+        assertTrue(AccessDecision.of(EnumSet.of(AccessMode.READ), ACL, Set.of()).narrowedBy().isEmpty());
+        assertSame(AccessDecision.DENIED, AccessDecision.of(Set.of(), ACL, Set.of()));
     }
 }

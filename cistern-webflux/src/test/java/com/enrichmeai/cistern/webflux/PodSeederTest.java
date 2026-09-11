@@ -10,12 +10,14 @@ import com.enrichmeai.cistern.wac.AccessControl;
 import com.enrichmeai.cistern.wac.AccessMode;
 import com.enrichmeai.cistern.wac.AclDiscovery;
 import com.enrichmeai.cistern.wac.AclResource;
+import com.enrichmeai.cistern.wac.DelegationMode;
 import com.enrichmeai.cistern.wac.PodProvisioner;
 import com.enrichmeai.cistern.wac.WacEngine;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.util.EnumSet;
 import java.util.List;
 
@@ -55,7 +57,7 @@ class PodSeederTest {
     }
 
     private static CisternProperties properties(CisternProperties.Owner owner, CisternProperties.Pods pods) {
-        return new CisternProperties(BASE, null, null, owner, null, pods, null);
+        return new CisternProperties(BASE, null, null, owner, null, pods, null, null);
     }
 
     /** One "boot": a fresh store over the directory, both seeders run in their order. */
@@ -82,7 +84,7 @@ class PodSeederTest {
         }
         assertTrue(store.exists(id("/.acl")).block(), "the operator's root ACL, as before T5.6");
 
-        AccessControl access = new AccessControl(new AclDiscovery(store), new WacEngine());
+        AccessControl access = new AccessControl(new AclDiscovery(store), new WacEngine(Clock.systemUTC(), DelegationMode.DISABLED));
         assertEquals(EnumSet.allOf(AccessMode.class),
                 access.grantedFor(id("/alice/notes/hello"), Agent.of(ALICE)).block().modes());
         assertEquals(EnumSet.allOf(AccessMode.class),
@@ -123,7 +125,7 @@ class PodSeederTest {
         ResourceStore second = boot(properties);
 
         assertArrayEquals(narrowed, stored(second, "/bob/.acl").representation().data());
-        AccessControl access = new AccessControl(new AclDiscovery(second), new WacEngine());
+        AccessControl access = new AccessControl(new AclDiscovery(second), new WacEngine(Clock.systemUTC(), DelegationMode.DISABLED));
         assertFalse(access.grantedFor(id("/bob/"), Agent.of(BOB)).block().allows(AccessMode.WRITE),
                 "Bob's own narrowing stands after the restart");
     }

@@ -9,12 +9,20 @@ import com.enrichmeai.cistern.core.ResourceIdentifier;
 
 import java.io.StringReader;
 import java.net.URI;
+import java.time.Clock;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import com.enrichmeai.cistern.core.vocab.Acl;
+import com.enrichmeai.cistern.core.vocab.Cistern;
+
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
+import org.apache.jena.rdf.model.Resource;
+import org.apache.jena.rdf.model.ResourceFactory;
+import org.apache.jena.vocabulary.RDF;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -43,7 +51,7 @@ class WacEngineTest {
             "@prefix acl: <http://www.w3.org/ns/auth/acl#> .\n"
                     + "@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n";
 
-    private final WacEngine engine = new WacEngine();
+    private final WacEngine engine = new WacEngine(Clock.systemUTC(), DelegationMode.DISABLED);
 
     private static Model acl(String turtle) {
         Model model = ModelFactory.createDefaultModel();
@@ -485,5 +493,285 @@ class WacEngineTest {
 
         org.junit.jupiter.api.Assertions.assertThrows(
                 UnsupportedOperationException.class, () -> modes.add(AccessMode.WRITE));
+    }
+
+    // ---- the (person, client) principal: a delegation only narrows (T6.5, ADR 0004) --------
+
+    /**
+     * The acceptance matrix of the T6.5 brief, under both flag states. The cap is structural
+     * (AD-15): for any (person, client), what the person holds via the client is a subset of
+     * what they hold alone, because a constrained authorization is a subset of the person's
+     * own. The receipt names {@link DelegationTerm#CLIENT} exactly where the constraint removed
+     * something (AD-DEL-5), and with the flag off nothing is read, so nothing is narrowed and
+     * nothing is named (AD-16).
+     */
+    @Nested
+    @DisplayName("cistern:client under both flag states — the acceptance matrix")
+    class Delegation {
+
+        private static final String CLIENT_X = "https://agents.example/claude#id";
+        private static final String CLIENT_Y = "https://agents.example/other#id";
+        private static final String CLIENT_Z = "https://agents.example/third#id";
+        private static final String CISTERN_PREFIX =
+                "@prefix cistern: <" + Cistern.NS + "> .\n";
+        private static final Set<AccessMode> READ_WRITE =
+                EnumSet.of(AccessMode.READ, AccessMode.WRITE, AccessMode.APPEND);
+
+        private final WacEngine enabled = new WacEngine(Clock.systemUTC(), DelegationMode.ENABLED);
+        private final WacEngine disabled = new WacEngine(Clock.systemUTC(), DelegationMode.DISABLED);
+
+        private final Agent alone = Agent.of(URI.create(ALICE));
+        private final Agent viaX = Agent.of(URI.create(ALICE), Optional.of(URI.create(CLIENT_X)));
+        private final Agent viaY = Agent.of(URI.create(ALICE), Optional.of(URI.create(CLIENT_Y)));
+
+        private Model delegationAcl(String body) {
+            return acl(CISTERN_PREFIX + body);
+        }
+
+        /** Matrix row 1: {@code acl:agent alice}, unconstrained. */
+        private Model unconstrained() {
+            return delegationAcl("<#a> a acl:Authorization ;\n"
+                    + "  acl:agent <" + ALICE + "> ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Read, acl:Write .");
+        }
+
+        /** Matrix row 2: {@code acl:agent alice; cistern:client X}. */
+        private Model constrainedToX() {
+            return delegationAcl("<#a> a acl:Authorization ;\n"
+                    + "  acl:agent <" + ALICE + "> ;\n"
+                    + "  cistern:client <" + CLIENT_X + "> ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Read, acl:Write .");
+        }
+
+        /** Matrix row 3: {@code cistern:client X} only — no portable term at all. */
+        private Model clientOnly() {
+            return delegationAcl("<#a> a acl:Authorization ;\n"
+                    + "  cistern:client <" + CLIENT_X + "> ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Read, acl:Write .");
+        }
+
+        /** Matrix row 4: {@code acl:agentClass foaf:Agent; cistern:client X}. */
+        private Model publicConstrainedToX() {
+            return delegationAcl("<#a> a acl:Authorization ;\n"
+                    + "  acl:agentClass foaf:Agent ;\n"
+                    + "  cistern:client <" + CLIENT_X + "> ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Read, acl:Write .");
+        }
+
+        private AccessDecision decide(WacEngine engine, Model acl, Agent agent) {
+            return engine.decide(acl, URI.create(RESOURCE), agent, AclScope.ACCESS_TO);
+        }
+
+        private void assertHolds(AccessDecision decision, Set<AccessMode> modes) {
+            assertEquals(modes, decision.modes());
+            assertTrue(decision.narrowedBy().isEmpty(), "nothing was capped, so the receipt says nothing new");
+        }
+
+        private void assertCapped(AccessDecision decision) {
+            assertTrue(decision.isDenied(), "nothing from the constrained rule");
+            assertEquals(Optional.of(DelegationTerm.CLIENT), decision.narrowedBy(), "the receipt names the term that bound");
+            assertTrue(decision.decidedBy().isEmpty(), "a denial still names no policy");
+            assertTrue(decision.authorizations().isEmpty());
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @EnumSource(DelegationMode.class)
+        @DisplayName("row 1: an unconstrained grant — person alone, via X, via Y all hold the modes")
+        void unconstrainedRow(DelegationMode mode) {
+            WacEngine engine = new WacEngine(Clock.systemUTC(), mode);
+            for (Agent agent : List.of(alone, viaX, viaY)) {
+                assertHolds(decide(engine, unconstrained(), agent), READ_WRITE);
+            }
+        }
+
+        @Test
+        @DisplayName("row 2, flag on: alice alone and via X hold the modes; via Y nothing, and the receipt says why")
+        void constrainedRowEnabled() {
+            Model acl = constrainedToX();
+
+            assertHolds(decide(enabled, acl, alone), READ_WRITE);
+            assertHolds(decide(enabled, acl, viaX), READ_WRITE);
+            assertCapped(decide(enabled, acl, viaY));
+        }
+
+        @Test
+        @DisplayName("row 2, flag off: the term is not read — via Y holds the modes too, nothing narrowed (AD-16)")
+        void constrainedRowDisabled() {
+            Model acl = constrainedToX();
+
+            for (Agent agent : List.of(alone, viaX, viaY)) {
+                assertHolds(decide(disabled, acl, agent), READ_WRITE);
+            }
+            assertTrue(disabled.parse(acl, AclScope.ACCESS_TO).getFirst().clients().isEmpty(),
+                    "flag off: parse ignores cistern:client");
+            assertEquals(Set.of(URI.create(CLIENT_X)), enabled.parse(acl, AclScope.ACCESS_TO).getFirst().clients(),
+                    "flag on: parse reads it");
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @EnumSource(DelegationMode.class)
+        @DisplayName("row 3: cistern:client alone grants nothing to anyone — the client is never a grantee")
+        void clientOnlyRow(DelegationMode mode) {
+            WacEngine engine = new WacEngine(Clock.systemUTC(), mode);
+            Model acl = clientOnly();
+
+            assertTrue(engine.parse(acl, AclScope.ACCESS_TO).isEmpty(), "no portable term, no authorization");
+            for (Agent agent : List.of(alone, viaX, viaY, Agent.ANONYMOUS)) {
+                AccessDecision decision = decide(engine, acl, agent);
+                assertEquals(AccessDecision.DENIED, decision,
+                        "denied outright, not 'capped': there was never a grant to cap");
+            }
+        }
+
+        @Test
+        @DisplayName("row 4, flag on: foaf:Agent with cistern:client X — anyone alone and alice via X hold the modes; alice via Y nothing")
+        void publicConstrainedRowEnabled() {
+            Model acl = publicConstrainedToX();
+
+            assertHolds(decide(enabled, acl, Agent.ANONYMOUS), READ_WRITE);
+            assertHolds(decide(enabled, acl, alone), READ_WRITE);
+            assertHolds(decide(enabled, acl, viaX), READ_WRITE);
+            assertCapped(decide(enabled, acl, viaY));
+        }
+
+        @Test
+        @DisplayName("row 4, flag off: the public grant applies to everyone regardless of client")
+        void publicConstrainedRowDisabled() {
+            Model acl = publicConstrainedToX();
+
+            for (Agent agent : List.of(Agent.ANONYMOUS, alone, viaX, viaY)) {
+                assertHolds(decide(disabled, acl, agent), READ_WRITE);
+            }
+        }
+
+        // ---- composition: the intersection, and when the receipt speaks ----------------------
+
+        @Test
+        @DisplayName("on a mixed ACL the cap is an intersection: via Y keeps the unconstrained rule's modes, loses the constrained rule's, and the receipt names the term")
+        void mixedAclIsAnIntersection() {
+            Model acl = delegationAcl("<" + CONTAINER + ".acl#a> a acl:Authorization ;\n"
+                    + "  acl:agent <" + ALICE + "> ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Read .\n"
+                    + "<" + CONTAINER + ".acl#b> a acl:Authorization ;\n"
+                    + "  acl:agent <" + ALICE + "> ;\n"
+                    + "  cistern:client <" + CLIENT_X + "> ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Write .");
+
+            AccessDecision aloneDecision = decide(enabled, acl, alone);
+            assertHolds(aloneDecision, READ_WRITE);
+            assertEquals(Set.of(URI.create(CONTAINER + ".acl#a"), URI.create(CONTAINER + ".acl#b")),
+                    aloneDecision.authorizations());
+
+            assertHolds(decide(enabled, acl, viaX), READ_WRITE);
+
+            AccessDecision viaYDecision = decide(enabled, acl, viaY);
+            assertEquals(EnumSet.of(AccessMode.READ), viaYDecision.modes(), "the unconstrained rule still grants");
+            assertEquals(Optional.of(DelegationTerm.CLIENT), viaYDecision.narrowedBy(), "Write was capped");
+            assertEquals(Set.of(URI.create(CONTAINER + ".acl#a")), viaYDecision.authorizations(),
+                    "only the rule that granted is named");
+            assertTrue(viaYDecision.decidedBy().isPresent());
+            assertTrue(aloneDecision.modes().containsAll(viaYDecision.modes()), "via a client ⊆ alone");
+        }
+
+        @Test
+        @DisplayName("an excluded rule that granted nothing the others did not is no narrowing — the receipt stays silent")
+        void redundantExclusionIsNotNarrowing() {
+            Model acl = delegationAcl("<#a> a acl:Authorization ;\n"
+                    + "  acl:agent <" + ALICE + "> ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Read .\n"
+                    + "<#b> a acl:Authorization ;\n"
+                    + "  acl:agent <" + ALICE + "> ;\n"
+                    + "  cistern:client <" + CLIENT_X + "> ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Read .");
+
+            AccessDecision viaYDecision = decide(enabled, acl, viaY);
+
+            assertEquals(EnumSet.of(AccessMode.READ), viaYDecision.modes());
+            assertTrue(viaYDecision.narrowedBy().isEmpty(),
+                    "alice via Y holds exactly what alice alone holds; blaming the delegation would be false");
+        }
+
+        @Test
+        @DisplayName("several cistern:client triples name alternatives")
+        void severalClientsAreAlternatives() {
+            Model acl = delegationAcl("<#a> a acl:Authorization ;\n"
+                    + "  acl:agent <" + ALICE + "> ;\n"
+                    + "  cistern:client <" + CLIENT_X + ">, <" + CLIENT_Y + "> ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Read .");
+            Agent viaZ = Agent.of(URI.create(ALICE), Optional.of(URI.create(CLIENT_Z)));
+
+            assertHolds(decide(enabled, acl, viaX), EnumSet.of(AccessMode.READ));
+            assertHolds(decide(enabled, acl, viaY), EnumSet.of(AccessMode.READ));
+            assertCapped(decide(enabled, acl, viaZ));
+        }
+
+        @Test
+        @DisplayName("a constraint never widens: another agent's constrained rule grants alice nothing, via any client")
+        void constraintIsNotAWayIn() {
+            Model acl = delegationAcl("<#a> a acl:Authorization ;\n"
+                    + "  acl:agent <" + BOB + "> ;\n"
+                    + "  cistern:client <" + CLIENT_X + "> ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Read .");
+
+            for (Agent agent : List.of(alone, viaX, viaY)) {
+                assertEquals(AccessDecision.DENIED, decide(enabled, acl, agent),
+                        "the rule does not name alice; matching the client is not a way in");
+            }
+        }
+
+        // ---- fail closed ----------------------------------------------------------------------
+
+        @Test
+        @DisplayName("a cistern:client that is a literal, not an IRI, is a constraint nobody satisfies — never a wildcard")
+        void literalClientFailsClosed() {
+            Model acl = delegationAcl("<#a> a acl:Authorization ;\n"
+                    + "  acl:agent <" + ALICE + "> ;\n"
+                    + "  cistern:client \"" + CLIENT_X + "\" ;\n"
+                    + "  acl:accessTo <" + RESOURCE + "> ;\n"
+                    + "  acl:mode acl:Read .");
+
+            assertTrue(enabled.parse(acl, AclScope.ACCESS_TO).isEmpty(), "flag on: the rule contributes nothing");
+            for (Agent agent : List.of(alone, viaX, viaY)) {
+                assertEquals(AccessDecision.DENIED, decide(enabled, acl, agent));
+            }
+            assertHolds(decide(disabled, acl, viaY), EnumSet.of(AccessMode.READ),
+                    "flag off: the term is not read at all, so the rule is the plain grant it also is");
+        }
+
+        @Test
+        @DisplayName("a cistern:client IRI that is not a URI is skipped; if it was the only one, the rule contributes nothing")
+        void malformedClientIriFailsClosed() {
+            Model acl = ModelFactory.createDefaultModel();
+            Resource rule = acl.createResource("https://pod.example/alice/notes/.acl#a");
+            rule.addProperty(RDF.type, Acl.AUTHORIZATION);
+            rule.addProperty(Acl.AGENT, ResourceFactory.createResource(ALICE));
+            rule.addProperty(Acl.ACCESS_TO, ResourceFactory.createResource(RESOURCE));
+            rule.addProperty(Acl.MODE, Acl.READ);
+            rule.addProperty(Cistern.CLIENT, ResourceFactory.createResource("https://agents.example/bad client"));
+
+            assertTrue(enabled.parse(acl, AclScope.ACCESS_TO).isEmpty());
+            assertEquals(AccessDecision.DENIED, decide(enabled, acl, viaX));
+
+            rule.addProperty(Cistern.CLIENT, ResourceFactory.createResource(CLIENT_X));
+            assertEquals(Set.of(URI.create(CLIENT_X)), enabled.parse(acl, AclScope.ACCESS_TO).getFirst().clients(),
+                    "with one readable client beside the bad one, that client is the constraint");
+            assertHolds(decide(enabled, acl, viaX), EnumSet.of(AccessMode.READ));
+            assertCapped(decide(enabled, acl, viaY));
+        }
+
+        private void assertHolds(AccessDecision decision, Set<AccessMode> modes, String why) {
+            assertEquals(modes, decision.modes(), why);
+            assertTrue(decision.narrowedBy().isEmpty(), why);
+        }
     }
 }

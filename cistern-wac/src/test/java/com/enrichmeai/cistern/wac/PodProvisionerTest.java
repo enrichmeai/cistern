@@ -18,6 +18,7 @@ import com.enrichmeai.cistern.core.vocab.Foaf;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -138,7 +139,7 @@ class PodProvisionerTest {
                         .verifyComplete();
             }
 
-            AccessControl access = new AccessControl(new AclDiscovery(store), new WacEngine());
+            AccessControl access = new AccessControl(new AclDiscovery(store), new WacEngine(Clock.systemUTC(), DelegationMode.DISABLED));
             // Each owner has everything on their own pod ...
             assertEquals(ALL_MODES, access.grantedFor(id("/alice/notes/hello"), Agent.of(ALICE)).block().modes());
             assertEquals(ALL_MODES, access.grantedFor(id("/bob/"), Agent.of(BOB)).block().modes());
@@ -190,7 +191,7 @@ class PodProvisionerTest {
 
             assertArrayEquals(bytesBefore, stored(spec.acl()).representation().data(),
                     "provisioning is not a request to reset permissions");
-            AccessControl access = new AccessControl(new AclDiscovery(store), new WacEngine());
+            AccessControl access = new AccessControl(new AclDiscovery(store), new WacEngine(Clock.systemUTC(), DelegationMode.DISABLED));
             assertTrue(access.grantedFor(spec.root(), Agent.of(ACME)).block().isDenied(),
                     "the would-be owner gained nothing: the narrowed ACL still stands");
         }
@@ -220,7 +221,7 @@ class PodProvisionerTest {
     class AclShape {
 
         private final PodSpec spec = pod("/firms/acme/", ACME);
-        private final WacEngine engine = new WacEngine();
+        private final WacEngine engine = new WacEngine(Clock.systemUTC(), DelegationMode.DISABLED);
 
         private Model writtenAcl() {
             provisioner.provision(spec).block();

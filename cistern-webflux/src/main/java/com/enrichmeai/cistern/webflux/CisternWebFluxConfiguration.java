@@ -8,6 +8,7 @@ import com.enrichmeai.cistern.wac.AuditPolicy;
 import com.enrichmeai.cistern.wac.DecisionLog;
 import com.enrichmeai.cistern.wac.DecisionQuery;
 import com.enrichmeai.cistern.wac.DecisionSink;
+import com.enrichmeai.cistern.wac.DelegationMode;
 import com.enrichmeai.cistern.wac.JsonLinesDecisionQuery;
 import com.enrichmeai.cistern.wac.JsonLinesDecisionSink;
 import com.enrichmeai.cistern.wac.PodProvisioner;
@@ -167,10 +168,20 @@ public class CisternWebFluxConfiguration {
         return new PodSeeder(provisioner, properties);
     }
 
+    /**
+     * The policy engine (T5.2), with the delegation switch (T6.5, ADR 0004). The clock is the
+     * system's, as for {@link #cisternAuthorizationFilter}; it is a constructor collaborator of
+     * the engine rather than a {@code decide} parameter so that T5.8's expiry is judged against
+     * an injectable one. The mode is logged on every boot: it changes what a grant means, and a
+     * flag that silently failed to bind would leave every {@code cistern:client} constraint
+     * unenforced while the ACLs read as constrained.
+     */
     @Bean
     @ConditionalOnMissingBean
-    public WacEngine wacEngine() {
-        return new WacEngine();
+    public WacEngine wacEngine(CisternProperties properties) {
+        DelegationMode delegation = properties.wac().delegation().mode();
+        log.info(WebfluxMessage.DELEGATION_WIRED.format(delegation));
+        return new WacEngine(Clock.systemUTC(), delegation);
     }
 
     @Bean

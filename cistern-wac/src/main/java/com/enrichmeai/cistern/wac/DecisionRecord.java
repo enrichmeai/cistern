@@ -19,17 +19,21 @@ import java.util.Optional;
  * {@link DecisionField}. Adding a component here is adding a column to every log a deployment
  * has already written; do it knowingly.
  *
- * @param at        when the decision was taken
- * @param agent     who asked; {@link Agent#ANONYMOUS} when the request proved no identity
- * @param target    the request's own target — not, for a {@code DELETE}, its parent; for a
- *                  request addressed to an ACL resource, the resource that ACL governs, since
- *                  that is where Control was required ({@link RequiredAccess#forAcl})
- * @param required  the mode the request needed on {@code target}
- * @param outcome   how it ended
- * @param decidedBy the ACL resource whose authorizations granted it, when it was allowed;
- *                  empty on every denial, because a denial names no policy (see
- *                  {@link AccessDecision})
- * @param requestId the correlation identifier the request carried, or the one minted for it
+ * @param at         when the decision was taken
+ * @param agent      who asked; {@link Agent#ANONYMOUS} when the request proved no identity
+ * @param target     the request's own target — not, for a {@code DELETE}, its parent; for a
+ *                   request addressed to an ACL resource, the resource that ACL governs, since
+ *                   that is where Control was required ({@link RequiredAccess#forAcl})
+ * @param required   the mode the request needed on {@code target}
+ * @param outcome    how it ended
+ * @param decidedBy  the ACL resource whose authorizations granted it, when it was allowed;
+ *                   empty on every denial, because a denial names no policy (see
+ *                   {@link AccessDecision})
+ * @param requestId  the correlation identifier the request carried, or the one minted for it
+ * @param narrowedBy the delegation term that capped what the agent's WebID would otherwise hold
+ *                   on {@code target}, when one did (ADR 0004 §6, AD-DEL-5) — the difference
+ *                   between "never had it" and "the delegation capped it"; empty for a decision
+ *                   no delegation touched, and absent from the line it is written as
  */
 public record DecisionRecord(
         Instant at,
@@ -38,7 +42,8 @@ public record DecisionRecord(
         AccessMode required,
         Outcome outcome,
         Optional<ResourceIdentifier> decidedBy,
-        RequestId requestId) {
+        RequestId requestId,
+        Optional<DelegationTerm> narrowedBy) {
 
     public DecisionRecord {
         Objects.requireNonNull(at, "at");
@@ -48,6 +53,7 @@ public record DecisionRecord(
         Objects.requireNonNull(outcome, "outcome");
         Objects.requireNonNull(decidedBy, "decidedBy");
         Objects.requireNonNull(requestId, "requestId");
+        Objects.requireNonNull(narrowedBy, "narrowedBy");
         if (!outcome.isAllowed() && decidedBy.isPresent()) {
             throw new IllegalArgumentException(WacMessage.DENIAL_NAMES_A_POLICY.format());
         }
@@ -56,7 +62,8 @@ public record DecisionRecord(
     /**
      * The receipt for {@code verdict}, taken {@code at} for {@code agent}. The one place a
      * verdict becomes a record, so the mapping — target and mode from the primary judgement,
-     * outcome from the verdict and the agent, policy only on allow — is written once.
+     * outcome from the verdict and the agent, policy only on allow, the narrowing term from
+     * the primary judgement — is written once.
      */
     public static DecisionRecord of(
             Instant at, Agent agent, AccessVerdict verdict, RequestId requestId) {
@@ -64,6 +71,6 @@ public record DecisionRecord(
         AccessRequirement primary = verdict.primary().requirement();
         return new DecisionRecord(
                 at, agent, primary.target(), primary.mode(),
-                Outcome.of(verdict, agent), verdict.decidedBy(), requestId);
+                Outcome.of(verdict, agent), verdict.decidedBy(), requestId, verdict.narrowedBy());
     }
 }

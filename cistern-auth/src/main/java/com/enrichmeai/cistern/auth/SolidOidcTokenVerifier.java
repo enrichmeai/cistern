@@ -46,9 +46,6 @@ public final class SolidOidcTokenVerifier {
     /** Solid-OIDC §5: the claim naming the WebID on the access token. */
     static final String WEBID_CLAIM = "webid";
 
-    /** RFC 9068 §2.2 / the capture: the client identifier, present on a real CSS access token. */
-    static final String CLIENT_ID_CLAIM = "client_id";
-
     /** RFC 9449 §6.1: {@code cnf} holds {@code jkt}, the DPoP key thumbprint. */
     static final String CONFIRMATION_CLAIM = "cnf";
     static final String THUMBPRINT_KEY = "jkt";
@@ -130,7 +127,8 @@ public final class SolidOidcTokenVerifier {
     }
 
     /**
-     * The {@code client_id} claim when it is an absolute URI.
+     * The {@code client_id} claim when it is an absolute URI — {@link ClientIdentifier}, on the
+     * one claim the capture showed a Solid-OIDC access token carries.
      *
      * <p>Empty when the claim is absent, and equally when it is present but opaque — a
      * client-credentials grant puts its own credential id here, which names no client anything
@@ -138,11 +136,7 @@ public final class SolidOidcTokenVerifier {
      * the reason {@code Agent.client()} is an {@code Optional<URI>} and not a {@code String}.
      */
     private static Optional<URI> client(JWTClaimsSet claims) {
-        try {
-            return Optional.ofNullable(absoluteUri(stringClaim(claims, CLIENT_ID_CLAIM)));
-        } catch (URISyntaxException e) {
-            return Optional.empty();
-        }
+        return ClientIdentifier.from(claims, ClientIdentifier.SOLID_OIDC_CLAIMS);
     }
 
     private static String thumbprint(JWTClaimsSet claims) {

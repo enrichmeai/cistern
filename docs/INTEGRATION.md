@@ -89,7 +89,8 @@ Facts an integrator relies on, all observed on 2026-08-18:
 | Store documents and metadata per matter | ✅ | — |
 | Enforce owner-authored grants per request; scoped read/write; instant revocation | ✅ | — |
 | Many human principals (lawyers, clients) | ✅ JWTs from your OIDC issuer (T4.0, #88) | T4.1–T4.4 for Solid-OIDC proper (any IdP, DPoP) |
-| Applications as their own principals (legal ≠ tax) | ✅ service principals (T4.0, #88; #89 ruled: apps are their own WebIDs) | (user, client) shape + intersection cap when the MCP front door needs it |
+| Applications as their own principals (legal ≠ tax) | ✅ service principals (T4.0, #88; #89 ruled: apps are their own WebIDs) | — |
+| A person through one application only | ✅ T6.5 (#119): `cistern grant <webid> --client <client-id>` writes `cistern:client`; the server evaluates it with `cistern.wac.delegation.enabled=true` (default off), a delegation only narrows, and the receipt says `narrowedBy: CLIENT` when it capped a request | expiry (#92) |
 | Create pods/matters on demand | ✅ T5.6 (#90): `cistern.pods.seed[]` at boot, `cistern pod create` over HTTP, `PodProvisioner` for embedders | — |
 | Author grants without hand-writing Turtle | ✅ T5.7 (#91): `cistern grant` / `revoke` + `GrantService` | — |
 | Grants that expire | ❌ | **#92** T5.8 |
@@ -150,7 +151,7 @@ Being straight about the effort is what makes the rest of this document credible
 
 | Integrator | What they do | Effort today | Effort after the levers land |
 |---|---|---|---|
-| **An AI assistant** (Claude Desktop, ChatGPT, an in-house agent) | Connects over MCP; the person grants it a folder | **Near zero, and real (T6.1/T6.2)**: a Claude Desktop user pastes one connector entry — the bridge jar plus two env vars (`CISTERN_MCP_BASE_URL`, `CISTERN_MCP_CREDENTIAL`) — and the owner runs `cistern grant <agent-webid> --read /notes/`; see [`docs/demo/claude-desktop.md`](demo/claude-desktop.md). The assistant integrates nothing: it already speaks MCP, and every tool call is an ordinary HTTP request under WAC, receipts included | Streamable-HTTP transport for remote assistants; the (user, client) principal shape when delegation needs it (#89) |
+| **An AI assistant** (Claude Desktop, ChatGPT, an in-house agent) | Connects over MCP; the person grants it a folder | **Near zero, and real (T6.1/T6.2)**: a Claude Desktop user pastes one connector entry — the bridge jar plus two env vars (`CISTERN_MCP_BASE_URL`, `CISTERN_MCP_CREDENTIAL`) — and the owner runs `cistern grant <agent-webid> --read /notes/`; see [`docs/demo/claude-desktop.md`](demo/claude-desktop.md). The assistant integrates nothing: it already speaks MCP, and every tool call is an ordinary HTTP request under WAC, receipts included | Streamable-HTTP transport for remote assistants; the (person, client) grant is built (T6.5): `cistern grant <webid> --read --client <client-id> /notes/` lets the person use *that* assistant there and no other, once the server sets `cistern.wac.delegation.enabled=true` |
 | **An application** (ValueDocs, a firm's DMS, a consumer app) | Authenticates as a principal, reads/writes under a grant, handles refusal, keeps no authoritative copy | Days: OIDC/JWT + service principals (T4.0), `cistern grant` / `GrantService` (T5.7), `cistern pod create` (T5.6), receipts (T5.9) and the integration kit (T7.10) are all on `main`; plain HTTP per §3 | Hours, once the thin clients (T7.9) exist; EnrichMeAI does it alongside the first partners (Shape A) |
 | **An operator / hoster** | Runs Cistern for tenants | Jar / Docker / k8s / tagged GHCR image (T7.14); production posture built (T7.7, ADR 0002): Terraform HTTPS-LB path and the k8s production overlay, neither yet applied by EnrichMeAI | Hosted model after #103 |
 
@@ -252,9 +253,17 @@ production the owner authenticates through 2 or 3 with the token unset (ADR 0002
 **no** caching of decisions: revoking a grant, rotating a service secret or a signing key
 takes effect on the next request.
 
-**Not yet:** DPoP-bound tokens, `Authorization: DPoP`, WebID dereferencing (T4.1–T4.4); the
-(user, client) principal shape and the intersection cap (#89, taken when the MCP front door
-needs it).
+**Not yet:** DPoP-bound tokens, `Authorization: DPoP`, WebID dereferencing (T4.1–T4.4).
+
+**Since T6.5 (#119):** the token's client rides on the principal — `client_id` when the token
+carries it (a Solid IdP, a client-credentials grant), else `azp` (a Keycloak-issued user token
+has only that) — and a grant can be narrowed to it: `cistern grant <webid> --read --client
+<client-id> <path>` writes `cistern:client` beside `acl:agent`. The server evaluates the term
+only with `cistern.wac.delegation.enabled=true` (default off; off is plain WAC, byte for byte),
+a delegation only ever narrows what the WebID holds, and the receipt names `narrowedBy: CLIENT`
+when the constraint is what refused. Only an absolute URI counts as a client: register the
+application under a URI client id (its own WebID is the natural choice), or the token names no
+client and the constraint cannot bind.
 
 **After T4.1–T4.4:** any Solid-OIDC identity provider works and DPoP-bound tokens are
 accepted — this is what makes "point another firm's tools at the same pod" true.
@@ -710,7 +719,7 @@ public final class GrantService {
     public GrantOutcome grant(EffectiveAcl current, GrantRequest request);
     public GrantOutcome revoke(EffectiveAcl current, RevokeRequest request);   // Conflict if it would drop Control
 }
-public record GrantRequest(ResourceIdentifier target, Grantee grantee, Set<AccessMode> modes) {}   // closed under implication; validUntil is #92
+public record GrantRequest(ResourceIdentifier target, Grantee grantee, Set<AccessMode> modes, Set<URI> clients) {}   // closed under implication; clients empty = unconstrained (T6.5); validUntil is #92
 public record RevokeRequest(ResourceIdentifier target, Grantee grantee) {}
 public sealed interface Grantee permits Grantee.WebId, Grantee.Public {
     record WebId(URI webId) implements Grantee {}
@@ -718,8 +727,12 @@ public sealed interface Grantee permits Grantee.WebId, Grantee.Public {
 }
 public record GrantOutcome(ResourceIdentifier aclResource, Set<Authorization> authorizations, Model aclGraph, boolean changed) {}
 
-// #92 — cistern-core vocab
-public final class Cistern { public static final String NS = "https://enrichmeai.com/ns/cistern#"; public static final Property VALID_UNTIL = …; }
+// cistern-core vocab — built (T6.5); VALID_UNTIL joins under #92
+public final class Cistern { public static final String NS = "https://enrichmeai.com/ns/cistern#"; public static final Property CLIENT = …; }
+// cistern-wac — built (T6.5): the client is a constraint on the rule, never a grantee (ADR 0004)
+public record Authorization(…, Set<URI> targets, Set<URI> clients) { boolean matches(Agent a); boolean admits(Agent a); }   // clients empty = unconstrained
+public final class WacEngine { public WacEngine(Clock clock, DelegationMode delegation); … }   // both decide overloads → one narrowing path
+public record AccessDecision(…, Optional<DelegationTerm> narrowedBy) {}                        // CLIENT when the cap removed something
 // #92 — cistern-wac
 public record Authorization(…, Optional<Instant> validUntil) { public boolean isActive(Instant now) {…} }
 ```
@@ -835,6 +848,7 @@ defaults to `CISTERN_TOKEN`; `--base` to `http://127.0.0.1:3737`.
 
 | `cistern.audit.required` | `CISTERN_AUDIT_REQUIRED` | `false` | `true` ⇒ a decision the log cannot record is not acted on: 503, retry later (T5.9) |
 | `cistern.audit.root` | `CISTERN_AUDIT_ROOT` | `<cistern.storage.root>/.cistern` | directory of the JSON Lines decision log (`decisions/YYYY-MM-DD.jsonl`); not pod content wherever it is (T5.9) |
+| `cistern.wac.delegation.enabled` | `CISTERN_WAC_DELEGATION_ENABLED` | `false` | evaluate `cistern:client` (and, after #92, `cistern:validUntil`): a delegation only narrows a WebID's grant to the client the token names, and the receipt says `narrowedBy` when it did. Off means plain WAC — the terms are not read, decisions and receipts are byte-identical to a server without the extension (T6.5, ADR 0004) |
 | `cistern.auth.solid.webid.trusted-origins` | `CISTERN_AUTH_SOLID_WEBID_TRUSTED_ORIGINS` | *(empty)* | Origins a WebID may be dereferenced from beyond public HTTPS, matched exactly on scheme, host and port — e.g. `https://idp.internal:8443` for an identity provider on your own network, or `http://localhost:3939` for a conformance harness. Empty means public HTTPS only, which is the default and what a pod exposed to the internet should keep. Naming an origin opens **that origin**, over its own scheme: it does not permit plain `http` generally, and it leaves `169.254.169.254` refused. Every non-empty list is logged at WARN on boot. |
 | `cistern.mcp.enabled` | `CISTERN_MCP_ENABLED` | `false` | cistern-app serves MCP on its own stdio; tool calls loop back over `127.0.0.1:<port>` through the full filter chain (T6.1). Run with the `mcp-stdio` profile so logging leaves stdout. The standalone bridge jar ignores this — launching it *is* enabling it |
 | `cistern.mcp.credential` | `CISTERN_MCP_CREDENTIAL` | unset | the one bearer credential the MCP connection is bound to (T6.2) — a service principal's secret or the owner token — resolved by the ordinary resolver chain; **required** when the door is enabled, refused at bind time otherwise |
@@ -875,8 +889,9 @@ Planned: `cistern.storage.backend` (#95).
 ## 9. ACL template and the two traps (what `cistern grant` writes for you)
 
 ```turtle
-@prefix acl:  <http://www.w3.org/ns/auth/acl#> .
-@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix acl:     <http://www.w3.org/ns/auth/acl#> .
+@prefix foaf:    <http://xmlns.com/foaf/0.1/> .
+@prefix cistern: <https://enrichmeai.com/ns/cistern#> .
 
 <#owner> a acl:Authorization ;
     acl:agent    <OWNER-WEBID> ;
@@ -887,10 +902,20 @@ Planned: `cistern.storage.backend` (#95).
     acl:agent    <GRANTEE-WEBID> ;              # or  acl:agentClass foaf:Agent  for "anyone"
     acl:accessTo <CONTAINER/> ; acl:default <CONTAINER/> ;
     acl:mode     acl:Read .
+
+<#grantee-via-app> a acl:Authorization ;        # cistern grant <GRANTEE-WEBID> --read --client <CLIENT-ID> <CONTAINER/>
+    acl:agent      <GRANTEE-WEBID> ;            # still a grant to the WebID …
+    cistern:client <CLIENT-ID> ;                # … narrowed to requests through this application (T6.5)
+    acl:accessTo   <CONTAINER/> ; acl:default <CONTAINER/> ;
+    acl:mode       acl:Read .
 ```
 
 1. `acl:default` **names the container** and is required for children to inherit.
 2. A resource-level `.acl` **replaces** inheritance — always re-state the owner.
+3. `cistern:client` **narrows** a grant to a WebID; it never replaces the WebID, and a rule
+   with only `cistern:client` grants nothing. Evaluated only with
+   `cistern.wac.delegation.enabled=true`; a server that does not read the term applies the
+   WebID's grant as it stands — which is a grant the owner already accepted.
 
 `Append ⊂ Write`; `Control` implies nothing else; `DELETE` needs Write on the resource **and**
 its parent. Anonymous → 401, authenticated-and-denied → 403.
