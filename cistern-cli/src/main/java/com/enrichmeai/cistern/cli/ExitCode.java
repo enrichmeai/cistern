@@ -26,9 +26,10 @@ public enum ExitCode {
     REFUSED(Values.REFUSED),
 
     /**
-     * The ACL changed under us: the write failed its precondition (412) even after the one
-     * automatic re-read and retry. Nothing was written; running the command again will pick
-     * up the new state.
+     * The resource changed under us: the write failed its precondition (412). For a grant or
+     * revoke that is after the one automatic re-read and retry, and running the command again
+     * picks up the new state; for a sync it is a pod copy that changed since it was sent, and
+     * the pod's copy stands until the person reconciles. Nothing was written either way.
      */
     CONFLICT(Values.CONFLICT);
 

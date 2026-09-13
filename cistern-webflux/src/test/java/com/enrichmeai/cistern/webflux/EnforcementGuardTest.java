@@ -30,7 +30,7 @@ class EnforcementGuardTest {
                     URI.create("https://valuedocs.co.in/apps/legal#id"), "sha256:00"));
 
     private static CisternProperties bind(CisternProperties.Owner owner, CisternProperties.Auth auth) {
-        return new CisternProperties(null, null, null, owner, auth, null, null);
+        return new CisternProperties(null, null, null, owner, auth, null, null, null);
     }
 
     @Test

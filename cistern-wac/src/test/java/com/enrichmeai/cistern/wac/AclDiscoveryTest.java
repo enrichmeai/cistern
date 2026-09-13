@@ -11,6 +11,7 @@ import com.enrichmeai.cistern.core.ResourceIdentifier;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -219,7 +220,7 @@ class AclDiscoveryTest {
                     .assertNext(acl -> {
                         assertEquals(id(ROOT + "notes/hello"), acl.source(),
                                 "the empty ACL is the effective one, not the parent's");
-                        assertTrue(new WacEngine()
+                        assertTrue(new WacEngine(Clock.systemUTC(), DelegationMode.DISABLED)
                                 .decide(acl, Agent.of(URI.create(ALICE)))
                                 .isDenied());
                     })
@@ -233,7 +234,7 @@ class AclDiscoveryTest {
     @DisplayName("discovery and evaluation together: an inherited acl:default grants a child")
     void discoveryFeedsTheEngine() {
         writeAcl(ROOT + "notes/", "default", ROOT + "notes/");
-        WacEngine engine = new WacEngine();
+        WacEngine engine = new WacEngine(Clock.systemUTC(), DelegationMode.DISABLED);
 
         StepVerifier.create(discovery.findFor(id(ROOT + "notes/hello"))
                         .map(acl -> engine.decide(acl, Agent.of(URI.create(ALICE)))))
@@ -250,7 +251,7 @@ class AclDiscoveryTest {
     @DisplayName("an inherited acl:accessTo rule does NOT leak down to a child")
     void accessToDoesNotLeakDown() {
         writeAcl(ROOT + "notes/", "accessTo", ROOT + "notes/");
-        WacEngine engine = new WacEngine();
+        WacEngine engine = new WacEngine(Clock.systemUTC(), DelegationMode.DISABLED);
 
         StepVerifier.create(discovery.findFor(id(ROOT + "notes/hello"))
                         .map(acl -> engine.decide(acl, Agent.of(URI.create(ALICE)))))

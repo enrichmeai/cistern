@@ -78,6 +78,47 @@ public enum WacMessage {
                     + " Control could lock the owner out of the resource. Edit the ACL"
                     + " deliberately instead"),
 
+    // ---- delegation (T6.5, ADR 0004) --------------------------------------------------
+
+    /**
+     * A {@code cistern:client} IRI that is not a syntactically valid URI. Ignored — a constraint
+     * nobody satisfies, never a wildcard.
+     */
+    MALFORMED_CLIENT_IRI("Ignoring malformed cistern:client IRI <%s> in the effective ACL"),
+
+    /**
+     * An authorization names the agent but is constrained to clients the request did not come
+     * through, so it contributes nothing (AD-15: a delegation only narrows). Logged, never
+     * thrown.
+     */
+    CLIENT_NOT_PERMITTED(
+            "Authorization %s names the agent but is constrained to client(s) %s; the request"
+                    + " came through <%s>, so the authorization grants nothing to it"),
+
+    /**
+     * A grant that names nobody in portable WAC terms. The grantee — a WebID or the public —
+     * is what a grant is for; {@code cistern:client} only narrows it and cannot stand in for it
+     * (AD-DEL-1): a server that does not read the term would apply such a grant to nobody, and
+     * one that strips it on export would apply it to everyone the remaining terms name.
+     */
+    GRANT_WITHOUT_GRANTEE(
+            "A grant on <%s> must name whom it is for — a WebID (acl:agent) or the public"
+                    + " (acl:agentClass foaf:Agent); a cistern:client constraint alone names"
+                    + " nobody, so a grant that only names a client is refused"),
+
+    /** A client identifier that is not an absolute URI — a caller bug, as for a WebID. */
+    CLIENT_NOT_ABSOLUTE("A client identifier must be an absolute URI: <%s>"),
+
+    /**
+     * An authorization carries {@code cistern:client} but none of its values is a URI. It
+     * contributes nothing: a constraint that cannot be read is one nobody satisfies, and
+     * reading it as "no constraint" would widen the grant (AD-15). Logged, never thrown.
+     */
+    CLIENT_CONSTRAINT_UNREADABLE(
+            "Authorization %s constrains its client but none of its cistern:client values is a"
+                    + " URI; it grants nothing, since a constraint that cannot be read is one"
+                    + " nobody satisfies"),
+
     // ---- provisioning (T5.6) ----------------------------------------------------------
 
     /**

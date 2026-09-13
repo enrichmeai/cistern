@@ -7,6 +7,7 @@ import com.enrichmeai.cistern.wac.AclResource;
 import com.enrichmeai.cistern.wac.AclScope;
 import com.enrichmeai.cistern.wac.AgentClass;
 import com.enrichmeai.cistern.wac.Authorization;
+import com.enrichmeai.cistern.wac.DelegationMode;
 import com.enrichmeai.cistern.wac.GrantOutcome;
 import com.enrichmeai.cistern.wac.Grantee;
 import com.enrichmeai.cistern.wac.PodProvisioned;
@@ -15,6 +16,7 @@ import com.enrichmeai.cistern.wac.PodSpec;
 import com.enrichmeai.cistern.wac.WacEngine;
 
 import java.net.URI;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -31,22 +33,33 @@ import java.util.StringJoiner;
  * {@link WacEngine} the server enforces with; nothing is echoed from the request. So if the
  * report says "anyone: read — this container and everything inside it", that is what the engine
  * will decide.
+ *
+ * <p>The engine here reads with delegation {@link DelegationMode#ENABLED enabled}, whatever the
+ * server it will be sent to has configured: this tool <em>writes</em> {@code cistern:client},
+ * so its report names the constraint the owner asked for. Whether the server evaluates it is
+ * that server's {@code cistern.wac.delegation.enabled}, and the option's help says so. The clock
+ * is the system's — the one clock at the tool's composition root, alongside {@link Session}.
  */
 final class AclReport {
 
     private final PodBase base;
-    private final WacEngine engine = new WacEngine();
+    private final WacEngine engine = new WacEngine(Clock.systemUTC(), DelegationMode.ENABLED);
 
     AclReport(PodBase base) {
         this.base = Objects.requireNonNull(base, "base");
     }
 
-    /** The lines for a grant of {@code modes} to {@code grantee} on {@code target}. */
-    List<String> grant(GrantOutcome outcome, ResourceIdentifier target, Grantee grantee, Set<AccessMode> modes) {
+    /**
+     * The lines for a grant of {@code modes} to {@code grantee} on {@code target}, through
+     * {@code clients} only when that set is not empty.
+     */
+    List<String> grant(GrantOutcome outcome, ResourceIdentifier target, Grantee grantee, Set<AccessMode> modes,
+                       Set<URI> clients) {
         List<String> lines = new ArrayList<>();
+        String who = via(name(grantee), clients);
         lines.add(outcome.changed()
-                ? CliMessage.GRANTED.format(name(grantee), modes(modes), targetWords(target))
-                : CliMessage.ALREADY_GRANTED.format(name(grantee), modes(modes), base.display(target)));
+                ? CliMessage.GRANTED.format(who, modes(modes), targetWords(target))
+                : CliMessage.ALREADY_GRANTED.format(who, modes(modes), base.display(target)));
         lines.addAll(holdings(outcome, target));
         return lines;
     }
@@ -152,7 +165,19 @@ final class AclReport {
         for (URI agent : authorization.agents()) {
             names.add(agent.toString());
         }
-        return names.toString();
+        return via(names.toString(), authorization.clients());
+    }
+
+    /** {@code who}, qualified by the clients it is constrained to when there are any. */
+    private static String via(String who, Set<URI> clients) {
+        if (clients.isEmpty()) {
+            return who;
+        }
+        StringJoiner names = new StringJoiner(CliMessage.LIST_SEPARATOR.format());
+        for (URI client : clients) {
+            names.add(client.toString());
+        }
+        return CliMessage.VIA_CLIENTS.format(who, names);
     }
 
     /** Modes in declaration order, by their lower-case names — the same tokens {@code WAC-Allow} uses. */

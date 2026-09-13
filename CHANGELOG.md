@@ -14,7 +14,21 @@ stranger test — is [RELEASE.md](RELEASE.md).
 
 ## [Unreleased]
 
-<!-- nothing yet -->
+### Added
+
+**`cistern sync` (`cistern-cli`, T7.17, #200)** — mirror a local folder into a pod container.
+Sub-folders become containers; files are sent under a closed extension-to-media-type table
+(`.md`, `.pdf`, `.csv`, `.ttl`, …; anything else `application/octet-stream`), every write
+conditional: `If-None-Match: *` for a file never sent, `If-Match` for one sent before, and a
+412 is exit 3 with the pod's copy left standing. `<local-dir>/.cistern-sync.json` remembers
+what was sent, so a second run with nothing changed sends nothing. `--dry-run` prints the plan;
+`--delete` (off by default) removes what the folder no longer holds. The CLI parses no RDF.
+
+### Changed
+
+- `cistern-cli`: exit code 3 now also covers a synced copy that changed on the pod; the refusal
+  message for a resource (not an ACL) names the mode the method needed — Read, Write, or Write
+  on it and its container for a delete.
 
 ## [0.2.0] - 2026-08-20
 

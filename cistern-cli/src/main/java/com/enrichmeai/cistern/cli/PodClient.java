@@ -18,14 +18,16 @@ import org.apache.jena.rdf.model.Model;
 import reactor.core.publisher.Mono;
 
 /**
- * The three HTTP requests the CLI makes — read an ACL, write an ACL, create a container — over
- * the JDK's {@link HttpClient}, composed as {@link Mono}s so the editor and the provisioner can
- * chain and retry them.
+ * The HTTP requests the CLI makes — read an ACL, write an ACL, create a container, send a
+ * document's bytes, ask a validator, delete — over the JDK's {@link HttpClient}, composed as
+ * {@link Mono}s so the editor, the provisioner and the synchronizer can chain and retry them.
  *
- * <p>Deliberately no other requests. The CLI does not read the resource, does not list
- * containers, does not probe permissions: it does exactly what an owner editing the file by hand
- * would do, with the caller's own credential, so that whatever the server would refuse the owner
- * it refuses the CLI. Every non-2xx answer this class has a rule for becomes a
+ * <p>Deliberately no other requests. The CLI never fetches a document's body, does not list
+ * containers, does not probe permissions: it does exactly what an owner working by hand would
+ * do, with the caller's own credential, so that whatever the server would refuse the owner it
+ * refuses the CLI. The one read of any kind is {@link #validator} — a {@code HEAD}, for the
+ * {@code ETag} a later {@code If-Match} needs, which returns no body and which the server
+ * gates on {@code acl:Read}. Every non-2xx answer this class has a rule for becomes a
  * {@link CliFailure}; every one it does not is {@link CliFailure.UnexpectedStatus} rather than
  * a guess.
  *
@@ -109,6 +111,75 @@ final class PodClient implements PodTransport {
                 .flatMap(response -> created(container, response));
     }
 
+    /**
+     * {@code PUT} {@code body} at {@code resource} as {@code mediaType}, under
+     * {@code precondition}; the bytes go as they are.
+     *
+     * @return on 201 or 204, the {@code ETag} the response carried if it carried one;
+     *     {@link CliFailure.Conflict} on 412
+     */
+    @Override
+    public Mono<Optional<EntityTagHeader>> put(ResourceIdentifier resource, byte[] body, FileMediaType mediaType,
+                                               WritePrecondition precondition) {
+        HttpRequest request = precondition.apply(authenticated(HttpRequest.newBuilder(resource.uri())))
+                .PUT(HttpRequest.BodyPublishers.ofByteArray(body))
+                .header(HttpHeaderName.CONTENT_TYPE.fieldName(), mediaType.contentType())
+                .timeout(REQUEST_TIMEOUT)
+                .build();
+        return send(PodMethod.PUT, resource, request)
+                .flatMap(response -> stored(resource, precondition, response));
+    }
+
+    /**
+     * {@code HEAD} {@code resource} for its validator. Asked for as Turtle, so that for an RDF
+     * source the tag recorded is the one the default representation carries; the server
+     * compares {@code If-Match} across all of a resource's representations, so either would do.
+     *
+     * @return the {@code ETag}; {@link CliFailure.MissingValidator} if the 200 carried none
+     */
+    @Override
+    public Mono<EntityTagHeader> validator(ResourceIdentifier resource) {
+        HttpRequest request = authenticated(HttpRequest.newBuilder(resource.uri()))
+                .method(PodMethod.HEAD.name(), HttpRequest.BodyPublishers.noBody())
+                .header(HttpHeaderName.ACCEPT.fieldName(), Representation.TURTLE)
+                .timeout(REQUEST_TIMEOUT)
+                .build();
+        return send(PodMethod.HEAD, resource, request)
+                .map(response -> validatorOf(resource, response));
+    }
+
+    /**
+     * {@code DELETE} {@code resource} under {@code precondition}.
+     *
+     * @return {@link Deletion#DELETED} on 204; {@link Deletion#ALREADY_ABSENT} on 404;
+     *     {@link CliFailure.Conflict} on 412
+     */
+    @Override
+    public Mono<Deletion> delete(ResourceIdentifier resource, WritePrecondition precondition) {
+        HttpRequest request = precondition.apply(authenticated(HttpRequest.newBuilder(resource.uri())))
+                .DELETE()
+                .timeout(REQUEST_TIMEOUT)
+                .build();
+        return send(PodMethod.DELETE, resource, request)
+                .flatMap(response -> deleted(resource, Optional.of(precondition), response));
+    }
+
+    /**
+     * {@code DELETE} {@code container}, unconditionally.
+     *
+     * @return {@link Deletion#DELETED} on 204; {@link Deletion#ALREADY_ABSENT} on 404;
+     *     {@link CliFailure.ContainerNotEmpty} on 409
+     */
+    @Override
+    public Mono<Deletion> deleteContainer(ResourceIdentifier container) {
+        HttpRequest request = authenticated(HttpRequest.newBuilder(container.uri()))
+                .DELETE()
+                .timeout(REQUEST_TIMEOUT)
+                .build();
+        return send(PodMethod.DELETE, container, request)
+                .flatMap(response -> deleted(container, Optional.empty(), response));
+    }
+
     // ---- wire ------------------------------------------------------------------------------
 
     private HttpRequest.Builder authenticated(HttpRequest.Builder builder) {
@@ -164,6 +235,50 @@ final class PodClient implements PodTransport {
                 .orElse(Representation.TURTLE);
         Model graph = RdfIo.parse(new Representation(contentType, response.body()), acl);
         return new AclFetch.Found(graph, etag);
+    }
+
+    private static Mono<Optional<EntityTagHeader>> stored(ResourceIdentifier resource, WritePrecondition precondition,
+                                                          HttpResponse<byte[]> response) {
+        Optional<PodStatus> status = PodStatus.of(response.statusCode());
+        if (status.filter(PodStatus::isWritten).isPresent()) {
+            return Mono.just(response.headers().firstValue(HttpHeaderName.ETAG.fieldName()).map(EntityTagHeader::new));
+        }
+        if (status.filter(PodStatus.PRECONDITION_FAILED::equals).isPresent()) {
+            return Mono.error(new CliFailure.Conflict(resource, precondition));
+        }
+        return Mono.error(unexpected(PodMethod.PUT, resource, response));
+    }
+
+    private static EntityTagHeader validatorOf(ResourceIdentifier resource, HttpResponse<byte[]> response) {
+        if (PodStatus.of(response.statusCode()).filter(PodStatus.OK::equals).isEmpty()) {
+            throw unexpected(PodMethod.HEAD, resource, response);
+        }
+        return response.headers().firstValue(HttpHeaderName.ETAG.fieldName())
+                .map(EntityTagHeader::new)
+                .orElseThrow(() -> new CliFailure.MissingValidator(resource));
+    }
+
+    /**
+     * A 412 is a conflict only where a precondition was sent; a 409 names a container that is
+     * not empty (Solid Protocol §5.4) and can only come back for one. Anything else is
+     * unexpected.
+     */
+    private static Mono<Deletion> deleted(ResourceIdentifier resource, Optional<WritePrecondition> precondition,
+                                          HttpResponse<byte[]> response) {
+        Optional<PodStatus> status = PodStatus.of(response.statusCode());
+        if (status.filter(PodStatus.NO_CONTENT::equals).isPresent()) {
+            return Mono.just(Deletion.DELETED);
+        }
+        if (status.filter(PodStatus.NOT_FOUND::equals).isPresent()) {
+            return Mono.just(Deletion.ALREADY_ABSENT);
+        }
+        if (status.filter(PodStatus.PRECONDITION_FAILED::equals).isPresent() && precondition.isPresent()) {
+            return Mono.error(new CliFailure.Conflict(resource, precondition.get()));
+        }
+        if (status.filter(PodStatus.CONFLICT::equals).isPresent() && resource.isContainer()) {
+            return Mono.error(new CliFailure.ContainerNotEmpty(resource));
+        }
+        return Mono.error(unexpected(PodMethod.DELETE, resource, response));
     }
 
     private static Mono<Void> written(ResourceIdentifier acl, HttpResponse<byte[]> response) {

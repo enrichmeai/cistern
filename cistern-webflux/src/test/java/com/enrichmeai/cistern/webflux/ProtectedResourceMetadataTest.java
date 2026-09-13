@@ -30,7 +30,7 @@ class ProtectedResourceMetadataTest {
     private static CisternProperties properties(String baseUrl, CisternProperties.Auth auth) {
         return new CisternProperties(baseUrl, null, null,
                 new CisternProperties.Owner(URI.create("https://pod.example/owner#me"), null),
-                auth, null, null);
+                auth, null, null, null);
     }
 
     private static CisternProperties.Auth auth(URI resourceIdentifier, URI authorizationServer) {

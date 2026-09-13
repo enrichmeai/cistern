@@ -159,6 +159,9 @@ public enum AuthMessage {
     /** A bearer JWT authenticated a WebID. Logged at DEBUG. */
     TOKEN_ACCEPTED("Bearer JWT accepted as <%s> (iss %s, sub %s)"),
 
+    /** A bearer JWT authenticated a WebID acting through a client (T6.5). Logged at DEBUG. */
+    TOKEN_ACCEPTED_VIA_CLIENT("Bearer JWT accepted as <%s> via client <%s> (iss %s, sub %s)"),
+
     /** Startup: what the OIDC resolver was configured with. Logged at INFO. */
     OIDC_RESOLVER_WIRED(
             "OIDC JWT resolver: issuer <%s>, audiences %s, WebID via %s, clock skew %s");

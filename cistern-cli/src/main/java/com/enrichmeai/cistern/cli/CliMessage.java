@@ -50,6 +50,9 @@ public enum CliMessage {
     /** How {@code acl:AuthenticatedAgent} is named in a verdict. */
     ANY_AUTHENTICATED_AGENT("any authenticated agent"),
 
+    /** who, clients — a grantee constrained to particular clients ({@code cistern:client}). */
+    VIA_CLIENTS("%s via %s"),
+
     /** A container target in a verdict: path, so the reader sees the trailing slash. */
     TARGET_CONTAINER("%s and everything inside it"),
 
@@ -59,12 +62,69 @@ public enum CliMessage {
     /** root, aclResource — the pod was already there; nothing written. */
     POD_ALREADY_EXISTS("Already a pod: %s has an ACL (%s), which is left as it is; nothing written."),
 
+    // ---- sync: the plan (--dry-run) -------------------------------------------------------
+
+    /** resource path */
+    SYNC_PLAN_CREATE_CONTAINER("  create   %s"),
+
+    /** resource path, media type */
+    SYNC_PLAN_CREATE("  create   %s (%s)"),
+
+    /** resource path, media type */
+    SYNC_PLAN_REPLACE("  replace  %s (%s)"),
+
+    /** resource path */
+    SYNC_PLAN_DELETE("  delete   %s"),
+
+    /** folder, target, creates, replaces, deletes, unchanged */
+    SYNC_DRY_RUN("Dry run: %s → %s would create %d, replace %d, delete %d; %d unchanged. Nothing sent, nothing remembered."),
+
+    // ---- sync: the transcript --------------------------------------------------------------
+
+    /** resource path */
+    SYNC_CREATED_CONTAINER("  created  %s"),
+
+    /** resource path — the container was already there; left as it is */
+    SYNC_PRESENT_CONTAINER("  present  %s (already on the pod; left as it is)"),
+
+    /** resource path, media type */
+    SYNC_CREATED("  created  %s (%s)"),
+
+    /** resource path, media type */
+    SYNC_REPLACED("  replaced %s (%s)"),
+
+    /** resource path */
+    SYNC_DELETED("  deleted  %s"),
+
+    /** resource path — it was already gone */
+    SYNC_ABSENT("  absent   %s (already gone from the pod)"),
+
+    /** folder, target, creates, replaces, deletes, unchanged */
+    SYNC_SUMMARY("Synced %s → %s: %d created, %d replaced, %d deleted; %d unchanged."),
+
+    /** folder, target, unchanged — the plan was empty; no request was made */
+    SYNC_NOTHING_TO_SEND("Nothing to send: %s already matches %s (%d unchanged)."),
+
+    /** count, the --delete option — remembered resources gone locally, left in place */
+    SYNC_LEFT_ON_POD("%d on the pod with no local counterpart, left as they are (pass %s to remove them)."),
+
     // ---- warnings (stderr) -----------------------------------------------------------------
 
     /** env var name */
     NO_CREDENTIAL(
             "No credential given (pass --token or set %s); the request will be anonymous and"
                     + " the server will refuse it"),
+
+    /** relative path */
+    SYNC_SKIPPED_SYMLINK("Skipped %s: symbolic links are not followed"),
+
+    /** relative path */
+    SYNC_SKIPPED_SPECIAL("Skipped %s: not a regular file"),
+
+    /** relative path, the ACL suffix */
+    SYNC_SKIPPED_ACL(
+            "Skipped %s: a name ending in '%s' would be an access control list on the pod;"
+                    + " grants are written with 'cistern grant'"),
 
     // ---- failures (stderr, non-zero exit) --------------------------------------------------
 
@@ -75,13 +135,41 @@ public enum CliMessage {
 
     /** method, uri, status — a resource (not an ACL) could not be written */
     REFUSED_RESOURCE(
-            "Refused: %s %s answered HTTP %d. Creating it requires acl:Write there, and the server"
+            "Refused: %s %s answered HTTP %d. Writing it requires acl:Write there, and the server"
                     + " enforces that — this tool cannot"),
+
+    /** method, uri, status — a resource (not an ACL) could not be read */
+    REFUSED_RESOURCE_READ(
+            "Refused: %s %s answered HTTP %d. Reading it requires acl:Read there, and the server"
+                    + " enforces that — this tool cannot"),
+
+    /** method, uri, status — a resource (not an ACL) could not be deleted */
+    REFUSED_RESOURCE_DELETE(
+            "Refused: %s %s answered HTTP %d. Deleting it requires acl:Write on it and on its"
+                    + " container, and the server enforces that — this tool cannot"),
 
     /** uri */
     CONFLICT(
             "Conflict: %s changed while it was being edited (HTTP 412, and again after re-reading)."
                     + " Nothing was written; run the command again"),
+
+    /** uri — a create-only sync write found the resource already on the pod */
+    SYNC_CONFLICT_EXISTS(
+            "Conflict: %s is already on the pod, and this folder has never sent it (HTTP 412);"
+                    + " not written. The pod's copy stands: fetch it and reconcile, or remove it"
+                    + " from the pod, then run again"),
+
+    /** uri, state file name — a replace or delete found the pod's copy changed since it was sent */
+    SYNC_CONFLICT_CHANGED(
+            "Conflict: %s changed on the pod since this folder last sent it (HTTP 412); not"
+                    + " written. The pod's copy stands: fetch it (GET, and note its ETag),"
+                    + " reconcile locally, set that ETag as the entry's \"etag\" in %s, then run"
+                    + " again"),
+
+    /** uri — a container DELETE answered 409 */
+    CONTAINER_NOT_EMPTY(
+            "Not deleted: %s still holds resources this folder never sent (HTTP 409); left as it"
+                    + " is. Remove them on the pod, or keep the folder locally"),
 
     /** target */
     NO_ACL_TO_THE_ROOT(
@@ -95,10 +183,13 @@ public enum CliMessage {
     TRANSPORT("Could not reach %s: %s"),
 
     /** uri, header name */
-    MISSING_ETAG("%s was served without an %s, so it cannot be edited safely; not writing"),
+    MISSING_ETAG("%s was served without an %s, so no later write to it could be conditional; stopping"),
 
     /** value, keyword */
     INVALID_GRANTEE("'%s' is neither the word '%s' nor an absolute WebID URI"),
+
+    /** value */
+    INVALID_CLIENT("'%s' is not a client identifier: an absolute URI is needed"),
 
     /** value */
     INVALID_PATH(
@@ -113,6 +204,68 @@ public enum CliMessage {
 
     /** value — an owner that is not a WebID */
     INVALID_OWNER("'%s' is not a WebID: an absolute URI is needed"),
+
+    /** value — a sync target that is not a container path */
+    INVALID_TARGET_CONTAINER("'%s' is not a container path: a path ending in '/' is needed"),
+
+    /** value — a relative path with a leading '/', an empty, '.' or '..' segment */
+    INVALID_RELATIVE_PATH(
+            "'%s' cannot name an entry under the folder: no leading '/', no empty, '.' or '..' segment"),
+
+    /** value — not sixty-four lower-case hex digits */
+    INVALID_CONTENT_HASH("'%s' is not a SHA-256 in lower-case hex"),
+
+    /** algorithm — the JVM lacks it; not a user error */
+    DIGEST_UNAVAILABLE("This JVM has no %s digest"),
+
+    /** folder */
+    NOT_A_DIRECTORY("'%s' is not a folder"),
+
+    /** path, cause */
+    LOCAL_UNREADABLE("Could not read %s: %s"),
+
+    /** path, cause */
+    STATE_FILE_UNWRITABLE("Could not write %s: %s"),
+
+    /** path — the state file, or its temporary, is a symbolic link */
+    STATE_FILE_IS_A_LINK(
+            "%s is a symbolic link. The sync state is never read or written through one, since"
+                    + " that would read or overwrite whatever it points at; remove the link"),
+
+    /** path, detail — the state file exists but is not this tool's shape */
+    STATE_FILE_MALFORMED(
+            "%s cannot be read as this tool's sync state (%s). Move it aside to start afresh;"
+                    + " the next run then treats every file as never sent"),
+
+    /** parser detail */
+    STATE_FILE_NOT_JSON("not JSON: %s"),
+
+    /** version found, version expected */
+    STATE_FILE_VERSION("version %s, this tool reads %d"),
+
+    /** field name */
+    STATE_FILE_NO_FIELD("no '%s' field of the right type"),
+
+    /** value, detail */
+    STATE_FILE_BAD_TARGET("target '%s' is not a container on a server: %s"),
+
+    /** path, target on file, target asked for */
+    STATE_FILE_OTHER_TARGET(
+            "%s says this folder was last sent to %s, not %s; a folder mirrors into one place."
+                    + " Move the state file aside to send it somewhere else as well"),
+
+    /** key, detail */
+    STATE_FILE_BAD_ENTRY("entry '%s': %s"),
+
+    STATE_FILE_ENTRY_NOT_OBJECT("not an object"),
+
+    STATE_FILE_CONTAINER_HAS_FIELDS("a container entry carries no fields"),
+
+    /** etag field, sha256 field */
+    STATE_FILE_DOCUMENT_FIELDS("a document entry needs string '%s' and '%s'"),
+
+    /** the field names that were not expected */
+    STATE_FILE_UNEXPECTED_FIELDS("unexpected field(s): %s"),
 
     /** The revoke was refused by the grant service (its own message follows). */
     REVOKE_REFUSED("Refused: %s"),

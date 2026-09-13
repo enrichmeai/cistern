@@ -9,12 +9,15 @@ import com.enrichmeai.cistern.core.Agent;
 import com.enrichmeai.cistern.core.CisternException;
 import com.enrichmeai.cistern.core.ResourceIdentifier;
 import com.enrichmeai.cistern.core.vocab.Acl;
+import com.enrichmeai.cistern.core.vocab.Cistern;
 import com.enrichmeai.cistern.core.vocab.Foaf;
 
 import java.io.StringReader;
 import java.net.URI;
+import java.time.Clock;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import org.apache.jena.rdf.model.Model;
@@ -52,7 +55,7 @@ class GrantServiceTest {
     private static final ResourceIdentifier DEEP = id(POD + "notes/deep/note");
 
     private final GrantService service = new GrantService();
-    private final WacEngine engine = new WacEngine();
+    private final WacEngine engine = new WacEngine(Clock.systemUTC(), DelegationMode.DISABLED);
 
     private static ResourceIdentifier id(String uri) {
         return new ResourceIdentifier(URI.create(uri));
@@ -418,6 +421,195 @@ class GrantServiceTest {
         @DisplayName("a WebID grantee must be absolute")
         void webIdMustBeAbsolute() {
             assertThrows(IllegalArgumentException.class, () -> new Grantee.WebId(URI.create("card#me")));
+        }
+
+        /**
+         * AD-DEL-1 at the authoring boundary. {@code Grantee} is sealed to a WebID or the public,
+         * so there is no client shape to hand in; the one way to ask for a client-only grant is to
+         * name nobody, and that is refused with the reason rather than as a null-pointer failure.
+         */
+        @Test
+        @DisplayName("a client-only grant — clients but no grantee — is refused, with the catalogue reason")
+        void clientOnlyGrantIsRefused() {
+            IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                    () -> new GrantRequest(NOTES, null, Set.of(AccessMode.READ), Set.of(CLIENT_X)));
+
+            assertEquals(WacMessage.GRANT_WITHOUT_GRANTEE.format(NOTES.uri()), refused.getMessage());
+        }
+
+        @Test
+        @DisplayName("a client must be an absolute URI")
+        void clientMustBeAbsolute() {
+            IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                    () -> new GrantRequest(NOTES, webId(BOB), Set.of(AccessMode.READ), Set.of(URI.create("claude#id"))));
+
+            assertEquals(WacMessage.CLIENT_NOT_ABSOLUTE.format("claude#id"), refused.getMessage());
+        }
+
+        @Test
+        @DisplayName("the three-argument request is unconstrained")
+        void threeArgumentRequestIsUnconstrained() {
+            assertFalse(grant(NOTES, webId(BOB), AccessMode.READ).isClientConstrained());
+            assertTrue(new GrantRequest(NOTES, webId(BOB), Set.of(AccessMode.READ), Set.of(CLIENT_X)).isClientConstrained());
+        }
+    }
+
+    // ---- the client constraint (T6.5, ADR 0004) -------------------------------------------
+
+    private static final URI CLIENT_X = URI.create("https://agents.example/claude#id");
+    private static final URI CLIENT_Y = URI.create("https://agents.example/other#id");
+
+    private static GrantRequest grantVia(ResourceIdentifier target, Grantee grantee, URI client, AccessMode... modes) {
+        return new GrantRequest(target, grantee, EnumSet.copyOf(List.of(modes)), Set.of(client));
+    }
+
+    private static Agent via(String webId, URI client) {
+        return Agent.of(URI.create(webId), Optional.of(client));
+    }
+
+    @Nested
+    @DisplayName("A client constraint is written beside the grantee, and only narrows")
+    class Clients {
+
+        /** The delegation-enabled engine — what a server with the flag on decides. */
+        private final WacEngine enabledEngine = new WacEngine(Clock.systemUTC(), DelegationMode.ENABLED);
+
+        private AccessDecision decideEnabled(GrantOutcome outcome, ResourceIdentifier target, Agent agent) {
+            ResourceIdentifier governed = AclResource.governedBy(outcome.aclResource());
+            AclScope scope = governed.equals(target) ? AclScope.ACCESS_TO : AclScope.INHERITED;
+            return enabledEngine.decide(new EffectiveAcl(outcome.aclGraph(), scope, governed), agent);
+        }
+
+        @Test
+        @DisplayName("cistern:client is written on the grantee's own authorization, with the namespace declared")
+        void writesTheConstraintBesideTheGrantee() {
+            GrantOutcome outcome = service.grant(seededRoot(NOTES), grantVia(NOTES, webId(BOB), CLIENT_X, AccessMode.READ));
+
+            Resource authorization = outcome.aclGraph().createResource(
+                    AclResource.of(NOTES).uri() + "#" + GrantService.AGENT_FRAGMENT);
+            assertTrue(authorization.hasProperty(Acl.AGENT, ResourceFactory.createResource(BOB)), "the grantee, in portable WAC");
+            assertTrue(authorization.hasProperty(Cistern.CLIENT, ResourceFactory.createResource(CLIENT_X.toString())));
+            assertEquals(Cistern.NS, outcome.aclGraph().getNsPrefixURI(Cistern.PREFIX), "so the file reads as cistern:client");
+
+            assertTrue(decideEnabled(outcome, NOTES, via(BOB, CLIENT_X)).allows(AccessMode.READ));
+            assertTrue(decideEnabled(outcome, NOTES, Agent.of(URI.create(BOB))).allows(AccessMode.READ), "bob alone");
+            AccessDecision viaY = decideEnabled(outcome, NOTES, via(BOB, CLIENT_Y));
+            assertTrue(viaY.isDenied());
+            assertEquals(Optional.of(DelegationTerm.CLIENT), viaY.narrowedBy());
+        }
+
+        @Test
+        @DisplayName("the outcome reports the constraint: the read-back names the clients")
+        void outcomeNamesTheClients() {
+            GrantOutcome outcome = service.grant(seededRoot(NOTES), grantVia(NOTES, webId(BOB), CLIENT_X, AccessMode.READ));
+
+            Authorization bobs = outcome.authorizations().stream()
+                    .filter(a -> a.agents().contains(URI.create(BOB))).findFirst().orElseThrow();
+            assertEquals(Set.of(CLIENT_X), bobs.clients());
+            assertTrue(bobs.isClientConstrained());
+        }
+
+        @Test
+        @DisplayName("an unconstrained grant declares no cistern prefix and writes no cistern:client")
+        void unconstrainedGrantIsUntouched() {
+            GrantOutcome outcome = service.grant(seededRoot(NOTES), grant(NOTES, webId(BOB), AccessMode.READ));
+
+            assertFalse(outcome.aclGraph().contains(null, Cistern.CLIENT));
+            assertEquals(null, outcome.aclGraph().getNsPrefixURI(Cistern.PREFIX));
+        }
+
+        @Test
+        @DisplayName("a constrained grant does not widen the grantee's unconstrained one: two rules, not one")
+        void constrainedGrantDoesNotWidenTheUnconstrainedRule() {
+            GrantOutcome first = service.grant(seededRoot(NOTES), grant(NOTES, webId(BOB), AccessMode.READ));
+            EffectiveAcl afterFirst = new EffectiveAcl(first.aclGraph(), AclScope.ACCESS_TO, NOTES);
+
+            GrantOutcome second = service.grant(afterFirst, grantVia(NOTES, webId(BOB), CLIENT_X, AccessMode.WRITE));
+
+            long bobs = second.authorizations().stream().filter(a -> a.agents().contains(URI.create(BOB))).count();
+            assertEquals(2, bobs, "read for bob; write for bob via X");
+            assertEquals(EnumSet.of(AccessMode.READ, AccessMode.WRITE, AccessMode.APPEND),
+                    decideEnabled(second, NOTES, via(BOB, CLIENT_X)).modes());
+            AccessDecision viaY = decideEnabled(second, NOTES, via(BOB, CLIENT_Y));
+            assertEquals(EnumSet.of(AccessMode.READ), viaY.modes(), "via Y: the unconstrained read only");
+            assertEquals(Optional.of(DelegationTerm.CLIENT), viaY.narrowedBy());
+        }
+
+        @Test
+        @DisplayName("an unconstrained grant does not merge into the grantee's constrained rule either")
+        void unconstrainedGrantDoesNotMergeIntoTheConstrainedRule() {
+            GrantOutcome first = service.grant(seededRoot(NOTES), grantVia(NOTES, webId(BOB), CLIENT_X, AccessMode.READ));
+            EffectiveAcl afterFirst = new EffectiveAcl(first.aclGraph(), AclScope.ACCESS_TO, NOTES);
+
+            GrantOutcome second = service.grant(afterFirst, grant(NOTES, webId(BOB), AccessMode.WRITE));
+
+            long bobs = second.authorizations().stream().filter(a -> a.agents().contains(URI.create(BOB))).count();
+            assertEquals(2, bobs);
+            assertEquals(EnumSet.of(AccessMode.WRITE, AccessMode.APPEND), decideEnabled(second, NOTES, via(BOB, CLIENT_Y)).modes(),
+                    "via Y: write from the unconstrained rule, no read — that one is via X only");
+            assertEquals(EnumSet.of(AccessMode.READ, AccessMode.WRITE, AccessMode.APPEND),
+                    decideEnabled(second, NOTES, Agent.of(URI.create(BOB))).modes(), "bob alone holds both");
+        }
+
+        @Test
+        @DisplayName("the same constraint merges: read via X then write via X is one rule")
+        void sameConstraintMerges() {
+            GrantOutcome first = service.grant(seededRoot(NOTES), grantVia(NOTES, webId(BOB), CLIENT_X, AccessMode.READ));
+            EffectiveAcl afterFirst = new EffectiveAcl(first.aclGraph(), AclScope.ACCESS_TO, NOTES);
+
+            GrantOutcome second = service.grant(afterFirst, grantVia(NOTES, webId(BOB), CLIENT_X, AccessMode.WRITE));
+
+            assertTrue(second.changed());
+            long bobs = second.authorizations().stream().filter(a -> a.agents().contains(URI.create(BOB))).count();
+            assertEquals(1, bobs, "merged, not duplicated");
+            assertEquals(EnumSet.of(AccessMode.READ, AccessMode.WRITE, AccessMode.APPEND),
+                    decideEnabled(second, NOTES, via(BOB, CLIENT_X)).modes());
+            assertFalse(service.grant(new EffectiveAcl(second.aclGraph(), AclScope.ACCESS_TO, NOTES),
+                    grantVia(NOTES, webId(BOB), CLIENT_X, AccessMode.WRITE)).changed(), "idempotent");
+        }
+
+        /** Re-stating a rule without its constraint would widen it — the one thing a delegation may not do. */
+        @Test
+        @DisplayName("a re-stated Control-holder keeps its client constraint")
+        void restatedControlHolderKeepsItsConstraint() {
+            Model root = turtle("@prefix cistern: <" + Cistern.NS + "> .\n"
+                    + "<#owner> a acl:Authorization ; acl:agent <" + OWNER + "> ;\n"
+                    + "  acl:accessTo <" + POD + "> ; acl:default <" + POD + "> ;\n"
+                    + "  acl:mode acl:Read, acl:Write, acl:Append, acl:Control .\n"
+                    + "<#admin> a acl:Authorization ; acl:agent <" + ALICE + "> ; cistern:client <" + CLIENT_X + "> ;\n"
+                    + "  acl:default <" + POD + "> ; acl:mode acl:Control .", AclResource.of(ROOT));
+
+            GrantOutcome outcome = service.grant(
+                    new EffectiveAcl(root, AclScope.INHERITED, ROOT), grant(NOTES, webId(BOB), AccessMode.READ));
+
+            assertTrue(decideEnabled(outcome, NOTES, via(ALICE, CLIENT_X)).allows(AccessMode.CONTROL), "still administers via X");
+            assertTrue(decideEnabled(outcome, NOTES, Agent.of(URI.create(ALICE))).allows(AccessMode.CONTROL), "and alone");
+            AccessDecision viaY = decideEnabled(outcome, NOTES, via(ALICE, CLIENT_Y));
+            assertFalse(viaY.allows(AccessMode.CONTROL), "not via Y: the constraint came down with the rule");
+            assertEquals(Optional.of(DelegationTerm.CLIENT), viaY.narrowedBy());
+        }
+
+        @Test
+        @DisplayName("revoke takes back the constrained grant too — a revoke is everything the grantee held there")
+        void revokeRemovesConstrainedRules() {
+            GrantOutcome granted = service.grant(seededRoot(NOTES), grantVia(NOTES, webId(BOB), CLIENT_X, AccessMode.READ));
+            EffectiveAcl afterGrant = new EffectiveAcl(granted.aclGraph(), AclScope.ACCESS_TO, NOTES);
+
+            GrantOutcome revoked = service.revoke(afterGrant, new RevokeRequest(NOTES, webId(BOB)));
+
+            assertTrue(revoked.changed());
+            assertEquals(AccessDecision.DENIED, decideEnabled(revoked, NOTES, via(BOB, CLIENT_X)),
+                    "denied outright — nothing left to cap");
+            assertFalse(revoked.aclGraph().contains(null, Cistern.CLIENT));
+        }
+
+        @Test
+        @DisplayName("what the server with the flag off decides: the constraint is not read, and bob via Y reads")
+        void flagOffIgnoresWhatWasWritten() {
+            GrantOutcome outcome = service.grant(seededRoot(NOTES), grantVia(NOTES, webId(BOB), CLIENT_X, AccessMode.READ));
+
+            assertTrue(decide(outcome, NOTES, via(BOB, CLIENT_Y)).allows(AccessMode.READ),
+                    "the test class's engine is DISABLED: a plain-WAC server applies the WebID's grant as it stands");
         }
     }
 }

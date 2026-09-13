@@ -84,4 +84,15 @@ public record AccessVerdict(List<Judgement> judgements) {
     public Optional<ResourceIdentifier> decidedBy() {
         return allowed() ? primary().decision().decidedBy() : Optional.empty();
     }
+
+    /**
+     * The delegation term that narrowed the primary judgement, if one did (ADR 0004 §6,
+     * AD-DEL-5). Reported on allow and deny alike — the point is a refused request whose
+     * receipt can say that the delegation, not the absence of a grant, is why — and taken from
+     * the primary judgement for the same reason {@link #decidedBy()} is: the receipt describes
+     * the request's own target.
+     */
+    public Optional<DelegationTerm> narrowedBy() {
+        return primary().decision().narrowedBy();
+    }
 }

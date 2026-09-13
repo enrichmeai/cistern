@@ -25,10 +25,13 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.ConnectException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -39,6 +42,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import reactor.core.publisher.Mono;
@@ -80,7 +84,10 @@ class CliEndToEndTest {
         int port = freePort();
         base = "http://127.0.0.1:" + port;
         Path storage = Files.createTempDirectory("cistern-cli-e2e");
-        server = new SpringApplicationBuilder(TestServer.class)
+        // DelegatedPrincipals joins the resolver chain so a (person, client) request can be made;
+        // the delegation flag is on so the server evaluates what `cistern grant --client` writes.
+        // Neither changes a decision for the other tests here: their ACLs carry no constraint.
+        server = new SpringApplicationBuilder(TestServer.class, DelegatedPrincipals.class)
                 .properties(
                         "server.port=" + port,
                         "cistern.base-url=" + base,
@@ -88,7 +95,8 @@ class CliEndToEndTest {
                         "cistern.owner.web-id=" + OWNER,
                         "cistern.owner.token=" + TOKEN,
                         "cistern.auth.service-principals[0].web-id=" + ACME,
-                        "cistern.auth.service-principals[0].credential-hash=" + ACME_HASH)
+                        "cistern.auth.service-principals[0].credential-hash=" + ACME_HASH,
+                        "cistern.wac.delegation.enabled=true")
                 .run();
     }
 
@@ -165,6 +173,19 @@ class CliEndToEndTest {
     private static int acme(String method, String path) throws Exception {
         return request(method, path, ACME_SECRET, method.equals("PUT") ? TURTLE : null,
                 method.equals("PUT") ? NOTE : null).statusCode();
+    }
+
+    private static HttpResponse<byte[]> ownerBytes(String method, String path, String contentType, byte[] body)
+            throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(base + path))
+                .header(HttpHeaderName.AUTHORIZATION.fieldName(), new BearerToken(TOKEN).headerValue());
+        if (contentType != null) {
+            builder.header(HttpHeaderName.CONTENT_TYPE.fieldName(), contentType);
+        }
+        builder.method(method, body == null
+                ? HttpRequest.BodyPublishers.noBody()
+                : HttpRequest.BodyPublishers.ofByteArray(body));
+        return http.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
     }
 
     private static ResourceStore store() {
@@ -511,17 +532,7 @@ class CliEndToEndTest {
             PodSpec spec = new PodSpec(id("/firms/race/"), URI.create(OWNER));
             PodClient real = PodClient.connect(Optional.of(new BearerToken(TOKEN)));
             AtomicInteger aclPuts = new AtomicInteger();
-            PodTransport interfered = new PodTransport() {
-                @Override
-                public Mono<AclFetch> fetch(ResourceIdentifier acl) {
-                    return real.fetch(acl);
-                }
-
-                @Override
-                public Mono<ContainerCreation> createContainer(ResourceIdentifier container) {
-                    return real.createContainer(container);
-                }
-
+            PodTransport interfered = new RecordingTransport(real) {
                 @Override
                 public Mono<Void> put(ResourceIdentifier acl, Model graph, WritePrecondition precondition) {
                     Mono<PodProvisioned> someoneElse = aclPuts.getAndIncrement() == 0
@@ -535,6 +546,466 @@ class CliEndToEndTest {
                     .expectNext(new PodProvisioned.AlreadyExists(spec.root()))
                     .verifyComplete();
             assertEquals(1, aclPuts.get(), "our one write hit 412; the re-read found the ACL and wrote nothing");
+        }
+    }
+
+    // ---- grant --client: the (person, client) principal (T6.5, #119) ------------------------
+
+    @Nested
+    @DisplayName("cistern grant --client: alice through one application, and no other")
+    class Delegation {
+
+        private static int as(String token, String method, String path) throws Exception {
+            return request(method, path, token, null, null).statusCode();
+        }
+
+        @Test
+        @DisplayName("the CLI writes cistern:client; alice via claude reads, via another client is refused, alone reads")
+        void grantViaClient() throws Exception {
+            assertEquals(403, as(DelegatedPrincipals.ALICE_VIA_CLAUDE, "GET", "/trips/lisbon"), "no grant yet");
+
+            assertEquals(ExitCode.OK.code(), cistern("grant", DelegatedPrincipals.ALICE.toString(), "--read",
+                    Usage.CLIENT_OPTION, DelegatedPrincipals.CLAUDE.toString(), "/trips/"), stderr.toString());
+            String granted = stdout.toString();
+            assertTrue(granted.contains(CliMessage.GRANTED.format(
+                    CliMessage.VIA_CLIENTS.format(DelegatedPrincipals.ALICE, DelegatedPrincipals.CLAUDE),
+                    AccessMode.READ.headerToken(), CliMessage.TARGET_CONTAINER.format("/trips/"))), granted);
+            assertTrue(granted.contains(CliMessage.AUTHORIZATION_LINE.format(
+                    CliMessage.VIA_CLIENTS.format(DelegatedPrincipals.ALICE, DelegatedPrincipals.CLAUDE),
+                    AccessMode.READ.headerToken(), CliMessage.SCOPE_INHERITABLE.format())), "the report names the client: " + granted);
+
+            String acl = owner("GET", "/trips/.acl", null, null).body();
+            assertTrue(acl.contains(com.enrichmeai.cistern.core.vocab.Cistern.NS), "the namespace is declared: " + acl);
+            assertTrue(acl.contains(DelegatedPrincipals.CLAUDE.toString()), "the constraint is written: " + acl);
+            assertTrue(acl.contains(DelegatedPrincipals.ALICE.toString()), "beside the grantee, in portable WAC: " + acl);
+
+            assertEquals(200, as(DelegatedPrincipals.ALICE_VIA_CLAUDE, "GET", "/trips/lisbon"), "the delegated client");
+            assertEquals(403, as(DelegatedPrincipals.ALICE_VIA_OTHER, "GET", "/trips/lisbon"), "another client: capped");
+            assertEquals(200, as(DelegatedPrincipals.ALICE_ALONE, "GET", "/trips/lisbon"), "alice as herself");
+            assertEquals(403, as(DelegatedPrincipals.ALICE_VIA_CLAUDE, "DELETE", "/trips/lisbon"), "read is not write");
+        }
+
+        @Test
+        @DisplayName("revoke takes the delegated grant back: the very next request via claude is refused")
+        void revokeTakesItBack() throws Exception {
+            assertEquals(ExitCode.OK.code(), cistern("grant", DelegatedPrincipals.ALICE.toString(), "--read",
+                    Usage.CLIENT_OPTION, DelegatedPrincipals.CLAUDE.toString(), "/trips/"), stderr.toString());
+            assertEquals(200, as(DelegatedPrincipals.ALICE_VIA_CLAUDE, "GET", "/trips/lisbon"));
+
+            assertEquals(ExitCode.OK.code(), cistern("revoke", DelegatedPrincipals.ALICE.toString(), "/trips/"), stderr.toString());
+
+            assertEquals(403, as(DelegatedPrincipals.ALICE_VIA_CLAUDE, "GET", "/trips/lisbon"));
+            assertEquals(200, owner("GET", "/trips/lisbon", null, null).statusCode(), "owner unaffected");
+        }
+
+        @Test
+        @DisplayName("two --client options name alternatives")
+        void severalClients() throws Exception {
+            assertEquals(ExitCode.OK.code(), cistern("grant", DelegatedPrincipals.ALICE.toString(), "--read",
+                    Usage.CLIENT_OPTION, DelegatedPrincipals.CLAUDE.toString(),
+                    Usage.CLIENT_OPTION, DelegatedPrincipals.OTHER.toString(), "/trips/"), stderr.toString());
+
+            assertEquals(200, as(DelegatedPrincipals.ALICE_VIA_CLAUDE, "GET", "/trips/lisbon"));
+            assertEquals(200, as(DelegatedPrincipals.ALICE_VIA_OTHER, "GET", "/trips/lisbon"));
+        }
+
+        @Test
+        @DisplayName("a client that is not an absolute URI is a bad argument: exit 1, nothing written")
+        void badClientExitsOne() throws Exception {
+            assertEquals(ExitCode.FAILURE.code(), cistern("grant", DelegatedPrincipals.ALICE.toString(), "--read",
+                    Usage.CLIENT_OPTION, "claude#id", "/trips/"));
+            assertTrue(stderr.toString().contains(CliMessage.INVALID_CLIENT.format("claude#id")), stderr.toString());
+            assertEquals(404, owner("GET", "/trips/.acl", null, null).statusCode());
+        }
+    }
+
+    // ---- sync (T7.17) -----------------------------------------------------------------------
+
+    /**
+     * A folder mirrored into a container. The fixture is what a small company's documents folder
+     * looks like — nested, mixed types, one Turtle file — and every assertion is against the real
+     * server: what {@code GET} serves, what the store holds, what a second run sent. The counting
+     * transport is {@link RecordingTransport}, which forwards every request to the real
+     * {@link PodClient} and only writes down what it forwarded.
+     */
+    @Nested
+    @DisplayName("cistern sync: a folder mirrored into a container, conditionally, with a memory between runs")
+    class Sync {
+
+        private static final String Q2 = "# Q2 2026\n\nRevenue up 12%.\n";
+        private static final String Q1 = "# Q1 2026\n\nFlat.\n";
+        private static final String PAYROLL = "employee,amount\nalice,4200\nbob,3900\n";
+        private static final String ABOUT = "<#docs> <http://purl.org/dc/terms/title> \"Acme documents\" .\n";
+        private static final String NOTES = "not a known type";
+        /** Every byte value, several times over: the strongest content for a "served back verbatim" claim. */
+        private static final byte[] PDF = allByteValues();
+        private static final int CONTAINERS_IN_FIXTURE = 4;
+        private static final int DOCUMENTS_IN_FIXTURE = 6;
+
+        @TempDir
+        Path folder;
+
+        private static byte[] allByteValues() {
+            byte[] bytes = new byte[256 * 4];
+            for (int i = 0; i < bytes.length; i++) {
+                bytes[i] = (byte) i;
+            }
+            return bytes;
+        }
+
+        private Path write(String relative, byte[] content) throws IOException {
+            Path file = folder.resolve(relative);
+            Files.createDirectories(file.getParent());
+            return Files.write(file, content);
+        }
+
+        private Path write(String relative, String content) throws IOException {
+            return write(relative, content.getBytes(StandardCharsets.UTF_8));
+        }
+
+        /** The fixture tree of #200's DoD: nested, {@code .md} {@code .pdf} {@code .csv}, one {@code .ttl}, an unknown type, an empty folder. */
+        private void fixture() throws IOException {
+            write("reports/2026-Q2.md", Q2);
+            write("reports/2026-Q1.md", Q1);
+            write("payroll/2026-08.csv", PAYROLL);
+            write("contracts/nda.pdf", PDF);
+            write("about.ttl", ABOUT);
+            write("notes.xyz", NOTES);
+            Files.createDirectories(folder.resolve("empty"));
+        }
+
+        private int sync(String target, String... options) {
+            String[] args = new String[options.length + 3];
+            args[0] = Usage.SYNC_NAME;
+            args[1] = folder.toString();
+            args[2] = target;
+            System.arraycopy(options, 0, args, 3, options.length);
+            return cistern(args);
+        }
+
+        /** A second run made through the counting transport: the same plan the command would make, over a recorder. */
+        private RecordingTransport syncThroughRecorder(String target, boolean delete) {
+            RecordingTransport recorder = new RecordingTransport(PodClient.connect(Optional.of(new BearerToken(TOKEN))));
+            SyncStateFile state = SyncStateFile.in(folder, id(target));
+            LocalTree tree = LocalTree.walk(folder, state::owns);
+            SyncPlan plan = SyncPlan.of(tree, state.current(), new PodBase(URI.create(base)), new PodPath(target), delete);
+            StepVerifier.create(new Synchronizer(recorder).sync(plan, state).then()).verifyComplete();
+            return recorder;
+        }
+
+        private SyncState state(String target) {
+            return SyncStateFile.in(folder, id(target)).current();
+        }
+
+        private static String bareType(HttpResponse<?> response) {
+            String type = response.headers().firstValue(HttpHeaderName.CONTENT_TYPE.fieldName()).orElseThrow();
+            int parameters = type.indexOf(';');
+            return (parameters < 0 ? type : type.substring(0, parameters)).strip();
+        }
+
+        @Test
+        @DisplayName("the tree arrives: every file byte-identical under its media type, every folder a container")
+        void mirrorsTheTree() throws Exception {
+            fixture();
+            String target = "/docs/tree/";
+
+            assertEquals(ExitCode.OK.code(), sync(target), stderr.toString());
+
+            Map<String, String> expectedTypes = Map.of(
+                    "reports/2026-Q2.md", "text/markdown",
+                    "reports/2026-Q1.md", "text/markdown",
+                    "payroll/2026-08.csv", "text/csv",
+                    "contracts/nda.pdf", "application/pdf",
+                    "notes.xyz", "application/octet-stream");
+            for (Map.Entry<String, String> expected : expectedTypes.entrySet()) {
+                HttpResponse<byte[]> served = ownerBytes("GET", target + expected.getKey(), null, null);
+                assertEquals(200, served.statusCode(), expected.getKey());
+                assertEquals(expected.getValue(), bareType(served), expected.getKey());
+                assertArrayEquals(Files.readAllBytes(folder.resolve(expected.getKey())), served.body(), expected.getKey());
+            }
+            // The Turtle file is an RDF source: the server re-serializes what it serves, so the
+            // byte-identity claim is made against what it stored — the client's bytes, untouched.
+            HttpResponse<byte[]> about = ownerBytes("GET", target + "about.ttl", null, null);
+            assertEquals(200, about.statusCode());
+            assertEquals(TURTLE, bareType(about));
+            assertArrayEquals(ABOUT.getBytes(StandardCharsets.UTF_8),
+                    store().get(id(target + "about.ttl")).block().representation().data());
+            assertEquals(200, owner("GET", target + "empty/", null, null).statusCode(), "an empty folder is a container");
+
+            String printed = stdout.toString();
+            assertTrue(printed.contains(CliMessage.SYNC_SUMMARY.format(folder, target,
+                    CONTAINERS_IN_FIXTURE + DOCUMENTS_IN_FIXTURE, 0, 0, 0)), printed);
+            assertTrue(printed.contains(CliMessage.SYNC_CREATED.format(target + "reports/2026-Q2.md", "text/markdown")), printed);
+            assertTrue(printed.contains(CliMessage.SYNC_CREATED_CONTAINER.format(target + "reports/")), printed);
+            assertTrue(printed.indexOf(target + "reports/") < printed.indexOf(target + "reports/2026-Q2.md"),
+                    "containers before their members: " + printed);
+            assertEquals(CONTAINERS_IN_FIXTURE + DOCUMENTS_IN_FIXTURE, state(target).resources().size(), "everything remembered");
+        }
+
+        @Test
+        @DisplayName("a second run with nothing changed sends nothing: no request at all, and the pod's validators stand")
+        void secondRunSendsNothing() throws Exception {
+            fixture();
+            String target = "/docs/again/";
+            assertEquals(ExitCode.OK.code(), sync(target), stderr.toString());
+            String etagBefore = ownerBytes("GET", target + "contracts/nda.pdf", null, null)
+                    .headers().firstValue(HttpHeaderName.ETAG.fieldName()).orElseThrow();
+            String stateBefore = Files.readString(folder.resolve(SyncStateFile.NAME));
+
+            RecordingTransport recorder = syncThroughRecorder(target, false);
+            assertEquals(List.of(), recorder.requests(), "zero requests, so zero PUTs");
+
+            stdout.getBuffer().setLength(0);
+            assertEquals(ExitCode.OK.code(), sync(target), stderr.toString());
+            assertTrue(stdout.toString().contains(CliMessage.SYNC_NOTHING_TO_SEND.format(folder, target, DOCUMENTS_IN_FIXTURE)),
+                    stdout.toString());
+            assertEquals(etagBefore, ownerBytes("GET", target + "contracts/nda.pdf", null, null)
+                    .headers().firstValue(HttpHeaderName.ETAG.fieldName()).orElseThrow(), "nothing was rewritten");
+            assertEquals(stateBefore, Files.readString(folder.resolve(SyncStateFile.NAME)), "nothing to remember");
+        }
+
+        @Test
+        @DisplayName("one file changed: exactly one PUT, under If-Match on the validator that was remembered")
+        void oneChangedFileIsOnePutWithIfMatch() throws Exception {
+            fixture();
+            String target = "/docs/changed/";
+            assertEquals(ExitCode.OK.code(), sync(target), stderr.toString());
+            RelativePath q1 = new RelativePath("reports/2026-Q1.md");
+            EntityTagHeader remembered = ((SyncedResource.Document) state(target).get(q1).orElseThrow()).etag();
+            String revised = Q1 + "\nRevised.\n";
+            write("reports/2026-Q1.md", revised);
+
+            RecordingTransport recorder = syncThroughRecorder(target, false);
+
+            assertEquals(1, recorder.requests().size(), recorder.requests().toString());
+            RecordingTransport.Request only = recorder.requests().get(0);
+            assertEquals(PodMethod.PUT, only.method());
+            assertEquals(id(target + "reports/2026-Q1.md"), only.resource());
+            assertEquals(new WritePrecondition.IfMatch(remembered), only.precondition().orElseThrow());
+            HttpResponse<byte[]> served = ownerBytes("GET", target + "reports/2026-Q1.md", null, null);
+            assertArrayEquals(revised.getBytes(StandardCharsets.UTF_8), served.body());
+            assertEquals(served.headers().firstValue(HttpHeaderName.ETAG.fieldName()).orElseThrow(),
+                    ((SyncedResource.Document) state(target).get(q1).orElseThrow()).etag().value(),
+                    "the new validator is what the state file now holds");
+        }
+
+        @Test
+        @DisplayName("a changed Turtle file: one PUT under If-Match, and its validator fetched with a HEAD since the PUT carries none")
+        void changedTurtleGetsItsValidatorFromAHead() throws Exception {
+            fixture();
+            String target = "/docs/turtle/";
+            assertEquals(ExitCode.OK.code(), sync(target), stderr.toString());
+            String revised = ABOUT + "<#docs> <http://purl.org/dc/terms/description> \"Revised\" .\n";
+            write("about.ttl", revised);
+
+            RecordingTransport recorder = syncThroughRecorder(target, false);
+
+            assertEquals(1, recorder.requests(PodMethod.PUT).size(), recorder.requests().toString());
+            assertTrue(recorder.requests(PodMethod.PUT).get(0).precondition().orElseThrow() instanceof WritePrecondition.IfMatch);
+            assertEquals(List.of(PodMethod.PUT, PodMethod.HEAD),
+                    recorder.requests().stream().map(RecordingTransport.Request::method).toList());
+            assertArrayEquals(revised.getBytes(StandardCharsets.UTF_8),
+                    store().get(id(target + "about.ttl")).block().representation().data());
+            assertEquals(TURTLE, bareType(ownerBytes("GET", target + "about.ttl", null, null)));
+        }
+
+        @Test
+        @DisplayName("--delete removes what the folder no longer holds, members before their container; without it they are left and counted")
+        void deleteRemovesWhatIsGoneLocally() throws Exception {
+            fixture();
+            String target = "/docs/pruned/";
+            assertEquals(ExitCode.OK.code(), sync(target), stderr.toString());
+            Files.delete(folder.resolve("payroll/2026-08.csv"));
+            Files.delete(folder.resolve("contracts/nda.pdf"));
+            Files.delete(folder.resolve("contracts"));
+
+            stdout.getBuffer().setLength(0);
+            assertEquals(ExitCode.OK.code(), sync(target), stderr.toString());
+            assertTrue(stdout.toString().contains(CliMessage.SYNC_LEFT_ON_POD.format(3, Usage.DELETE_OPTION)), stdout.toString());
+            assertEquals(200, owner("GET", target + "payroll/2026-08.csv", null, null).statusCode(), "left as it is");
+            assertEquals(200, owner("GET", target + "contracts/", null, null).statusCode(), "left as it is");
+
+            RecordingTransport recorder = syncThroughRecorder(target, true);
+            assertEquals(List.of(
+                    id(target + "payroll/2026-08.csv"), id(target + "contracts/nda.pdf"), id(target + "contracts/")),
+                    recorder.requests().stream().map(RecordingTransport.Request::resource).toList(),
+                    "documents under If-Match, then the emptied container");
+            assertEquals(3, recorder.requests(PodMethod.DELETE).size());
+            assertTrue(recorder.requests().get(0).precondition().orElseThrow() instanceof WritePrecondition.IfMatch);
+            assertTrue(recorder.requests().get(2).precondition().isEmpty(), "a container delete carries no validator");
+            assertEquals(404, owner("GET", target + "payroll/2026-08.csv", null, null).statusCode());
+            assertEquals(404, owner("GET", target + "contracts/nda.pdf", null, null).statusCode());
+            assertEquals(404, owner("GET", target + "contracts/", null, null).statusCode());
+            assertEquals(200, owner("GET", target + "payroll/", null, null).statusCode(), "its folder is still here");
+            assertTrue(state(target).get(new RelativePath("contracts/")).isEmpty(), "forgotten");
+            assertEquals(CONTAINERS_IN_FIXTURE + DOCUMENTS_IN_FIXTURE - 3, state(target).resources().size());
+        }
+
+        @Test
+        @DisplayName("--delete through the command prints what went")
+        void deleteThroughTheCommand() throws Exception {
+            fixture();
+            String target = "/docs/pruned2/";
+            assertEquals(ExitCode.OK.code(), sync(target), stderr.toString());
+            Files.delete(folder.resolve("notes.xyz"));
+
+            stdout.getBuffer().setLength(0);
+            assertEquals(ExitCode.OK.code(), sync(target, Usage.DELETE_OPTION), stderr.toString());
+
+            assertTrue(stdout.toString().contains(CliMessage.SYNC_DELETED.format(target + "notes.xyz")), stdout.toString());
+            assertTrue(stdout.toString().contains(CliMessage.SYNC_SUMMARY.format(folder, target, 0, 0, 1, DOCUMENTS_IN_FIXTURE - 1)),
+                    stdout.toString());
+            assertEquals(404, owner("GET", target + "notes.xyz", null, null).statusCode());
+        }
+
+        @Test
+        @DisplayName("a copy changed on the pod since it was sent: 412, exit 3, the pod's copy stands, the message says what to do")
+        void staleValidatorIsAConflict() throws Exception {
+            fixture();
+            String target = "/docs/conflict/";
+            assertEquals(ExitCode.OK.code(), sync(target), stderr.toString());
+            byte[] theirs = "# Q2 2026\n\nEdited in the browser.\n".getBytes(StandardCharsets.UTF_8);
+            assertEquals(204, ownerBytes("PUT", target + "reports/2026-Q2.md", "text/markdown", theirs).statusCode());
+            RelativePath q2 = new RelativePath("reports/2026-Q2.md");
+            SyncedResource remembered = state(target).get(q2).orElseThrow();
+            write("reports/2026-Q2.md", Q2 + "\nEdited locally.\n");
+
+            stdout.getBuffer().setLength(0);
+            assertEquals(ExitCode.CONFLICT.code(), sync(target), stderr.toString());
+
+            assertTrue(stderr.toString().contains(CliMessage.SYNC_CONFLICT_CHANGED.format(
+                    base + target + "reports/2026-Q2.md", SyncStateFile.NAME)), stderr.toString());
+            assertArrayEquals(theirs, ownerBytes("GET", target + "reports/2026-Q2.md", null, null).body(), "theirs stands");
+            assertEquals(remembered, state(target).get(q2).orElseThrow(), "the state still says what was sent, for the person to correct");
+        }
+
+        @Test
+        @DisplayName("a new local file whose name is already taken on the pod: 412, exit 3, the pod's copy stands")
+        void existingResourceIsAConflict() throws Exception {
+            fixture();
+            String target = "/docs/taken/";
+            assertEquals(ExitCode.OK.code(), sync(target), stderr.toString());
+            byte[] theirs = "theirs".getBytes(StandardCharsets.UTF_8);
+            assertEquals(201, ownerBytes("PUT", target + "minutes.md", "text/markdown", theirs).statusCode());
+            write("minutes.md", "ours");
+
+            assertEquals(ExitCode.CONFLICT.code(), sync(target), stderr.toString());
+
+            assertTrue(stderr.toString().contains(CliMessage.SYNC_CONFLICT_EXISTS.format(base + target + "minutes.md")),
+                    stderr.toString());
+            assertArrayEquals(theirs, ownerBytes("GET", target + "minutes.md", null, null).body(), "theirs stands");
+            assertTrue(state(target).get(new RelativePath("minutes.md")).isEmpty(), "nothing remembered for it");
+        }
+
+        @Test
+        @DisplayName("--dry-run prints the plan and writes nothing: no request, no state file")
+        void dryRunWritesNothing() throws Exception {
+            fixture();
+            String target = "/docs/dry/";
+
+            assertEquals(ExitCode.OK.code(), sync(target, Usage.DRY_RUN_OPTION), stderr.toString());
+
+            String printed = stdout.toString();
+            assertTrue(printed.contains(CliMessage.SYNC_PLAN_CREATE_CONTAINER.format(target + "reports/")), printed);
+            assertTrue(printed.contains(CliMessage.SYNC_PLAN_CREATE.format(target + "contracts/nda.pdf", "application/pdf")), printed);
+            assertTrue(printed.contains(CliMessage.SYNC_PLAN_CREATE.format(target + "about.ttl", TURTLE)), printed);
+            assertTrue(printed.contains(CliMessage.SYNC_DRY_RUN.format(folder, target,
+                    CONTAINERS_IN_FIXTURE + DOCUMENTS_IN_FIXTURE, 0, 0, 0)), printed);
+            assertEquals(404, owner("GET", target + "reports/2026-Q2.md", null, null).statusCode());
+            assertEquals(404, owner("GET", target + "reports/", null, null).statusCode());
+            assertFalse(Files.exists(folder.resolve(SyncStateFile.NAME)), "nothing remembered");
+        }
+
+        @Test
+        @DisplayName("symbolic links and *.acl names are skipped, with a message each, and never reach the pod")
+        void skipsLinksAndAclNames() throws Exception {
+            fixture();
+            String target = "/docs/skipped/";
+            Files.createSymbolicLink(folder.resolve("link.md"), folder.resolve("reports/2026-Q2.md"));
+            write("policy.acl", "@prefix acl: <http://www.w3.org/ns/auth/acl#> .");
+
+            assertEquals(ExitCode.OK.code(), sync(target), stderr.toString());
+
+            assertTrue(stderr.toString().contains(CliMessage.SYNC_SKIPPED_SYMLINK.format("link.md")), stderr.toString());
+            assertTrue(stderr.toString().contains(CliMessage.SYNC_SKIPPED_ACL.format("policy.acl", AclResource.SUFFIX)),
+                    stderr.toString());
+            assertEquals(404, owner("GET", target + "link.md", null, null).statusCode());
+            assertEquals(404, owner("GET", target + "policy.acl", null, null).statusCode(), "no ACL was written");
+        }
+
+        @Test
+        @DisplayName("a run cut short has remembered what reached the pod; the next run sends only the rest")
+        void resumesWhereItStopped() throws Exception {
+            fixture();
+            String target = "/docs/resumed/";
+            PodClient real = PodClient.connect(Optional.of(new BearerToken(TOKEN)));
+            AtomicInteger documentPuts = new AtomicInteger();
+            RecordingTransport cutShort = new RecordingTransport(real) {
+                @Override
+                public Mono<Optional<EntityTagHeader>> put(ResourceIdentifier resource, byte[] body,
+                                                           FileMediaType mediaType, WritePrecondition precondition) {
+                    if (documentPuts.incrementAndGet() == 3) {
+                        return Mono.error(new CliFailure.Transport(resource, new ConnectException("cut")));
+                    }
+                    return super.put(resource, body, mediaType, precondition);
+                }
+            };
+            SyncStateFile state = SyncStateFile.in(folder, id(target));
+            SyncPlan plan = SyncPlan.of(LocalTree.walk(folder, state::owns), state.current(),
+                    new PodBase(URI.create(base)), new PodPath(target), false);
+
+            StepVerifier.create(new Synchronizer(cutShort).sync(plan, state))
+                    .expectNextCount(CONTAINERS_IN_FIXTURE + 2)
+                    .expectError(CliFailure.Transport.class)
+                    .verify();
+            assertEquals(CONTAINERS_IN_FIXTURE + 2, state(target).resources().size(), "the containers and two documents were remembered");
+
+            RecordingTransport rest = syncThroughRecorder(target, false);
+            assertEquals(DOCUMENTS_IN_FIXTURE - 2, rest.requests(PodMethod.PUT).size(), "only what had not arrived");
+            assertTrue(rest.requests(PodMethod.PUT).stream().allMatch(request -> request.precondition().orElseThrow()
+                    instanceof WritePrecondition.IfNoneMatchAny), "each still a create");
+            assertEquals(CONTAINERS_IN_FIXTURE + DOCUMENTS_IN_FIXTURE, state(target).resources().size());
+            assertEquals(200, owner("GET", target + "reports/2026-Q2.md", null, null).statusCode());
+        }
+
+        @Test
+        @DisplayName("a folder mirrors into one place: the same folder sent to a second container is refused, exit 1, nothing sent")
+        void aFolderMirrorsIntoOnePlace() throws Exception {
+            fixture();
+            String target = "/docs/one/";
+            assertEquals(ExitCode.OK.code(), sync(target), stderr.toString());
+
+            assertEquals(ExitCode.FAILURE.code(), sync("/docs/two/"), stderr.toString());
+
+            assertTrue(stderr.toString().contains(CliMessage.STATE_FILE_OTHER_TARGET.format(
+                    folder.resolve(SyncStateFile.NAME), base + target, base + "/docs/two/")), stderr.toString());
+            assertEquals(404, owner("GET", "/docs/two/", null, null).statusCode(), "nothing sent there");
+            assertEquals(CONTAINERS_IN_FIXTURE + DOCUMENTS_IN_FIXTURE, state(target).resources().size(), "the memory is untouched");
+        }
+
+        @Test
+        @DisplayName("without a credential the server refuses the first write: exit 2, nothing sent, nothing remembered")
+        void refusedWithoutCredential() throws Exception {
+            fixture();
+            String target = "/docs/refused/";
+
+            int exit = cisternAs("", Usage.SYNC_NAME, folder.toString(), target);
+
+            assertEquals(ExitCode.REFUSED.code(), exit, stderr.toString());
+            assertEquals(404, owner("GET", target + "contracts/", null, null).statusCode());
+            assertFalse(Files.exists(folder.resolve(SyncStateFile.NAME)));
+        }
+
+        @Test
+        @DisplayName("bad arguments exit 1: a folder that is not there, a target that is not a container, no arguments")
+        void badArgumentsExitOne() throws Exception {
+            Path missing = folder.resolve("nowhere");
+
+            assertEquals(ExitCode.FAILURE.code(), cistern(Usage.SYNC_NAME, missing.toString(), "/docs/x/"));
+            assertTrue(stderr.toString().contains(CliMessage.NOT_A_DIRECTORY.format(missing)), stderr.toString());
+            assertEquals(ExitCode.FAILURE.code(), sync("/docs/x"), "a document path");
+            assertTrue(stderr.toString().contains(CliMessage.INVALID_TARGET_CONTAINER.format("/docs/x")), stderr.toString());
+            assertEquals(ExitCode.FAILURE.code(), cistern(Usage.SYNC_NAME), "no arguments");
         }
     }
 

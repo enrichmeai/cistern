@@ -1,8 +1,12 @@
 package com.enrichmeai.cistern.auth;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
 import com.enrichmeai.cistern.core.Agent;
 
 import java.time.Clock;
+import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -84,5 +88,58 @@ class OidcJwtPrincipalResolverTest {
     @DisplayName("a verified token whose claims name no WebID authenticates nobody")
     void verifiedButUnmappableIsAnonymous() {
         expectAgent(resolver(new WebIdMapping.Claim("no_such_claim")), Fixtures.token("alice-valid"), Agent.ANONYMOUS);
+    }
+
+    // ---- the client half of the principal (T6.5, #119) ---------------------------------------
+
+    /** The delegation realm: the same resolver, over a realm whose client ids are URIs. */
+    private static final OidcJwtPrincipalResolver DELEGATION_REALM = new OidcJwtPrincipalResolver(
+            DelegationFixtures.TRUSTED, new WebIdMapping.Claim("webid"),
+            new InMemoryJwksClient(DelegationFixtures.jwks(), DelegationFixtures.jwks()), Clock.systemUTC());
+
+    /**
+     * The finding the delegation capture records: a Keycloak-issued user token carries no
+     * {@code client_id} at all — its client is in {@code azp}. Reading {@code client_id} alone
+     * would leave every person-through-an-application principal without a client.
+     */
+    @Test
+    @DisplayName("a user's token names its client in azp, and that becomes Agent.client(): alice via claude")
+    void userTokenClientIsReadFromAzp() {
+        assertNull(DelegationFixtures.claims("alice-via-claude").getClaim(ClientIdentifier.CLIENT_ID_CLAIM),
+                "the capture carries no client_id on a user token");
+        assertEquals(DelegationFixtures.CLAUDE.toString(),
+                DelegationFixtures.claims("alice-via-claude").getClaim(ClientIdentifier.AUTHORIZED_PARTY_CLAIM));
+
+        expectAgent(DELEGATION_REALM, DelegationFixtures.token("alice-via-claude"),
+                Agent.of(DelegationFixtures.ALICE, Optional.of(DelegationFixtures.CLAUDE)));
+        expectAgent(DELEGATION_REALM, DelegationFixtures.token("alice-via-other"),
+                Agent.of(DelegationFixtures.ALICE, Optional.of(DelegationFixtures.OTHER)));
+    }
+
+    @Test
+    @DisplayName("a client-credentials token carries client_id, and that is what is read: the client as itself")
+    void clientCredentialsTokenClientIsReadFromClientId() {
+        assertEquals(DelegationFixtures.CLAUDE.toString(),
+                DelegationFixtures.claims("claude-self").getClaim(ClientIdentifier.CLIENT_ID_CLAIM));
+
+        expectAgent(DELEGATION_REALM, DelegationFixtures.token("claude-self"),
+                Agent.of(DelegationFixtures.CLAUDE, Optional.of(DelegationFixtures.CLAUDE)));
+    }
+
+    @Test
+    @DisplayName("an opaque client id — Keycloak's short names, in azp or in client_id — reads as no client")
+    void opaqueClientIsAbsent() {
+        assertEquals("valuedocs-legal", Fixtures.claims("alice-valid").getClaim(ClientIdentifier.AUTHORIZED_PARTY_CLAIM));
+        assertNull(Fixtures.claims("alice-valid").getClaim(ClientIdentifier.CLIENT_ID_CLAIM));
+        expectAgent(BY_CLAIM, Fixtures.token("alice-valid"), Agent.of(Fixtures.ALICE));
+
+        assertEquals("valuedocs-legal", Fixtures.claims("valuedocs-legal-valid").getClaim(ClientIdentifier.CLIENT_ID_CLAIM));
+        expectAgent(BY_CLAIM, Fixtures.token("valuedocs-legal-valid"), Agent.of(Fixtures.VALUEDOCS_LEGAL));
+    }
+
+    @Test
+    @DisplayName("a token from the delegation realm under the T4.0 realm's resolver is a different issuer: anonymous")
+    void otherRealmIsAnonymousHere() {
+        expectAgent(BY_CLAIM, DelegationFixtures.token("alice-via-claude"), Agent.ANONYMOUS);
     }
 }

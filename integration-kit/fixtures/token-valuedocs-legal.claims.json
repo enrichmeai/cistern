@@ -5,18 +5,21 @@
     "kid": "qjb2vhgCWilsGooMs5XpvMU4TxlQhUoCZyNEk1KsluE"
   },
   "claims": {
-    "exp": 1787098880,
-    "iat": 1787098580,
-    "jti": "trrtcc:47b1b990-fadb-6608-8772-0ca133b7f196",
+    "exp": 1789019478,
+    "iat": 1789019178,
+    "jti": "trrtcc:8a36e28f-b7e5-c32c-ac65-b8c88e1b7d7d",
     "iss": "http://keycloak:8080/realms/cistern",
     "aud": [
       "cistern",
       "account"
     ],
-    "sub": "82da5ab0-9ec3-4a13-9c1a-afb57fd57905",
+    "sub": "847c51d2-800d-482f-966d-4129370555b4",
     "typ": "Bearer",
     "azp": "valuedocs-legal",
     "acr": "1",
+    "allowed-origins": [
+      "http://127.0.0.1"
+    ],
     "realm_access": {
       "roles": [
         "default-roles-cistern",
@@ -33,12 +36,12 @@
         ]
       }
     },
-    "scope": "cistern profile email",
-    "webid": "https://valuedocs.example/apps/legal#id",
-    "clientHost": "192.168.0.1",
+    "scope": "cistern email profile",
+    "clientHost": "172.27.0.1",
     "email_verified": false,
+    "webid": "https://valuedocs.example/apps/legal#id",
     "preferred_username": "service-account-valuedocs-legal",
-    "clientAddress": "192.168.0.1",
+    "clientAddress": "172.27.0.1",
     "client_id": "valuedocs-legal"
   }
 }

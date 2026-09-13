@@ -177,6 +177,22 @@ at authentication with no extra round trip. Amended 2026-09-05 by
 [ADR 0004](adr/0004-agent-scoped-delegation.md), which replaces the original confinement of
 client-aware evaluation to a future `cistern-acp`.
 
+*As built (T6.5, #119).* `Authorization` carries `Set<URI> clients`, read from
+`cistern:client` (`core.vocab.Cistern`, namespace `https://enrichmeai.com/ns/cistern#`);
+empty means unconstrained. `WacEngine(Clock, DelegationMode)` funnels both `decide` overloads
+into one private narrowing path: the union the portable terms grant, intersected with what the
+client constraint admits. A request naming no client is the agent as themselves and is admitted
+by every rule naming them, so `effective(agent, client) ⊆ effective(agent, none)` holds by
+construction. `AccessDecision`, `AccessVerdict` and `DecisionRecord` carry
+`Optional<DelegationTerm> narrowedBy`, written to the log as a trailing `narrowedBy` member only
+when set. `cistern.wac.delegation.enabled` (default off) gates the *read* of the term in
+`parse`, so off is byte-identical to the pre-delegation engine; a declared constraint none of
+whose values is a URI makes its rule contribute nothing (fail closed, never a wildcard).
+`GrantRequest` carries `clients` and `cistern grant --client <uri>` authors it; a grant with
+clients and no grantee is refused at request construction. The client is read from the token's
+`client_id`, else `azp` — the Keycloak capture in `fixtures/keycloak-delegation` shows a user's
+access token carries only the latter.
+
 **AD-15 — A delegation may only narrow: intersection, never union.**
 `effective(user, client, resource) = accessFor(user, resource) ∩ accessFor(client, resource)`.
 **Absent a delegation policy naming the client, `accessFor(client)` is the unconstrained
@@ -292,7 +308,7 @@ object-native backend (#95) removes the need for rename entirely.
 | --- | --- |
 | Closed sets | An `enum` — media types, resource kinds, access modes, patch operations, problem types, emitted header names, rejection reasons. Never a bare `String` or `int`. |
 | Domain concepts | A `record` or value class enforcing its own rules — `ResourceIdentifier`, `Slug`, `EntityTag`, `Agent`, `RequestId`, `WebIdMapping`. Never a `String`, `Map` or tuple. |
-| RDF vocabulary | Per-namespace constant classes in `core.vocab` — `Ldp`, `Solid`, `Acl`, `Foaf`, `Pim`. Never an inline IRI string. |
+| RDF vocabulary | Per-namespace constant classes in `core.vocab` — `Ldp`, `Solid`, `Acl`, `Foaf`, `Pim`, `Cistern`. Never an inline IRI string. |
 | Message text | Never inlined at a throw or log site. One catalogue `enum` per module — `CoreMessage`, `AuthMessage`, `WacMessage`, `StorageFileMessage`, `WebfluxMessage`, `McpMessage`, `CliMessage` — each constant carrying a `String.format` template plus `format(Object...)`. |
 | Numbers and repeated literals | Named constants. |
 | Modules | `cistern-<area>`; package `com.enrichmeai.cistern.<area>`. Java 25, Maven only, no Lombok — records. |
