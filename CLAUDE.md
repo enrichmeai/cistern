@@ -107,6 +107,11 @@ the Build board. **Never** post a secret or credential value anywhere on GitHub.
 `enrichmeai/penstock`, but a change needed there becomes a `/new-issue` in `penstock`, linked from
 the issue here. `/groom` runs from the `cistern` session and keeps one Build board for both repos.
 
+**Reading the other repo.** Both are cloned side by side (`~/projects/cistern`,
+`~/projects/penstock`). To read Penstock from this repo's session, start with
+`claude --add-dir ../penstock`, or use `/add-dir ../penstock` mid-session. Read only: never
+edit or commit in the other checkout from here.
+
 **How the two repos connect:** Cistern owns the pod: its HTTP and MCP surface, WAC, Solid-OIDC.
 Penstock consumes it through `CisternTool` (the agent's `pod` tool) and the demo stack in
 `docs/demo/`. A change to what Penstock calls is one PR per repo, and **Cistern lands first**.
