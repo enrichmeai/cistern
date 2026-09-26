@@ -46,6 +46,98 @@ data over MCP, with Solid WAC enforcing the consent.
      module (plain Java — `cistern-core` still takes no Spring dependency).
    - **Magic numbers and repeated literals become named constants.**
 
+## Autonomous build loop (owner, 2026-09-26)
+
+**Claude builds, the `reviewer` agent verifies, the architect merges.** The loop runs the same
+way here and in `enrichmeai/penstock` (each shaped to its own build), and is carried over from
+the `valuedocs` repos:
+
+`/new-issue` (idea → ready issue) → `/groom` (Build board, both repos) → `/build-task <issue>` → hooks on every edit → `reviewer` → fix (max 3 attempts) → `/compound` → PR
+
+BMad stays the method for planning (§ Governance); this loop is how a ready ticket gets built.
+The Cistern skills still govern repository mechanics inside it (`track-open-prs` before
+starting, `land-pr` for the merge the architect does).
+
+**The four rules. They are not negotiable:**
+1. **Verify before you write.** The spec text and the CTH for protocol behaviour (ground rule 1);
+   the official docs, fetched with WebFetch at the version the poms resolve, for every library,
+   API, CLI flag or config key (Spring Boot, WebFlux, Jena, Nimbus, the MCP SDK, GitHub
+   Actions, …). Never guess a signature, flag or version. Start from § "Pinned docs".
+2. **Done means green.** The fast gates below locally; `mvn verify` and the conformance job in CI
+   (cite the run). A gate that could not run is reported as not run, never as passing. CTH
+   numbers only move forward.
+3. **Three attempts, then stop.** After 3 failed fix attempts at the same gate or reviewer finding,
+   write the Blocker summary (`.claude/skills/build-task/SKILL.md` § 6) on the issue and in your reply.
+4. **Pinned docs first.** Search only when no pinned doc covers it, and pin what you found in `/compound`.
+
+**Fast gates (exact commands):**
+
+| Changed | Command |
+|---|---|
+| Java in module `M` | `mvn -q -B -pl M -am test-compile`, then `mvn -q -B -pl M -am test -Dtest='<the classes you touched>' -Dsurefire.failIfNoSpecifiedTests=false` |
+| a new `ResourceStore` backend | its test extends `ResourceStoreContractTest` (ground rule 5) |
+| protocol behaviour | the CI `conformance` job's report against `cth/BASELINE.md`; `./cth/run-cth.sh` locally when Docker is available |
+| `.claude/hooks/**`, `.claude/settings.json` | `.claude/hooks/test-hooks.sh` (add a case for every new guard, and prove it RED first) |
+| full build | CI `ci` on the PR (`mvn -q -B verify` on Java 25) |
+
+**Hooks (`.claude/settings.json`, scripts in `.claude/hooks/`)**, beside `governance-guard.sh`:
+- **Before a Bash command:** `guard-destructive.sh` forces an approval prompt for force pushes,
+  pushes to `main`, pushing a `v*` tag (it starts `release.yml`), ref deletion, `reset --hard`,
+  `clean -f`, recursive `rm`, `terraform apply|destroy|state`, `gcloud`, `kubectl`, `docker push`,
+  `mvn deploy|release:*|spring-boot:run`, and `gh release|workflow|secret` or write-method
+  `gh api`. The cases are pinned in `.claude/hooks/test-hooks.sh`. In a headless run nobody can
+  approve, so these do not run at all.
+- **After each edit:** a syntax check for JSON, YAML, Python and shell files.
+- **When the turn ends:** `mvn test-compile` for every module this branch touches (with `-am`).
+  It skips when nothing changed since the last clean compile, blocks the stop at most once, and
+  reports "not run" rather than "passed" when the JDK or the network is the problem. Opt out
+  with `CLAUDE_SKIP_STOP_COMPILE=1`.
+
+**The GitHub Action builder** (`.github/workflows/claude.yml`): an issue labelled `claude`, or a
+comment starting `@claude`, by the owner's account on the owner's own issue or PR. It has no cloud
+credentials, cannot publish, tag, merge or edit workflows, and runs one at a time. It needs the
+`CLAUDE_CODE_OAUTH_TOKEN` repository secret. It counts as this repo's session: do not start it
+while another session is working here.
+
+**Where things for the owner go.** Anything that needs the owner (a merge, a tag, an approval,
+a key, a ruling) goes on the PR or issue it belongs to, and `/groom` lists it in the Owner queue of
+the Build board. **Never** post a secret or credential value anywhere on GitHub.
+
+**One writer per repo.** A session changes code only in this repo. It may read
+`enrichmeai/penstock`, but a change needed there becomes a `/new-issue` in `penstock`, linked from
+the issue here. `/groom` runs from the `cistern` session and keeps one Build board for both repos.
+
+**Reading the other repo.** Both are cloned side by side (`~/projects/cistern`,
+`~/projects/penstock`). To read Penstock from this repo's session, start with
+`claude --add-dir ../penstock`, or use `/add-dir ../penstock` mid-session. Read only: never
+edit or commit in the other checkout from here.
+
+**How the two repos connect:** Cistern owns the pod: its HTTP and MCP surface, WAC, Solid-OIDC.
+Penstock consumes it through `CisternTool` (the agent's `pod` tool) and the demo stack in
+`docs/demo/`. A change to what Penstock calls is one PR per repo, and **Cistern lands first**.
+
+### Pinned docs
+
+Versions the poms resolve: Java 25, Maven 3.9, Spring Boot 4.1.0 (Spring Framework 7), Jena
+6.1.0, Nimbus JOSE+JWT 10.9.1, MCP Java SDK 2.0.0.
+
+Added 2026-09-26 and not yet fetched from this environment: the first session that fetches a row
+marks it ✓, and replaces any URL that has moved.
+
+| Area | Doc |
+|---|---|
+| Spring Boot 4.1 | https://docs.spring.io/spring-boot/index.html |
+| Spring WebFlux (Framework 7) | https://docs.spring.io/spring-framework/reference/web/webflux.html |
+| Reactor core / StepVerifier | https://projectreactor.io/docs/core/release/reference/ |
+| Apache Jena | https://jena.apache.org/documentation/ |
+| Nimbus JOSE+JWT | https://connect2id.com/products/nimbus-jose-jwt |
+| MCP Java SDK | https://github.com/modelcontextprotocol/java-sdk |
+| Maven Surefire (`-Dtest`) | https://maven.apache.org/surefire/maven-surefire-plugin/examples/single-test.html |
+| claude-code-action | https://code.claude.com/docs/en/github-actions |
+| Claude Code hooks | https://code.claude.com/docs/en/hooks |
+
+The specs themselves are in § "Spec sources".
+
 ## Verification (rules of mechanics — 2026-08-22, 2026-08-28)
 
 Every real defect found in two days of intensive work came from **checking a claim that had
@@ -114,7 +206,7 @@ review and retrospective run through the `bmad-*` skills (`_bmad/`, installed 6.
 `_bmad-output/`, which is **gitignored** — a run's working memory is not a deliverable, so
 anything that must survive is folded into `docs/` by the run that produced it.
 
-**The nine Cistern skills below outrank BMad wherever they overlap.** BMad supplies the
+**The Cistern skills below outrank BMad wherever they overlap.** BMad supplies the
 method; these encode *this repository's* mechanics — the conformance ratchet, the shared
 checkout, the worktree discipline, the two-lane CTH rule. So `land-pr` governs landing, not
 `bmad-build`'s own git steps; `run-conformance-harness` governs CTH numbers; `track-open-prs`
@@ -159,6 +251,8 @@ let errors through when rushed:
 - **`run-conformance-harness`** — the two-lane discipline (official runs move the baseline row;
   patched runs are fenced and gate nothing), the patched-image recipe, and a halt-reading
   ladder ordered by where the hours actually go.
+- **`build-task`**, **`compound`**, **`groom`**, **`new-issue`** and the `reviewer` / `groomer`
+  agents — the autonomous build loop (§ "Autonomous build loop").
 
 ## Build & run
 
