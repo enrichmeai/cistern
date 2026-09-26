@@ -1,6 +1,54 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch",
+      "Bash(mvn -q *)",
+      "Bash(mvn -B *)",
+      "Bash(mvn verify *)",
+      "Bash(mvn test *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git fetch *)",
+      "Bash(git worktree add *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh issue view *)",
+      "Bash(gh issue list *)",
+      "Bash(gh run view *)",
+      "Bash(gh run list *)"
+    ],
+    "ask": [
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git push --force-with-lease *)",
+      "Bash(git push origin main *)",
+      "Bash(git push origin HEAD:main *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean *)",
+      "Bash(git branch -D *)",
+      "Bash(git tag *)",
+      "Bash(rm -rf *)",
+      "Bash(rm -r *)",
+      "Bash(terraform apply *)",
+      "Bash(terraform destroy *)",
+      "Bash(terraform state *)",
+      "Bash(gcloud *)",
+      "Bash(kubectl *)",
+      "Bash(docker push *)",
+      "Bash(mvn deploy *)",
+      "Bash(gh release *)",
+      "Bash(gh workflow run *)",
+      "Bash(gh repo *)",
+      "Bash(gh secret *)",
+      "Bash(gh api *--method*)",
+      "Bash(gh api *-X *)",
+      "Bash(gh pr merge *)"
+    ],
     "deny": [
       "Bash(git add -A*)",
       "Bash(git add --all*)",
@@ -25,6 +73,11 @@
             "if": "Bash(gh *)",
             "timeout": 10,
             "statusMessage": "Checking repo governance rules"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-destructive.sh",
+            "timeout": 10
           }
         ]
       }
@@ -39,6 +92,27 @@
             "if": "Bash(gh *)",
             "timeout": 15,
             "statusMessage": "Syncing the shared checkout after a merge"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-check.sh",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-fast-gates.sh",
+            "timeout": 600
           }
         ]
       }
