@@ -75,7 +75,7 @@ Facts an integrator relies on, all observed on 2026-08-18:
 | `cistern-storage-file` | built | file backend; passes `ResourceStoreContractTest` |
 | `cistern-webflux` | built | handlers, negotiation, conditional requests, error mapper, `AuthorizationFilter`, `PrincipalResolver` + `ChainedPrincipalResolver` + `LocalCredentialResolver` + `ServiceCredentialResolver` (`ServicePrincipalRegistry`, `HashedCredential`) + `AnonymousResolver`, `OwnerPodSeeder` + `PodSeeder` (T5.6), `ReceiptsHandler` + `ReceiptsRequest` (T5.9), `CisternProperties` |
 | `cistern-wac` | built | `AclDiscovery`, `WacEngine`, `AccessControl`, `Authorization`, `AccessDecision`, `EffectiveAcl`, `RequiredAccess`, `AccessMode`, `AgentClass`, `WacMessage`; **T5.7:** `GrantService`, `GrantRequest`, `RevokeRequest`, `GrantOutcome`, `Grantee`; **T5.6:** `PodProvisioner`, `PodSpec`, `PodProvisioned`; **T5.9:** `AccessVerdict`, `DecisionRecord`, `Outcome`, `RequestId`, `DecisionSink`, `DecisionQuery`, `DecisionLog`, `JsonLinesDecisionSink`, `JsonLinesDecisionQuery`, `DecisionRecordJson`. No Spring. |
-| `cistern-auth` | built (T4.0) | `OidcJwtPrincipalResolver`, `JwtVerifier`, `CachingJwksClient`, `WebIdMapping`, `AuthMessage`; Solid-OIDC/DPoP validation (T4.1–T4.4) still to come |
+| `cistern-auth` | built (T4.0–T4.4) | `OidcJwtPrincipalResolver`, `JwtVerifier`, `CachingJwksClient`, `WebIdMapping`, `AuthMessage`; Solid-OIDC/DPoP validation (T4.1–T4.4, `DpopValidator`, `SolidOidcTokenVerifier`) done |
 | `cistern-mcp` | built (T6.1/T6.2, #37/#38) | the MCP front door: seven tools (`read-resource`, `list-container`, `write-resource`, `delete-resource`, `grant`, `revoke`, `receipts`) over stdio, every call a real loopback HTTP request as one statically bound principal (`cistern.mcp.credential`); ships the standalone bridge jar Claude Desktop launches. Not needed for an HTTP application |
 | `cistern-spring-boot-starter` | scaffold | T7.1 |
 | `cistern-app` | built | runnable server; config only |
@@ -88,7 +88,7 @@ Facts an integrator relies on, all observed on 2026-08-18:
 |---|---|---|
 | Store documents and metadata per matter | ✅ | — |
 | Enforce owner-authored grants per request; scoped read/write; instant revocation | ✅ | — |
-| Many human principals (lawyers, clients) | ✅ JWTs from your OIDC issuer (T4.0, #88) | T4.1–T4.4 for Solid-OIDC proper (any IdP, DPoP) |
+| Many human principals (lawyers, clients) | ✅ JWTs from any Solid-OIDC issuer, DPoP-bound tokens verified (T4.0–T4.4, #88) | — |
 | Applications as their own principals (legal ≠ tax) | ✅ service principals (T4.0, #88; #89 ruled: apps are their own WebIDs) | — |
 | A person through one application only | ✅ T6.5 (#119): `cistern grant <webid> --client <client-id>` writes `cistern:client`; the server evaluates it with `cistern.wac.delegation.enabled=true` (default off), a delegation only narrows, and the receipt says `narrowedBy: CLIENT` when it capped a request | expiry (#92) |
 | Create pods/matters on demand | ✅ T5.6 (#90): `cistern.pods.seed[]` at boot, `cistern pod create` over HTTP, `PodProvisioner` for embedders | — |
@@ -254,7 +254,10 @@ production the owner authenticates through 2 or 3 with the token unset (ADR 0002
 **no** caching of decisions: revoking a grant, rotating a service secret or a signing key
 takes effect on the next request.
 
-**Not yet:** DPoP-bound tokens, `Authorization: DPoP`, WebID dereferencing (T4.1–T4.4).
+**Since T4.1–T4.4:** `Authorization: DPoP <token>` is verified against the proof's
+`htm`/`htu`/`iat`/`jti` (`DpopValidator`, `JtiReplayCache`) and the token's confirmation
+claim, and the WebID document is dereferenced to confirm it names the issuer — not just
+this server's own JWT checks.
 
 **Since T6.5 (#119):** the token's client rides on the principal — `client_id` when the token
 carries it (a Solid IdP, a client-credentials grant), else `azp` (a Keycloak-issued user token
@@ -266,7 +269,7 @@ when the constraint is what refused. Only an absolute URI counts as a client: re
 application under a URI client id (its own WebID is the natural choice), or the token names no
 client and the constraint cannot bind.
 
-**After T4.1–T4.4:** any Solid-OIDC identity provider works and DPoP-bound tokens are
+**Since T4.1–T4.4:** any Solid-OIDC identity provider works and DPoP-bound tokens are
 accepted — this is what makes "point another firm's tools at the same pod" true.
 
 ### Step 2 — Layout: pods, matters, documents
@@ -421,16 +424,29 @@ connector's env (`CISTERN_MCP_CREDENTIAL`), resolved by the server's own resolve
 Give the assistant its own service principal (step 1) and grant that WebID a folder
 (step 3); never hand it the owner's credential.
 
+The bridge jar is a published Release asset — no build required — alongside the app and
+CLI jars (README § "Get the CLI"):
+
+```bash
+VERSION=0.2.0
+curl -fsSLO "https://github.com/enrichmeai/cistern/releases/download/v$VERSION/cistern-mcp-$VERSION-bridge.jar"
+```
+
 ```json
 "cistern": {
   "command": "java",
-  "args": ["-jar", "/path/to/cistern-mcp-0.1.0-SNAPSHOT-bridge.jar"],
+  "args": ["-jar", "/path/to/cistern-mcp-0.2.0-bridge.jar"],
   "env": {
     "CISTERN_MCP_BASE_URL": "http://127.0.0.1:3737",
     "CISTERN_MCP_CREDENTIAL": "<the assistant's service-principal secret>"
   }
 }
 ```
+
+Building from source instead (`mvn -q -pl cistern-mcp -am package`) produces
+`cistern-mcp/target/cistern-mcp-<snapshot-version>-bridge.jar` — `main` stays at
+`<next>-SNAPSHOT` (RELEASE.md § Version discipline), so that path never carries a released
+version number.
 
 Tools: `read-resource`, `list-container`, `write-resource` (ETag preconditions honoured),
 `delete-resource`, `grant`/`revoke` (the same `.acl` writes the CLI performs — the server
