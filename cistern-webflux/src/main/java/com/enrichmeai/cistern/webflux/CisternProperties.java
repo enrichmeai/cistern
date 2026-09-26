@@ -34,7 +34,8 @@ import java.util.stream.Collectors;
  * @param owner   the pod owner — naming one turns enforcement on (T5.3/T5.4) — and,
  *                optionally, their local credential
  * @param auth    the other ways a request proves who it is (T4.0): service principals and an
- *                OIDC issuer whose JWTs are accepted
+ *                OIDC issuer whose JWTs are accepted — and, since T6.4, how this pod describes
+ *                itself as an OAuth protected resource to a client that has neither yet
  * @param pods    further pods, each with its own owner, provisioned at boot (T5.6)
  * @param audit   the decision log (T5.9): whether an unrecordable decision fails the request,
  *                and where the log lives
@@ -65,7 +66,7 @@ public record CisternProperties(
         storage = storage == null ? new Storage(null) : storage;
         cors = cors == null ? new Cors(null, null) : cors;
         owner = owner == null ? new Owner(null, null) : owner;
-        auth = auth == null ? new Auth(null, null) : auth;
+        auth = auth == null ? new Auth(null, null, null, null, null) : auth;
         pods = pods == null ? new Pods(null) : pods;
         audit = audit == null ? new Audit(false, null) : audit;
         wac = wac == null ? new Wac(null) : wac;
@@ -81,6 +82,10 @@ public record CisternProperties(
                             .map(Auth.CredentialSource::property)
                             .collect(Collectors.joining(CREDENTIAL_SOURCE_SEPARATOR))));
         }
+        // The protected-resource identity (T6.4) is validated here, at bind time, for the same
+        // reason: a resource identifier with a fragment would be advertised to every client
+        // before anyone noticed it could never match a token's aud.
+        OAuthProtectedResource.of(baseUrl, auth);
         // Bind-time, not boot-time: a seed that cannot be provisioned is a configuration error
         // and should fail the start, not surface as a stack trace from a runner.
         for (PodSpec seeded : pods.specsUnder(baseUrl)) {
@@ -90,6 +95,17 @@ public record CisternProperties(
                         .format(seeded.ownerWebId(), owner.webId()));
             }
         }
+    }
+
+    /**
+     * This pod as an OAuth 2.0 protected resource (RFC 9728, T6.4), with the defaults applied:
+     * the identifier is {@code cistern.base-url} unless {@code cistern.auth.resource-identifier}
+     * says otherwise, and the authorization server is the OIDC issuer unless
+     * {@code cistern.auth.authorization-server} does. Validated in the constructor; this
+     * accessor merely recomputes the same value.
+     */
+    public OAuthProtectedResource protectedResource() {
+        return OAuthProtectedResource.of(baseUrl, auth);
     }
 
     /**
@@ -264,11 +280,32 @@ public record CisternProperties(
      * same {@code Agent} and is judged by the same engine; none is a bypass. See
      * {@code ChainedPrincipalResolver} for how they combine and in what order.
      *
-     * @param oidc              an OIDC issuer whose signed JWTs authenticate a request
-     * @param servicePrincipals applications that authenticate as themselves, each with its
-     *                          own WebID and hashed credential
+     * <p>The three T6.4 members describe this pod to a client that holds no credential yet
+     * (RFC 9728 protected resource metadata; see {@link OAuthProtectedResource}). Each has a
+     * default that is right for one pod behind one issuer, so a deployment that never sets
+     * them still publishes a correct document; they exist for the shapes where the default is
+     * wrong — a pod addressed by a different origin than the one it trusts tokens for, or an
+     * authorization server that is not the OIDC issuer.
+     *
+     * @param oidc                  an OIDC issuer whose signed JWTs authenticate a request
+     * @param servicePrincipals     applications that authenticate as themselves, each with its
+     *                              own WebID and hashed credential
+     * @param authorizationServer   the authorization server the metadata document names
+     *                              ({@code authorization_servers}); unset means the OIDC issuer
+     * @param resourceIdentifier    this pod's resource identifier (RFC 9728 §1.2) — the value a
+     *                              client sends as the RFC 8707 {@code resource} parameter and
+     *                              the audience its tokens then carry; unset means
+     *                              {@code cistern.base-url}
+     * @param resourceDocumentation where a developer reads how to use this resource
+     *                              ({@code resource_documentation}); unset means this
+     *                              project's integration guide
      */
-    public record Auth(Oidc oidc, List<ServicePrincipal> servicePrincipals) {
+    public record Auth(
+            Oidc oidc,
+            List<ServicePrincipal> servicePrincipals,
+            URI authorizationServer,
+            URI resourceIdentifier,
+            URI resourceDocumentation) {
 
         public Auth {
             oidc = oidc == null ? new Oidc(null, null, null, null, null, null) : oidc;

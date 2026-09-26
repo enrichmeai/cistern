@@ -96,7 +96,15 @@ enum ExposedResponseHeader {
      * changes on every request. Already Fetch-safelisted; listed for the same reason
      * {@link #CONTENT_TYPE} is.
      */
-    CACHE_CONTROL(HttpHeaders.CACHE_CONTROL);
+    CACHE_CONTROL(HttpHeaders.CACHE_CONTROL),
+
+    /**
+     * The challenge on a 401 (T5.3), which since T6.4 also names the protected resource
+     * metadata ({@code resource_metadata}, RFC 9728 §5.1). A browser-based client that cannot
+     * read it cannot discover the authorization server; it was emitted before it was listed
+     * here, which was the gap.
+     */
+    WWW_AUTHENTICATE(HttpHeaders.WWW_AUTHENTICATE);
 
     private static final List<String> FIELD_NAMES =
             Arrays.stream(values()).map(ExposedResponseHeader::fieldName).toList();
