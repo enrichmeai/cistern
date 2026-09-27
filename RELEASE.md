@@ -11,8 +11,9 @@ What one tag push produces (`.github/workflows/release.yml`, #107):
 - `ghcr.io/enrichmeai/cistern:<version>` (+ `:latest` for a non-prerelease),
   linux/amd64 + linux/arm64, built natively per architecture and stitched into one index
 - a GitHub Release "Cistern `<version>`" carrying `cistern-app-<version>.jar`,
-  `cistern-cli-<version>.jar` (the executable CLI), the `cistern` wrapper script and
-  `SHA256SUMS` over all three, with the matching `## [<version>]` section of
+  `cistern-cli-<version>.jar` (the executable CLI), `cistern-mcp-<version>-bridge.jar`
+  (the MCP bridge Claude Desktop and other assistants launch), the `cistern` wrapper
+  script and `SHA256SUMS` over all four, with the matching `## [<version>]` section of
   [CHANGELOG.md](CHANGELOG.md) as its body
 
 No repository secret is involved anywhere: the workflow publishes with the ephemeral
@@ -50,6 +51,10 @@ libraries is a separate decision for later.
 3. **No stale text a stranger would read.** README quickstart names the version being
    tagged and its commands work as pasted; compose and kit comments state the ADR 0002
    posture (#123); nothing shipped claims a built feature is unbuilt or vice versa.
+   `scripts/check-docs-freshness.sh` catches the mechanical half of this — a doc naming a
+   `target/` build path pinned to a release version, or spelling out a literal `SNAPSHOT`
+   jar name — both of which a published version can never legitimately carry (#133); it
+   does not replace reading the docs, only the drift a stranger hits first.
 4. **Both rehearsals are green** (§2): the `workflow_dispatch` dry run, and the local
    check that both jars appear at the exact paths the workflow collects — historically
    where release pipelines break.
@@ -71,6 +76,7 @@ visible there.
 **Locally** (proves the asset paths without a runner; **never commit the version
 change**):
 
+<!-- docs-freshness: allow (ephemeral rehearsal version, never committed, never a real path) -->
 ```bash
 mvn -B -ntp org.codehaus.mojo:versions-maven-plugin:2.18.0:set \
     -DnewVersion=0.1.0-check -DgenerateBackupPoms=false

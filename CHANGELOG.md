@@ -7,10 +7,10 @@ All notable changes to Cistern are recorded here. The format follows
 A release is a `v<version>` tag on `main`. Pushing it runs `.github/workflows/release.yml`,
 which publishes `ghcr.io/enrichmeai/cistern:<version>` (linux/amd64 + linux/arm64) and a
 GitHub Release carrying `cistern-app-<version>.jar`, the CLI (`cistern-cli-<version>.jar`
-plus its `cistern` wrapper script) and `SHA256SUMS` over all three, with this file's
-matching section as the release body. **A tag without a section here fails the release**
-before anything is built, deliberately. The procedure around the tag — gate, rehearsal,
-stranger test — is [RELEASE.md](RELEASE.md).
+plus its `cistern` wrapper script), the MCP bridge (`cistern-mcp-<version>-bridge.jar`)
+and `SHA256SUMS` over all four, with this file's matching section as the release body.
+**A tag without a section here fails the release** before anything is built, deliberately.
+The procedure around the tag — gate, rehearsal, stranger test — is [RELEASE.md](RELEASE.md).
 
 ## [Unreleased]
 

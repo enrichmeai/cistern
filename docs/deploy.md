@@ -340,10 +340,11 @@ receipts for the note list **both** the pre-snapshot decision and the post-resto
 
 ## What is still not there
 
-- **DPoP / sender-constrained tokens** (T4.1–T4.4): bearer secrets and JWTs are protected by
-  TLS alone today. When DPoP lands the hashed service credential and the JWT become
-  proof-of-possession.
 - **An object-storage backend** (#95): lifts the single-writer constraint and changes the
   backup unit from a disk to a bucket.
 - **In-process rate limiting**: none, by design; the edge does it.
-- **MCP front door** (Phase 6) and the (user, client) principal shape (#89).
+- **Remote MCP authorization** (T6.4, #118): OAuth 2.0 Protected Resource Metadata
+  (RFC 9728) and a full authorization-code flow for a remote Streamable-HTTP MCP client.
+  Today's MCP front door (T6.1/T6.2/T6.7, shipped in 0.2.0) binds a connection to one
+  statically configured service-principal credential — enough for Claude Desktop launching
+  the bridge locally, not yet for a remote client completing OAuth on its own.

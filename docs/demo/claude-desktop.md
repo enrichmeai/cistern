@@ -22,7 +22,42 @@ service principal**, never to the owner's token — the demo's whole point is th
 holds *less* authority than its owner, and that the owner grants and revokes from outside
 the session.
 
-## 1. Run a pod
+## 1. Get the jars
+
+Pick one — both put the same pieces (`cistern-app`, the `cistern` CLI, `cistern-mcp`'s
+bridge) on disk:
+
+**Download the published release** (default; no build required):
+
+```bash
+VERSION=0.2.0                                                     # the only place this version appears
+DIR="$HOME/cistern"; mkdir -p "$DIR"
+REL="https://github.com/enrichmeai/cistern/releases/download/v$VERSION"
+curl -fsSL -o "$DIR/cistern-app-$VERSION.jar" "$REL/cistern-app-$VERSION.jar"
+curl -fsSL -o "$DIR/cistern-cli-$VERSION.jar" "$REL/cistern-cli-$VERSION.jar"
+curl -fsSL -o "$DIR/cistern-mcp-$VERSION-bridge.jar" "$REL/cistern-mcp-$VERSION-bridge.jar"
+curl -fsSL -o "$DIR/cistern" "$REL/cistern" && chmod +x "$DIR/cistern"
+curl -fsSL -o "$DIR/SHA256SUMS" "$REL/SHA256SUMS"
+( cd "$DIR" && shasum -a 256 --check --ignore-missing SHA256SUMS )   # Linux: sha256sum --ignore-missing -c SHA256SUMS
+export CISTERN_CLI_JAR="$DIR/cistern-cli-$VERSION.jar"             # tells the wrapper where the jar is
+CISTERN_BIN="$DIR/cistern"
+```
+
+<details><summary>Alternative: build from source</summary>
+
+```bash
+mvn -q -pl cistern-app,cistern-cli,cistern-mcp -am package
+DIR="$PWD"     # cistern-app/target/cistern-app-*.jar, cistern-cli/target/cistern-cli-*.jar,
+               # cistern-mcp/target/cistern-mcp-*-bridge.jar
+CISTERN_BIN="$PWD/bin/cistern"
+```
+
+The wildcard matters here: `main` stays at `<next>-SNAPSHOT` (RELEASE.md § Version
+discipline), so a local build never produces a released version number.
+
+</details>
+
+## 2. Run a pod
 
 ```bash
 export CISTERN_OWNER_WEBID='https://you.example/profile/card#me'
@@ -34,7 +69,7 @@ export CLAUDE_SECRET="$(openssl rand -hex 32)"
 export CISTERN_AUTH_SERVICEPRINCIPALS_0_WEBID='https://connectors.example/claude#agent'
 export CISTERN_AUTH_SERVICEPRINCIPALS_0_CREDENTIALHASH="sha256:$(printf '%s' "$CLAUDE_SECRET" | shasum -a 256 | cut -d' ' -f1)"
 
-java -jar cistern-app/target/cistern-app-*.jar --server.port=3737
+java -jar "$DIR"/cistern-app-*.jar --server.port=3737
 ```
 
 Seed something worth protecting, and author the rule — one grant, no hand-written Turtle:
@@ -48,7 +83,7 @@ curl -X PUT -H "$AUTH" -H 'Content-Type: text/turtle' \
   --data-raw '<#p> <http://purl.org/dc/terms/title> "Private: acquisition negotiation plan" .' \
   $B/private/plan                                                                        # 201
 
-CISTERN_TOKEN=$CISTERN_OWNER_TOKEN bin/cistern grant 'https://connectors.example/claude#agent' \
+CISTERN_TOKEN=$CISTERN_OWNER_TOKEN "$CISTERN_BIN" grant 'https://connectors.example/claude#agent' \
   --read /notes/ --base $B
 # Granted: https://connectors.example/claude#agent may now read /notes/ and everything inside it.
 ```
@@ -56,10 +91,13 @@ CISTERN_TOKEN=$CISTERN_OWNER_TOKEN bin/cistern grant 'https://connectors.example
 The rule is a file in the pod (`/notes/.acl`), authored by the owner, naming this client and
 granting read on `/notes/` — and nothing else.
 
-## 2. The Claude Desktop config block
+## 3. The Claude Desktop config block
 
 `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/`), the
-**bridge** shape — Claude Desktop launches the bridge; the pod keeps running on its own:
+**bridge** shape — Claude Desktop launches the bridge; the pod keeps running on its own.
+Point it at the jar from step 1 — `$HOME/cistern/cistern-mcp-0.2.0-bridge.jar` if you
+downloaded it there, or `cistern-mcp/target/cistern-mcp-<snapshot-version>-bridge.jar` if
+you built from source:
 
 ```json
 {
@@ -68,7 +106,7 @@ granting read on `/notes/` — and nothing else.
       "command": "java",
       "args": [
         "-jar",
-        "/ABSOLUTE/PATH/TO/cistern-mcp/target/cistern-mcp-0.1.0-SNAPSHOT-bridge.jar"
+        "/ABSOLUTE/PATH/TO/cistern-mcp-0.2.0-bridge.jar"
       ],
       "env": {
         "CISTERN_MCP_BASE_URL": "http://127.0.0.1:3737",
@@ -97,7 +135,7 @@ with the Claude Desktop session — the bridge shape is the honest default.
     "cistern": {
       "command": "java",
       "args": [
-        "-jar", "/ABSOLUTE/PATH/TO/cistern-app/target/cistern-app-0.1.0-SNAPSHOT.jar",
+        "-jar", "/ABSOLUTE/PATH/TO/cistern-app-0.2.0.jar",
         "--server.port=3737", "--spring.profiles.active=mcp-stdio"
       ],
       "env": {
@@ -124,7 +162,7 @@ The tools the assistant sees: `read-resource`, `list-container`, `write-resource
 `delete-resource`, `grant`, `revoke`, `receipts`. No search, deliberately — the pod is
 storage plus authority, not an index.
 
-## 3. The four beats, as run
+## 4. The four beats, as run
 
 Recorded 2026-08-20 with the MCP Inspector CLI (`npx @modelcontextprotocol/inspector
 --cli`) driving the real bridge jar against the real server jar. The same sequence passes

@@ -70,8 +70,12 @@ docker run --rm -p 127.0.0.1:3737:3000 \
 ```
 
 Three things in that command are load-bearing. The port is published on **`127.0.0.1`**,
-not `0.0.0.0`: there is no Solid-OIDC yet, so the pod is for you and your own machines only
-(see `docs/adr/0001-local-only-until-phase-5.md`). `CISTERN_BASE_URL` must be the URL clients
+not `0.0.0.0`: this quickstart runs with a local owner token and no TLS in front, so keep
+it on your own machine — going beyond loopback needs the posture in
+[`docs/deploy.md`](docs/deploy.md) (TLS terminated in front, a Solid-OIDC issuer,
+[ADR 0002](docs/adr/0002-production-posture.md), which superseded the loopback-only
+[ADR 0001](docs/adr/0001-local-only-until-phase-5.md) once the authority plane it waited
+for was built). `CISTERN_BASE_URL` must be the URL clients
 actually call — it mints every resource identifier, and the container listens on 3000
 whatever the host port is. And setting the **owner** (`CISTERN_OWNER_WEBID` + `_TOKEN`) is
 what turns Web Access Control on: the root ACL is seeded granting that WebID everything,
@@ -86,7 +90,9 @@ variables (Java 25) — and on a local Kubernetes cluster via [`k8s/`](k8s/READM
 
 The same Release carries the `cistern` command — pods, grants and revocations without
 hand-editing Turtle — as `cistern-cli-0.2.0.jar` (a self-contained executable jar, Java 25)
-plus the `cistern` wrapper script, both listed in `SHA256SUMS`:
+plus the `cistern` wrapper script, both listed in `SHA256SUMS`. It also carries the MCP
+bridge jar (`cistern-mcp-0.2.0-bridge.jar`) an assistant like Claude Desktop launches —
+see [`docs/demo/claude-desktop.md`](docs/demo/claude-desktop.md):
 
 ```bash
 REL=https://github.com/enrichmeai/cistern/releases/download/v0.2.0
