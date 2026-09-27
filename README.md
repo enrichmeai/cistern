@@ -61,12 +61,14 @@ and linux/arm64, plus the jar and checksums on the
 [CHANGELOG.md](CHANGELOG.md).
 
 ```bash
-docker run --rm -p 127.0.0.1:3737:3000 \
+TOKEN=$(openssl rand -hex 32); echo "Owner token: $TOKEN"   # keep this shell open — it's the only copy
+
+docker run -d --rm -p 127.0.0.1:3737:3000 \
   -e CISTERN_BASE_URL=http://localhost:3737 \
   -e CISTERN_OWNER_WEBID='https://you.example/profile/card#me' \
-  -e CISTERN_OWNER_TOKEN="$(openssl rand -hex 32)" \
+  -e CISTERN_OWNER_TOKEN="$TOKEN" \
   -v cistern-data:/data \
-  ghcr.io/enrichmeai/cistern:0.2.0
+  ghcr.io/enrichmeai/cistern:0.2.0   # -d: runs in the background so $TOKEN stays live below
 ```
 
 Three things in that command are load-bearing. The port is published on **`127.0.0.1`**,
@@ -80,11 +82,44 @@ actually call — it mints every resource identifier, and the container listens 
 whatever the host port is. And setting the **owner** (`CISTERN_OWNER_WEBID` + `_TOKEN`) is
 what turns Web Access Control on: the root ACL is seeded granting that WebID everything,
 anyone else gets `401`, and the owner authenticates with `Authorization: Bearer <token>`.
-Print the token rather than losing it (`TOKEN=$(openssl rand -hex 32); echo "$TOKEN"`).
-Data lives in the `cistern-data` volume and survives restarts.
+The WebID is an identifier, not a login: Cistern bundles no Solid-OIDC provider to mint one
+in v1, and nothing here dereferences it — it's checked only for being an absolute URI and
+written into the ACL as-is — so any absolute URI you control, including the placeholder
+above, works for this quickstart. Data lives in the `cistern-data` volume and survives
+restarts.
 
 The same works from the jar — `java -jar cistern-app-0.2.0.jar` with the same environment
 variables (Java 25) — and on a local Kubernetes cluster via [`k8s/`](k8s/README.md).
+
+### Store something, and read it back
+
+Same shell, so `$TOKEN` is still set:
+
+```bash
+curl -i -X PUT http://localhost:3737/hello \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: text/turtle' \
+  --data-raw '<#it> <http://purl.org/dc/terms/title> "Hello, Cistern." .'
+# HTTP/1.1 201 Created
+
+curl http://localhost:3737/hello \
+  -H "Authorization: Bearer $TOKEN"
+# <http://localhost:3737/hello#it> <http://purl.org/dc/terms/title> "Hello, Cistern." .
+```
+
+An authenticated `PUT` created a resource; an authenticated `GET` read it back. Drop the
+`Authorization` header from either and it's a `401` — that refusal, enforced the same way
+for a human, a script or an agent, is the rest of this quickstart.
+
+### Connect an agent over MCP
+
+MCP is the flagship interface: an agent authenticates with **its own** credential — never
+a copy of the owner's token — and reaches pod data only through the same
+Web Access Control this `curl` round trip just exercised.
+[`docs/demo/claude-desktop.md`](docs/demo/claude-desktop.md) walks the whole arc: run a pod
+with one extra credential for the agent, bind Claude Desktop to it, grant it read on one
+folder, watch it get refused everywhere else, then revoke the grant from a terminal and
+watch the agent's very next call fail.
 
 ### Get the CLI
 
