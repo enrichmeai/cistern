@@ -104,7 +104,9 @@ curl -i -X PUT http://localhost:3737/hello \
 
 curl http://localhost:3737/hello \
   -H "Authorization: Bearer $TOKEN"
-# <http://localhost:3737/hello#it> <http://purl.org/dc/terms/title> "Hello, Cistern." .
+# <http://localhost:3737/hello#it>
+#         <http://purl.org/dc/terms/title>
+#                 "Hello, Cistern." .
 ```
 
 An authenticated `PUT` created a resource; an authenticated `GET` read it back. Drop the
