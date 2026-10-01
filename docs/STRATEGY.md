@@ -64,10 +64,11 @@ holds."* Verified in the July 2026 survey:
   Microsoft's is the strongest — agent access is capped by the user's own Graph permissions
   — but the scopes are Microsoft-defined (`Mail.Read`). The owner cannot say "only emails
   from my lawyer, from the last 30 days."
-- **The one stack that models the client as a first-class principal is Solid ACP**, whose
-  `acp:client` matcher does exactly this and is genuinely enforced in Community Solid
-  Server's source. It is off by default, has not moved since its 2022 Editor's Draft, is
-  not a W3C Recommendation, and has no productised authoring surface.
+- **The one stack that models the client as a first-class principal is Solid ACP** (Access
+  Control Policy — not the Agent Client Protocol, also abbreviated ACP, § Competitive
+  picture below), whose `acp:client` matcher does exactly this and is genuinely enforced in
+  Community Solid Server's source. It is off by default, has not moved since its 2022
+  Editor's Draft, is not a W3C Recommendation, and has no productised authoring surface.
 
 So: the mechanism exists and is unowned. The primitives are individually mature —
 attenuable capability tokens (macaroons, Biscuit), ACP's matcher algebra, Solid-OIDC Client
@@ -144,6 +145,32 @@ company's own application stack." Consequences for this document:
   against the incumbent — they have it. Do not pitch the mechanism as unique; pitch the licence
   and the shape.
 
+**Update 2026-09-30 — JetBrains Air.** JetBrains shipped Air on 22 September 2026
+([announcement](https://blog.jetbrains.com/blog/2026/09/22/introducing-jetbrains-air/)).
+Air Governance (formerly JetBrains Central) is described there as "organizational policy,
+visibility, auditability, cost management, and accountability for AI-assisted and
+agent-driven development," giving a team or org "shared context, one set of policies, a
+single cost view, and a record of what happened, regardless of which vendor produced the
+change." Air Teams runs cloud coding agents against a shared workspace, billed to "the
+project's own credits, under its own service account"
+([docs](https://www.jetbrains.com/help/air/)). Separately, the announcement describes the
+**Agent Client Protocol** — also abbreviated **ACP**, and unrelated to Solid ACP above — as
+standardising "the connection between an IDE and an agent's full harness, including its
+planning, logic, tools, model routing, and observability," with an ACP Registry for
+discovering compatible agents (same announcement, linking to
+[jetbrains.com/acp](https://www.jetbrains.com/acp/)).
+
+This validates the thesis and occupies an adjacent cell, not the vacant one. Air Governance
+answers *who may run which agent, against which models, spending what* — a policy-and-cost
+question posed at the developer, team or org level. Nothing cited above describes a
+mechanism for one person to grant one agent strictly-narrowed, revocable authority over
+that person's own data; that is a different question from the one Air's docs answer, not
+one its docs say Air cannot do. The differentiators already listed for ESS 3.0 above —
+licence, who deploys and whose agent, who holds the pen, proof, ecosystem shape — stand
+unchanged. The Agent Client Protocol does open a distribution angle worth tracking: Cistern
+as the data store behind an Air agent, and Penstock as an agent reachable through Air or any
+other ACP client (tracked in `enrichmeai/penstock`, not this document).
+
 Broader timing: AuthZEN COAZ reached WG draft in June 2026 and the IETF is scheduled to
 convene an `agentproto` working-group-forming BOF on 23 July 2026. The space is officially
 pre-charter. That is the cheap moment to be early, and it is closing.
@@ -156,8 +183,8 @@ pre-charter. That is the cheap moment to be early, and it is closing.
   A Turtle file is not an answer for anyone but us. v1 punts to a config file and a
   developer audience; we should be clear-eyed that this leaves the hardest part unsolved,
   and that solving it is a different project with a different skill set.
-- **The substrate is stalled.** ACP has not moved since 2022, nothing in the Solid authz
-  stack is a W3C Recommendation, and the Linked Web Storage WG's charter runs only to
+- **The substrate is stalled.** Solid ACP has not moved since 2022, nothing in the Solid
+  authz stack is a W3C Recommendation, and the Linked Web Storage WG's charter runs only to
   September 2026. We inherit standards alignment, not momentum.
 - **Owning an unowned niche and owning a *valuable* niche are different claims.** The
   survey establishes the first. The second is a bet, not a finding — user-owned data has
