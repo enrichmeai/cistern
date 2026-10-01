@@ -121,7 +121,10 @@ Web Access Control this `curl` round trip just exercised.
 [`docs/demo/claude-desktop.md`](docs/demo/claude-desktop.md) walks the whole arc: run a pod
 with one extra credential for the agent, bind Claude Desktop to it, grant it read on one
 folder, watch it get refused everywhere else, then revoke the grant from a terminal and
-watch the agent's very next call fail.
+watch the agent's very next call fail. Running a different MCP host — Claude Code, Codex,
+JetBrains Air's agents, Zed — see
+[`docs/demo/mcp-clients.md`](docs/demo/mcp-clients.md) for the one config and where each
+host wants it.
 
 ### Get the CLI
 
