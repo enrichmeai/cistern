@@ -455,6 +455,9 @@ result naming the resource and required mode — never an empty success. No sear
 design (§4). Alternatively `cistern.mcp.enabled=true` makes cistern-app itself serve MCP on
 its own stdio (tool calls loop back over `127.0.0.1`); config reference in §7, walkthrough
 and the Claude Desktop config in [`docs/demo/claude-desktop.md`](demo/claude-desktop.md).
+Connecting a different MCP host — Claude Code, Codex, JetBrains Air's agents, Zed — is the
+same config; [`docs/demo/mcp-clients.md`](demo/mcp-clients.md) gives the one JSON block and
+where each host wants it.
 
 ### Step 5 — Handle refusal correctly
 

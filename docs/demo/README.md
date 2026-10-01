@@ -6,6 +6,11 @@ taken away and the same agent is refused on its very next request.
 
 That refusal is the demo. Everything before it is setup.
 
+This page drives the demo through Penstock. Connecting an MCP host directly instead —
+Claude Desktop, Claude Code, Codex, JetBrains Air's agents, Zed — see
+[`claude-desktop.md`](claude-desktop.md) for the worked walkthrough and
+[`mcp-clients.md`](mcp-clients.md) for every other host's config.
+
 ## What you need
 
 Docker, and about 400 MB of images. Optionally [Ollama](https://ollama.com) if you want the
