@@ -3,7 +3,8 @@
 **An open, self-hostable Solid pod server for the AI era.** JVM-native (Spring Boot 4 /
 WebFlux), conformance-first, and MCP-fronted — so any AI agent (Claude, ChatGPT, your
 in-house bot) can read and write user-owned data *with the user's consent model enforced
-by the server, not promised by the vendor*.
+by the server, not promised by the vendor* — whether that agent runs in Claude Desktop, a
+JetBrains IDE or a CI job.
 
 > Your agent's memory. Your pod. Your Cistern.
 

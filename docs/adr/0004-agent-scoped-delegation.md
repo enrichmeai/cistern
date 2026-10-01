@@ -43,9 +43,9 @@ structurally rather than by review. **AD-16** keeps the whole feature behind a c
 default off until the WAC suite is green. The guard was doing work the guarded-against
 outcome could no longer reach.
 
-`cistern-acp` remains deferred for ACP proper — the matcher algebra and
-`acp:AccessControlResource`. It loses client scoping as its reason to exist; it does not gain
-a schedule.
+`cistern-acp` remains deferred for Solid ACP proper (Access Control Policy — not the Agent
+Client Protocol, also abbreviated ACP) — the matcher algebra and `acp:AccessControlResource`.
+It loses client scoping as its reason to exist; it does not gain a schedule.
 
 ### 2. Primary authority is portable WAC; Cistern terms may only reduce
 

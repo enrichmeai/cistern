@@ -59,7 +59,7 @@ reasons worth understanding.
 
 | Thing | What it gives | Why it is not the answer here |
 |---|---|---|
-| **Solid ACP** | `acp:client` is a first-class matcher beside `acp:agent`, `acp:issuer`, `acp:vc`, composable with `allOf`/`anyOf`/`noneOf`. "Only Alice, only via app A" is directly expressible. | **This is the substrate, and it already exists.** It gives the client-as-principal half. It does not give the cap or expiry. See below. |
+| **Solid ACP** (Access Control Policy — not the Agent Client Protocol, also abbreviated ACP) | `acp:client` is a first-class matcher beside `acp:agent`, `acp:issuer`, `acp:vc`, composable with `allOf`/`anyOf`/`noneOf`. "Only Alice, only via app A" is directly expressible. | **This is the substrate, and it already exists.** It gives the client-as-principal half. It does not give the cap or expiry. See below. |
 | OAuth Token Exchange (RFC 8693) | `act` actor chains | RFC 8693 §4.1: consumers must consider only the current actor. Prior actors are an audit trail, not access control. Carries identity, not reduced permission. |
 | Rich Authorization Requests (RFC 9396) | structured `authorization_details` | Developer-authored schema; the user picks within a developer-built menu. No implementation found where a user free-form authors it. |
 | UMA 2.0 | genuinely owner-authored policy | Right model. Kantara spec stagnant since ~2024, implementations registry last updated 2020, zero agent uptake. |
