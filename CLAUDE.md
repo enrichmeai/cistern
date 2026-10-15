@@ -81,6 +81,9 @@ starting, `land-pr` for the merge the architect does).
 | full build | CI `ci` on the PR (`mvn -q -B verify` on Java 25) |
 
 **Hooks (`.claude/settings.json`, scripts in `.claude/hooks/`)**, beside `governance-guard.sh`:
+- **Before a Read or a bare `cat`:** `read-gate.sh` refuses a whole read of a text file over 350 lines
+  and says to read a slice (`offset`/`limit`) or `grep -n` first: a whole read stays in the context for the
+  rest of the session. `CLAUDE_SKIP_READ_GATE=1` turns it off; `CLAUDE_READ_GATE_LINES` moves the limit.
 - **Before a Bash command:** `guard-destructive.sh` forces an approval prompt for force pushes,
   pushes to `main`, pushing a `v*` tag (it starts `release.yml`), ref deletion, `reset --hard`,
   `clean -f`, recursive `rm`, `terraform apply|destroy|state`, `gcloud`, `kubectl`, `docker push`,

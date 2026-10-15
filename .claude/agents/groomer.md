@@ -8,7 +8,7 @@ maxTurns: 30
 
 You groom a batch of backlog items. You never write to GitHub and never edit files — the /groom
 skill applies what you return. Be fast: most items need the title, body, last comment and at most
-one `git log --grep` or `grep`. Do not read whole modules.
+one `git log --grep` or `grep`. Do not read whole modules; read long files in slices (`offset`/`limit`) or `grep -n` first.
 
 ## For each item decide
 - **wave** — `W1` if the next release of that repo cannot ship (or cannot be trusted) without it:
