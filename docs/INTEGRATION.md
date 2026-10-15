@@ -88,7 +88,7 @@ Facts an integrator relies on, all observed on 2026-08-18:
 |---|---|---|
 | Store documents and metadata per matter | ✅ | — |
 | Enforce owner-authored grants per request; scoped read/write; instant revocation | ✅ | — |
-| Many human principals (lawyers, clients) | ✅ JWTs from any Solid-OIDC issuer, DPoP-bound tokens verified (T4.0–T4.4, #88) | — |
+| Many human principals (lawyers, clients) | ✅ JWTs from any Solid-OIDC issuer, DPoP-bound tokens verified (T4.0–T4.4, #88) (opt-in, `cistern.auth.solid.enabled`) | — |
 | Applications as their own principals (legal ≠ tax) | ✅ service principals (T4.0, #88; #89 ruled: apps are their own WebIDs) | — |
 | A person through one application only | ✅ T6.5 (#119): `cistern grant <webid> --client <client-id>` writes `cistern:client`; the server evaluates it with `cistern.wac.delegation.enabled=true` (default off), a delegation only narrows, and the receipt says `narrowedBy: CLIENT` when it capped a request | expiry (#92) |
 | Create pods/matters on demand | ✅ T5.6 (#90): `cistern.pods.seed[]` at boot, `cistern pod create` over HTTP, `PodProvisioner` for embedders | — |
@@ -254,7 +254,7 @@ production the owner authenticates through 2 or 3 with the token unset (ADR 0002
 **no** caching of decisions: revoking a grant, rotating a service secret or a signing key
 takes effect on the next request.
 
-**Since T4.1–T4.4:** `Authorization: DPoP <token>` is verified against the proof's
+**Since 0.3.0 (T4.1–T4.4), with `cistern.auth.solid.enabled=true`:** `Authorization: DPoP <token>` is verified against the proof's
 `htm`/`htu`/`iat`/`jti` (`DpopValidator`, `JtiReplayCache`) and the token's confirmation
 claim, and the WebID document is dereferenced to confirm it names the issuer — not just
 this server's own JWT checks.
@@ -269,7 +269,7 @@ when the constraint is what refused. Only an absolute URI counts as a client: re
 application under a URI client id (its own WebID is the natural choice), or the token names no
 client and the constraint cannot bind.
 
-**Since T4.1–T4.4:** any Solid-OIDC identity provider works and DPoP-bound tokens are
+**Since 0.3.0 (T4.1–T4.4), with `cistern.auth.solid.enabled=true`:** any Solid-OIDC identity provider works and DPoP-bound tokens are
 accepted — this is what makes "point another firm's tools at the same pod" true.
 
 ### Step 2 — Layout: pods, matters, documents
@@ -428,14 +428,14 @@ The bridge jar is a published Release asset — no build required — alongside 
 CLI jars (README § "Get the CLI"):
 
 ```bash
-VERSION=0.2.0
+VERSION=0.3.0
 curl -fsSLO "https://github.com/enrichmeai/cistern/releases/download/v$VERSION/cistern-mcp-$VERSION-bridge.jar"
 ```
 
 ```json
 "cistern": {
   "command": "java",
-  "args": ["-jar", "/path/to/cistern-mcp-0.2.0-bridge.jar"],
+  "args": ["-jar", "/path/to/cistern-mcp-0.3.0-bridge.jar"],
   "env": {
     "CISTERN_MCP_BASE_URL": "http://127.0.0.1:3737",
     "CISTERN_MCP_CREDENTIAL": "<the assistant's service-principal secret>"
@@ -904,14 +904,16 @@ defaults to `CISTERN_TOKEN`; `--base` to `http://127.0.0.1:3737`.
 | `cistern.auth.oidc.clock-skew` | … | `60s` | tolerance on `exp`/`nbf` |
 | `cistern.auth.oidc.jwks-uri` | … | discovered | where the keys are, if not via `.well-known/openid-configuration` |
 | `cistern.pods.seed[n].root` / `.owner-web-id` | `CISTERN_PODS_SEED_n_ROOT` / `_OWNERWEBID` | unset | a pod to provision at boot: root as a container path under the base URL (`/firms/acme/`), owner as an absolute WebID; idempotent, never overwrites; refused at bind time if the root is not a container path, is listed twice, or is `/` with an owner other than `cistern.owner.web-id` (T5.6) |
-
+| `cistern.pods.seed[n].oidc-issuer` | `CISTERN_PODS_SEED_n_OIDCISSUER` | unset | writes the owner's WebID document with `solid:oidcIssuer` naming this issuer, publicly readable, so the owner can sign in with Solid-OIDC; only when the owner's WebID lives in this pod (otherwise nothing is written), never overwrites (#152) |
 | `cistern.audit.required` | `CISTERN_AUDIT_REQUIRED` | `false` | `true` ⇒ a decision the log cannot record is not acted on: 503, retry later (T5.9) |
 | `cistern.audit.root` | `CISTERN_AUDIT_ROOT` | `<cistern.storage.root>/.cistern` | directory of the JSON Lines decision log (`decisions/YYYY-MM-DD.jsonl`); not pod content wherever it is (T5.9) |
 | `cistern.wac.delegation.enabled` | `CISTERN_WAC_DELEGATION_ENABLED` | `false` | evaluate `cistern:client` (and, after #92, `cistern:validUntil`): a delegation only narrows a WebID's grant to the client the token names, and the receipt says `narrowedBy` when it did. Off means plain WAC — the terms are not read, decisions and receipts are byte-identical to a server without the extension (T6.5, ADR 0004) |
 | `cistern.auth.solid.webid.trusted-origins` | `CISTERN_AUTH_SOLID_WEBID_TRUSTED_ORIGINS` | *(empty)* | Origins a WebID may be dereferenced from beyond public HTTPS, matched exactly on scheme, host and port — e.g. `https://idp.internal:8443` for an identity provider on your own network, or `http://localhost:3939` for a conformance harness. Empty means public HTTPS only, which is the default and what a pod exposed to the internet should keep. Naming an origin opens **that origin**, over its own scheme: it does not permit plain `http` generally, and it leaves `169.254.169.254` refused. Every non-empty list is logged at WARN on boot. |
+| `cistern.auth.solid.enabled` | `CISTERN_AUTH_SOLID_ENABLED` | `false` | accept Solid-OIDC: `Authorization: DPoP` tokens from any Solid identity provider, verified against the issuer's keys, the DPoP proof and the WebID document's `solid:oidcIssuer`; off means authentication is exactly as in 0.2.0 (T4.1–T4.4, 0.3.0) |
 | `cistern.mcp.enabled` | `CISTERN_MCP_ENABLED` | `false` | cistern-app serves MCP on its own stdio; tool calls loop back over `127.0.0.1:<port>` through the full filter chain (T6.1). Run with the `mcp-stdio` profile so logging leaves stdout. The standalone bridge jar ignores this — launching it *is* enabling it |
 | `cistern.mcp.credential` | `CISTERN_MCP_CREDENTIAL` | unset | the one bearer credential the MCP connection is bound to (T6.2) — a service principal's secret or the owner token — resolved by the ordinary resolver chain; **required** when the door is enabled, refused at bind time otherwise |
 | `cistern.mcp.base-url` | `CISTERN_MCP_BASEURL` (bridge also reads `CISTERN_MCP_BASE_URL`) | embedded: own loopback port; bridge: required | where the door sends its HTTP requests — for the bridge, the running server's `cistern.base-url` |
+| `cistern.mcp.http.enabled` | `CISTERN_MCP_HTTP_ENABLED` | `false` | with `cistern.mcp.enabled`, also serves MCP over Streamable HTTP (T6.7, #151). **Not reachable in 0.3.0**: in the assembled app `POST /mcp` is answered by the Solid resource handler (#220) |
 
 List properties in the environment (Spring relaxed binding): the index is its own `_`-separated
 segment and dashes inside a word are simply dropped — `cistern.auth.service-principals[0].web-id`

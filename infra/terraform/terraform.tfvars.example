@@ -15,7 +15,7 @@ domain = "pod.valuedocs.co.in"
 # Pinned tag from https://github.com/enrichmeai/cistern/pkgs/container/cistern.
 # :latest and untagged are refused by a variable validation. To upgrade: change, apply,
 # then `terraform output upgrade_command`.
-# image = "ghcr.io/enrichmeai/cistern:0.1.0"
+# image = "ghcr.io/enrichmeai/cistern:0.3.0"
 
 # Requests per minute per client IP before the load balancer answers 429. 0 switches the
 # Cloud Armor policy off (and its cost) — only behind an allowlist you control.

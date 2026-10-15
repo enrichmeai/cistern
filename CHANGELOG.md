@@ -14,9 +14,46 @@ The procedure around the tag — gate, rehearsal, stranger test — is [RELEASE.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-15
+
+Solid-OIDC. A pod now accepts a person or an agent signed in at **any** Solid identity provider, not only
+the owner's token, a service credential or one configured OIDC issuer: the access token is verified, the
+DPoP proof shows the caller holds the key the token is bound to, and the WebID document must name the
+token's issuer. All three, or the request is anonymous. It is **opt-in** (`cistern.auth.solid.enabled=true`);
+with it off, authentication is exactly as in 0.2.0. Also: delegation where the client narrows a person's
+grant instead of being granted, `cistern sync`, and the fixes the Solid conformance harness found.
+
 ### Added
 
-**`cistern sync` (`cistern-cli`, T7.17, #200)** — mirror a local folder into a pod container.
+**Solid-OIDC with DPoP (`cistern-auth`, T4.1–T4.4, #131 #140 #141 #143)** — opt-in with
+`cistern.auth.solid.enabled=true`.
+- Access-token verification against the issuer's discovery document and JWKS, written against tokens
+  captured from Community Solid Server 7.2.0 (the Solid-OIDC spec leaves the resource-server side
+  undefined, so the shape comes from a real implementation).
+- DPoP proof validation step by step against RFC 9449 §4.3, with a bounded `jti` replay cache and a 60 s
+  `iat` window. Not done: server-issued `DPoP-Nonce` challenges (step 10).
+- WebID issuer verification: the WebID document is fetched and must carry `solid:oidcIssuer` naming the
+  token's `iss`. Fail closed: a WebID that cannot be fetched authenticates nobody: the request is
+  anonymous (a 401 where a grant is needed, never a 500).
+- The three checks compose in one place (`SolidOidcPrincipalResolver`); `htu` is checked against
+  `cistern.base-url` plus the request path, never the socket or `X-Forwarded-*`.
+- WebID fetches refuse non-public origins (SSRF guard). `cistern.auth.solid.webid.trusted-origins`
+  allows named origins, empty by default and logged at WARN when set (#148).
+- The agent carries the client it acted through (#89), for the delegation rules below.
+
+**Delegation: the client is a constraint, never a grantee (`cistern-wac`, T6.5, ADR 0004, #203)** — a
+delegated request carries the person and the client that acted for them; a rule grants the person and
+the `cistern:client` term narrows when that grant applies, so a delegation exported to another Solid
+server still means what it meant here. Opt-in with `cistern.wac.delegation.enabled=true` (default off:
+off is plain WAC, the term is not read). Write one with `cistern grant <webid> --read --client <client-id>
+<path>`; the receipt names `narrowedBy: CLIENT` when the constraint refused. On the plain-OIDC path the
+client is read from `client_id`, else `azp`; only an absolute URI counts.
+
+**WebID document seeding (#152)** — `cistern.pods.seed[n].oidc-issuer` writes the owner's WebID document
+with its `solid:oidcIssuer` triple when a pod is seeded, so an owner whose identity lives in their own
+pod can sign in. Unset, nothing is written, as before.
+
+**`cistern sync` (`cistern-cli`, T7.17, #200, PR #202)** — mirror a local folder into a pod container.
 Sub-folders become containers; files are sent under a closed extension-to-media-type table
 (`.md`, `.pdf`, `.csv`, `.ttl`, …; anything else `application/octet-stream`), every write
 conditional: `If-None-Match: *` for a file never sent, `If-Match` for one sent before, and a
@@ -24,11 +61,63 @@ conditional: `If-None-Match: *` for a file never sent, `If-Match` for one sent b
 what was sent, so a second run with nothing changed sends nothing. `--dry-run` prints the plan;
 `--delete` (off by default) removes what the folder no longer holds. The CLI parses no RDF.
 
+**MCP over Streamable HTTP (`cistern-mcp`, T6.7, #151)** — a transport for MCP clients that are not
+local processes, behind `cistern.mcp.enabled=true` plus `cistern.mcp.http.enabled=true`. **It does not work in the assembled app in this
+release** (see *Known limitations*); the stdio door from 0.2.0 is unchanged.
+
+**Brokered sign-in kit (`integration-kit`, T7.16, #204)** — Google Workspace through Keycloak: a person
+with no `webid` claim gets a WebID built from the token by `cistern.auth.oidc.webid-template`. Kit and docs
+only.
+
+**Demo (T6.3, #157, #184)** — one command stands up a pod and Penstock together; the agent holds its own
+credential, so the refusal before a grant is the demonstration.
+
+### Fixed
+
+- **Security (#186):** a bare `OPTIONS` carrying `Access-Control-Request-Method` but no `Origin` skipped
+  WAC entirely: an anonymous probe of whether a protected resource exists and what it allows, with no
+  receipt. It is now authorised like any other request; only a real preflight (`Origin` plus
+  `Access-Control-Request-Method`) is exempt. Upgrade if the pod is reachable by untrusted callers.
+- WAC: every resource response advertises its own ACL with `Link: rel="acl"` (ACL discovery MUST, #159);
+  the unused `aclResourceFor`, which pointed at the inherited ACL #159 ruled out, is deleted (#196).
+- CORS (T3.3, #186): CORS fields on refusals, one `Vary` line, preflight grants echo the request.
+- `OPTIONS *` reaches its handler instead of answering 400 on every enforced deployment (#161, #163).
+- `trusted-origins` bound two origins as one unusable entry (#153).
+- Auth review findings: DNS lookups off the event loop, caches bounded, `jwks_uri` vetted (#144).
+
 ### Changed
 
 - `cistern-cli`: exit code 3 now also covers a synced copy that changed on the pod; the refusal
   message for a resource (not an ACL) names the mode the method needed — Read, Write, or Write
   on it and its container for a delete.
+- CORS never decides an actual request (#186): an origin outside `cistern.cors.allowed-origins` gets no
+  CORS headers, so the browser withholds the response, while the pod still authorises the request and
+  records the receipt.
+
+### Known limitations (read before deploying)
+
+- **MCP over HTTP is not reachable in the assembled app (#220).** `POST /mcp` is answered by the Solid
+  resource handler (404 for the owner, 403 for an agent), so a remote MCP client cannot reach the door.
+  Use the stdio bridge (`cistern-mcp-0.3.0-bridge.jar`), as in 0.2.0.
+- **`cistern sync` from a second machine** (no state file) exits 3 on files it already sent instead of
+  reconciling (#219); a state file for a pod that no longer holds the files makes sync send nothing
+  (#221); `.yaml`, `.yml` and `.sh` go as `application/octet-stream` (#218).
+- Solid-OIDC is off unless enabled, and no server-issued `DPoP-Nonce` challenge is sent.
+- A DPoP proof without `ath` is refused (RFC 9449 §4.3). The conformance harness's client omits it, so
+  the official number is still 0 of 41 executed (`cth/BASELINE.md`); the upstream fix is
+  solid-contrib/conformance-test-harness#789.
+
+### Upgrade notes
+
+- Authentication is unchanged until you set `cistern.auth.solid.enabled=true`, and delegation until
+  `cistern.wac.delegation.enabled=true`.
+- HTTP behaviour does change without either flag: every resource response carries `Link: rel="acl"`,
+  `OPTIONS *` answers instead of returning 400, and CORS no longer refuses a disallowed origin's actual
+  request (it gets no CORS headers instead; see *Changed*).
+- With Solid-OIDC on behind a proxy, set `cistern.base-url` to the public URL clients call: DPoP's `htu`
+  is checked against it.
+- An identity provider on a private network or loopback needs its origin in
+  `cistern.auth.solid.webid.trusted-origins`.
 
 ## [0.2.0] - 2026-08-20
 
@@ -341,5 +430,7 @@ never `CISTERN_AUTH_SERVICE_PRINCIPALS_0_WEB_ID` (which silently does not bind).
   environment variables. `cistern-cli-0.1.0.jar` is the CLI — `java -jar` directly, or via
   the `cistern` wrapper script from the same Release. Java 25 required for both.
 
-[Unreleased]: https://github.com/enrichmeai/cistern/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/enrichmeai/cistern/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/enrichmeai/cistern/releases/tag/v0.3.0
+[0.2.0]: https://github.com/enrichmeai/cistern/releases/tag/v0.2.0
 [0.1.0]: https://github.com/enrichmeai/cistern/releases/tag/v0.1.0

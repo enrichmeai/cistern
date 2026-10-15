@@ -23,12 +23,12 @@ provider.
 
 ## Status
 
-**v0.2.0**, built in the open — what changed is in [CHANGELOG.md](CHANGELOG.md).
+**v0.3.0**, built in the open — what changed is in [CHANGELOG.md](CHANGELOG.md).
 Conformance against the official
 [Solid test harness](https://github.com/solid-contrib/conformance-test-harness) is the
 project's public health metric — numbers only move forward (see `cth/BASELINE.md`), and we
 publish it whether or not it flatters us. As of the 28 August 2026 run recorded in
-`cth/BASELINE.md`, it reads 0 of 41 cases executed. What has changed
+`cth/BASELINE.md` (against `main` as of #159, with Solid-OIDC enabled; 0.3.0 still refuses a proof without `ath`, so the run stops at the same step), it reads 0 of 41 cases executed. What has changed
 is where the run stops: with an external identity provider configured, the harness now
 registers its authenticated test clients against Cistern and gets one step further, halting
 in PREPARE SERVER. Its client sends DPoP proofs with no `ath` claim, which RFC 9449 §4.3
@@ -40,7 +40,8 @@ The number moves when an unmodified harness produces it.
 ## Standing on
 
 Cistern implements the [Solid Protocol](https://solidproject.org/TR/protocol), [WAC](https://solidproject.org/TR/wac)
-and [Solid-OIDC](https://solidproject.org/TR/oidc). None of this is our design. The Solid
+and, since v0.3.0 and opt-in with `cistern.auth.solid.enabled=true`, [Solid-OIDC](https://solidproject.org/TR/oidc)
+with DPoP. None of this is our design. The Solid
 community spent years agreeing on what a personal data store should do and writing it down
 precisely enough to build against, then published a
 [conformance harness](https://github.com/solid-contrib/conformance-test-harness) that will
@@ -69,13 +70,13 @@ docker run -d --rm -p 127.0.0.1:3737:3000 \
   -e CISTERN_OWNER_WEBID='https://you.example/profile/card#me' \
   -e CISTERN_OWNER_TOKEN="$TOKEN" \
   -v cistern-data:/data \
-  ghcr.io/enrichmeai/cistern:0.2.0   # -d: runs in the background so $TOKEN stays live below
+  ghcr.io/enrichmeai/cistern:0.3.0   # -d: runs in the background so $TOKEN stays live below
 ```
 
 Three things in that command are load-bearing. The port is published on **`127.0.0.1`**,
 not `0.0.0.0`: this quickstart runs with a local owner token and no TLS in front, so keep
 it on your own machine — going beyond loopback needs the posture in
-[`docs/deploy.md`](docs/deploy.md) (TLS terminated in front, a Solid-OIDC issuer,
+[`docs/deploy.md`](docs/deploy.md) (TLS terminated in front, an OIDC issuer or hashed service credentials and no owner token,
 [ADR 0002](docs/adr/0002-production-posture.md), which superseded the loopback-only
 [ADR 0001](docs/adr/0001-local-only-until-phase-5.md) once the authority plane it waited
 for was built). `CISTERN_BASE_URL` must be the URL clients
@@ -89,7 +90,7 @@ written into the ACL as-is — so any absolute URI you control, including the pl
 above, works for this quickstart. Data lives in the `cistern-data` volume and survives
 restarts.
 
-The same works from the jar — `java -jar cistern-app-0.2.0.jar` with the same environment
+The same works from the jar — `java -jar cistern-app-0.3.0.jar` with the same environment
 variables (Java 25) — and on a local Kubernetes cluster via [`k8s/`](k8s/README.md).
 
 ### Store something, and read it back
@@ -130,15 +131,15 @@ host wants it.
 ### Get the CLI
 
 The same Release carries the `cistern` command — pods, grants and revocations without
-hand-editing Turtle — as `cistern-cli-0.2.0.jar` (a self-contained executable jar, Java 25)
+hand-editing Turtle — as `cistern-cli-0.3.0.jar` (a self-contained executable jar, Java 25)
 plus the `cistern` wrapper script, both listed in `SHA256SUMS`. It also carries the MCP
-bridge jar (`cistern-mcp-0.2.0-bridge.jar`) an assistant like Claude Desktop launches —
+bridge jar (`cistern-mcp-0.3.0-bridge.jar`) an assistant like Claude Desktop launches —
 see [`docs/demo/claude-desktop.md`](docs/demo/claude-desktop.md):
 
 ```bash
-REL=https://github.com/enrichmeai/cistern/releases/download/v0.2.0
-curl -fsSLO "$REL/cistern-cli-0.2.0.jar" && curl -fsSLO "$REL/cistern" && chmod +x cistern
-export CISTERN_CLI_JAR="$PWD/cistern-cli-0.2.0.jar"   # tells the wrapper where the jar is
+REL=https://github.com/enrichmeai/cistern/releases/download/v0.3.0
+curl -fsSLO "$REL/cistern-cli-0.3.0.jar" && curl -fsSLO "$REL/cistern" && chmod +x cistern
+export CISTERN_CLI_JAR="$PWD/cistern-cli-0.3.0.jar"   # tells the wrapper where the jar is
 export CISTERN_TOKEN='<the owner token from the run above>'
 
 ./cistern pod create --root /firms/acme/ --owner 'https://acme-law.example/profile#firm'
@@ -150,6 +151,20 @@ export CISTERN_TOKEN='<the owner token from the run above>'
 Exit codes: `0` ok, `1` failure, `2` refused (the server enforces `acl:Control`; the CLI
 only writes the files), `3` conflict (the ACL changed underneath; nothing written). The
 full command reference is in [docs/INTEGRATION.md §6.6](docs/INTEGRATION.md#66-cli-90-built-91-built).
+
+New in 0.3.0, the same CLI also has **`cistern sync`** (T7.17,
+#200): it mirrors a folder into a pod container, sending each file once under a conditional
+`PUT` and remembering what it sent in `<local-dir>/.cistern-sync.json`, so a second run with
+nothing changed sends nothing.
+
+```bash
+./cistern sync ./documents /firms/acme/docs/ --dry-run   # the plan, nothing sent
+./cistern sync ./documents /firms/acme/docs/             # 201s, then 204s only for what changed
+```
+
+`--delete` (off by default) also removes what the folder no longer holds; a copy that changed on
+the pod since it was sent is never overwritten (exit `3`). Details in
+[docs/INTEGRATION.md §6.6](docs/INTEGRATION.md#66-cli-90-built-91-built).
 
 ### Build it (from source)
 
@@ -164,26 +179,12 @@ owner** — no authorization layer, which is fine for hacking on the server and 
 holding anything. To run your own build the way the published image runs, use the
 `docker run` command above with `cistern:local` in place of the tag.
 
-The CLI you build here (`cistern-cli/target/cistern-cli-*.jar`) also has **`cistern sync`**
-(T7.17, #200), which the `0.2.0` release above predates: it mirrors a folder into a pod
-container, sending each file once under a conditional `PUT` and remembering what it sent in
-`<local-dir>/.cistern-sync.json`, so a second run with nothing changed sends nothing.
-
-```bash
-java -jar cistern-cli/target/cistern-cli-*.jar sync ./documents /firms/acme/docs/ --dry-run   # the plan, nothing sent
-java -jar cistern-cli/target/cistern-cli-*.jar sync ./documents /firms/acme/docs/             # 201s, then 204s only for what changed
-```
-
-`--delete` (off by default) also removes what the folder no longer holds; a copy that changed on
-the pod since it was sent is never overwritten (exit `3`). Details in
-[docs/INTEGRATION.md §6.6](docs/INTEGRATION.md#66-cli-90-built-91-built).
-
 ## Modules
 
 `cistern-core` (LDP semantics, storage SPI) · `cistern-storage-file` · `cistern-webflux`
-(HTTP) · `cistern-auth` (Solid-OIDC + DPoP validation) · `cistern-wac` (Web Access
-Control) · `cistern-mcp` (the agent front-end) · `cistern-spring-boot-starter` ·
-`cistern-app`
+(HTTP) · `cistern-auth` (OIDC JWT and service credentials; Solid-OIDC + DPoP, opt-in) ·
+`cistern-wac` (Web Access Control) · `cistern-mcp` (the agent front-end) ·
+`cistern-spring-boot-starter` · `cistern-app` · `cistern-cli` (the `cistern` command)
 
 ## Licence & governance
 

@@ -345,6 +345,6 @@ receipts for the note list **both** the pre-snapshot decision and the post-resto
 - **In-process rate limiting**: none, by design; the edge does it.
 - **Remote MCP authorization** (T6.4, #118): OAuth 2.0 Protected Resource Metadata
   (RFC 9728) and a full authorization-code flow for a remote Streamable-HTTP MCP client.
-  Today's MCP front door (T6.1/T6.2/T6.7, shipped in 0.2.0) binds a connection to one
+  Today's MCP front door (T6.1/T6.2, shipped in 0.2.0; the T6.7 Streamable HTTP transport ships in 0.3.0 but is not reachable in the assembled app, #220) binds a connection to one
   statically configured service-principal credential — enough for Claude Desktop launching
   the bridge locally, not yet for a remote client completing OAuth on its own.
