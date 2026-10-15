@@ -80,7 +80,8 @@ class CisternPropertiesAuthTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new CisternProperties.ServicePrincipal(URI.create("https://a.example/#id"), " "));
         var auth = new CisternProperties.Auth(null, List.of(
-                new CisternProperties.ServicePrincipal(URI.create("https://a.example/#id"), "sha256:00")));
+                new CisternProperties.ServicePrincipal(URI.create("https://a.example/#id"), "sha256:00")),
+                null, null, null);
         assertEquals(1, auth.servicePrincipals().size());
     }
 }

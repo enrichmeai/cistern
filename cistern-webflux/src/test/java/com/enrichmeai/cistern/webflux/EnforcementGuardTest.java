@@ -37,7 +37,7 @@ class EnforcementGuardTest {
     @DisplayName("an OIDC issuer without cistern.owner.web-id is refused, naming the property and the fix")
     void issuerWithoutOwnerIsRefused() {
         var refused = assertThrows(IllegalArgumentException.class,
-                () -> bind(null, new CisternProperties.Auth(OIDC, null)));
+                () -> bind(null, new CisternProperties.Auth(OIDC, null, null, null, null)));
         assertEquals(WebfluxMessage.ENFORCEMENT_REQUIRES_OWNER.format(
                 CisternProperties.Auth.CredentialSource.OIDC_ISSUER.property()), refused.getMessage());
     }
@@ -46,7 +46,7 @@ class EnforcementGuardTest {
     @DisplayName("service principals without cistern.owner.web-id are refused")
     void servicePrincipalsWithoutOwnerAreRefused() {
         var refused = assertThrows(IllegalArgumentException.class,
-                () -> bind(null, new CisternProperties.Auth(null, PRINCIPALS)));
+                () -> bind(null, new CisternProperties.Auth(null, PRINCIPALS, null, null, null)));
         assertEquals(WebfluxMessage.ENFORCEMENT_REQUIRES_OWNER.format(
                 CisternProperties.Auth.CredentialSource.SERVICE_PRINCIPALS.property()), refused.getMessage());
     }
@@ -55,7 +55,7 @@ class EnforcementGuardTest {
     @DisplayName("both sources without an owner: the message names both, in declaration order")
     void bothSourcesAreNamed() {
         var refused = assertThrows(IllegalArgumentException.class,
-                () -> bind(null, new CisternProperties.Auth(OIDC, PRINCIPALS)));
+                () -> bind(null, new CisternProperties.Auth(OIDC, PRINCIPALS, null, null, null)));
         assertEquals(WebfluxMessage.ENFORCEMENT_REQUIRES_OWNER.format(
                 CisternProperties.Auth.CredentialSource.OIDC_ISSUER.property() + " and "
                         + CisternProperties.Auth.CredentialSource.SERVICE_PRINCIPALS.property()),
@@ -66,7 +66,7 @@ class EnforcementGuardTest {
     @DisplayName("an owner's WebID with no token and an OIDC issuer is the production shape, and binds")
     void ownerWithoutTokenIsTheProductionShape() {
         CisternProperties properties = assertDoesNotThrow(
-                () -> bind(new CisternProperties.Owner(OWNER, null), new CisternProperties.Auth(OIDC, PRINCIPALS)));
+                () -> bind(new CisternProperties.Owner(OWNER, null), new CisternProperties.Auth(OIDC, PRINCIPALS, null, null, null)));
         assertTrue(properties.owner().isNamed(), "enforcement is keyed on the WebID");
         assertFalse(properties.owner().hasLocalCredential(), "no local token: the owner authenticates via OIDC");
     }
@@ -91,13 +91,13 @@ class EnforcementGuardTest {
     @Test
     @DisplayName("credentialSources() reports exactly what is configured")
     void credentialSourcesReflectConfiguration() {
-        assertEquals(Set.of(), new CisternProperties.Auth(null, null).credentialSources());
+        assertEquals(Set.of(), new CisternProperties.Auth(null, null, null, null, null).credentialSources());
         assertEquals(Set.of(CisternProperties.Auth.CredentialSource.OIDC_ISSUER),
-                new CisternProperties.Auth(OIDC, null).credentialSources());
+                new CisternProperties.Auth(OIDC, null, null, null, null).credentialSources());
         assertEquals(Set.of(CisternProperties.Auth.CredentialSource.SERVICE_PRINCIPALS),
-                new CisternProperties.Auth(null, PRINCIPALS).credentialSources());
+                new CisternProperties.Auth(null, PRINCIPALS, null, null, null).credentialSources());
         assertEquals(Set.of(CisternProperties.Auth.CredentialSource.OIDC_ISSUER,
                         CisternProperties.Auth.CredentialSource.SERVICE_PRINCIPALS),
-                new CisternProperties.Auth(OIDC, PRINCIPALS).credentialSources());
+                new CisternProperties.Auth(OIDC, PRINCIPALS, null, null, null).credentialSources());
     }
 }

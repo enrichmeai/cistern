@@ -112,6 +112,32 @@ public enum WebfluxMessage {
     /** {@code cistern.base-url} must be usable as the base of every resource identifier. */
     BASE_URL_INVALID("cistern.base-url must be an absolute URI without a fragment: %s"),
 
+    // ---------------------------------------------------------------- OAuth protected resource (T6.4)
+
+    /**
+     * {@code cistern.auth.resource-identifier} — RFC 9728 §1.2's resource identifier — is
+     * compared verbatim to a token's {@code aud}, so it must have one spelling: an absolute
+     * URL with an authority and no fragment or query component (RFC 8707 §2).
+     */
+    RESOURCE_IDENTIFIER_INVALID(
+            "cistern.auth.resource-identifier must be an absolute URL with an authority and"
+                    + " without a fragment or query component (RFC 9728 §1.2, RFC 8707 §2): %s"),
+
+    /** The authorization server is published for clients to fetch metadata from; a relative one names nowhere. */
+    AUTHORIZATION_SERVER_INVALID("cistern.auth.authorization-server must be an absolute URI: %s"),
+
+    /** {@code resource_documentation} is a URL a developer opens. */
+    RESOURCE_DOCUMENTATION_INVALID("cistern.auth.resource-documentation must be an absolute URI: %s"),
+
+    /** A reserved endpoint is matched exactly against the request path, so it must look like one. */
+    ENDPOINT_PATH_INVALID("A server endpoint path must start with '/' and carry no query: %s"),
+
+    /** An endpoint serving no method would refuse everything, which is not a door. */
+    ENDPOINT_METHODS_REQUIRED("A server endpoint must serve at least one method: %s"),
+
+    /** Two modules reserving one path: whose is it? Refused at startup rather than guessed. */
+    ENDPOINT_DUPLICATED("Two server endpoints claim the path %s"),
+
     // ---------------------------------------------------------------- authentication (T4.0)
 
     /** {@code BearerToken} constructed with nothing in it — a caller bug, not a request fault. */
@@ -164,6 +190,13 @@ public enum WebfluxMessage {
 
     /** Startup: which resolvers a request will be tried against, in order. Logged at INFO. */
     PRINCIPAL_RESOLVERS_WIRED("Principal resolvers, in order: %s"),
+
+    /** Startup: where the protected resource metadata is, and what it says (T6.4). Logged at INFO. */
+    PROTECTED_RESOURCE_WIRED(
+            "OAuth protected resource metadata at <%s>: resource <%s>, authorization server %s"),
+
+    /** Startup: the paths reserved from the pod's resource space, with their access policy. */
+    SERVER_ENDPOINTS_WIRED("Reserved server endpoints: %s"),
 
     // ---------------------------------------------------------------- cistern.pods.seed[] (T5.6)
 
