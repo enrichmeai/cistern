@@ -68,6 +68,17 @@ public enum WacMessage {
             "The effective ACL was found on <%s> under scope %s, which cannot govern <%s>"),
 
     /**
+     * A grant or revoke on a target that inherits, where the inherited ACL holds no
+     * Control-holder to re-state (#227): the new resource-level ACL would leave nobody able to
+     * administer the target. Seen when the rules name the source under another IRI than the
+     * caller resolved it to.
+     */
+    NO_CONTROL_TO_RESTATE(
+            "No ACL written for <%s>: it inherits from <%s>, and no authorization there grants"
+                    + " acl:Control by acl:default on that container, so the new ACL would leave"
+                    + " nobody able to administer the resource"),
+
+    /**
      * A revoke that would remove an authorization granting {@code acl:Control}. Refused: taking
      * Control away is how an owner is locked out of a subtree, and the whole reason this
      * service exists is that a resource-level ACL replaces inheritance silently. Removing

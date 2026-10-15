@@ -171,6 +171,13 @@ public enum CliMessage {
             "Not deleted: %s still holds resources this folder never sent (HTTP 409); left as it"
                     + " is. Remove them on the pod, or keep the folder locally"),
 
+    /** target, the origin its ACL names, the --base origin, the origin to use */
+    BASE_MISMATCH(
+            "The ACL that governs %s names the pod's resources under %s, not under %s. The server"
+                    + " identifies its resources by its own base URL (cistern.base-url), so what this"
+                    + " command would write names nothing the server reads. Nothing was written;"
+                    + " run the command again with --base %s (keeping any path prefix the server's base URL has)"),
+
     /** target */
     NO_ACL_TO_THE_ROOT(
             "No ACL governs %s or any ancestor up to the storage root. The pod has no owner ACL —"
@@ -267,7 +274,7 @@ public enum CliMessage {
     /** the field names that were not expected */
     STATE_FILE_UNEXPECTED_FIELDS("unexpected field(s): %s"),
 
-    /** The revoke was refused by the grant service (its own message follows). */
+    /** A grant or revoke refused by the grant service (its own message follows). */
     REVOKE_REFUSED("Refused: %s"),
 
     /** Anything else. */

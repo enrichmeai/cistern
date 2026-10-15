@@ -78,6 +78,15 @@ credential, so the refusal before a grant is the demonstration.
   WAC entirely: an anonymous probe of whether a protected resource exists and what it allows, with no
   receipt. It is now authorised like any other request; only a real preflight (`Origin` plus
   `Access-Control-Request-Method`) is exempt. Upgrade if the pod is reachable by untrusted callers.
+- **`cistern grant` could lock the owner out of a container (#227).** If the CLI's `--base` and the
+  server's `cistern.base-url` named the same server differently (`127.0.0.1` and `localhost`, as the
+  0.2.0 README's quickstart and the CLI's default did), a grant on a container that inherits wrote an
+  ACL that matched nothing the server reads. It re-stated nobody's Control, yet reported success. Now:
+  - The CLI refuses an ACL whose rules name the pod under another origin than `--base`, before
+    writing anything, and says which `--base` to use (exit 1).
+  - `GrantService` refuses to write an ACL for an inheriting target when it finds no Control-holder
+    to re-state.
+  - The README quickstart uses `127.0.0.1` on both sides.
 - WAC: every resource response advertises its own ACL with `Link: rel="acl"` (ACL discovery MUST, #159);
   the unused `aclResourceFor`, which pointed at the inherited ACL #159 ruled out, is deleted (#196).
 - CORS (T3.3, #186): CORS fields on refusals, one `Vary` line, preflight grants echo the request.

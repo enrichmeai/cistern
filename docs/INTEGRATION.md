@@ -188,7 +188,7 @@ against a local jar; substitute the deployment base URL later.
 export CISTERN_OWNER_WEBID='https://acme-law.example/profile#firm'      # the pod owner's WebID
 export CISTERN_OWNER_TOKEN="$(openssl rand -hex 32)"                    # today's only credential
 export CISTERN_STORAGE_ROOT=/var/lib/cistern
-export CISTERN_BASE_URL=http://localhost:3737                           # must match how clients address it
+export CISTERN_BASE_URL=http://127.0.0.1:3737                           # must match how clients address it, the CLI's --base included
 java -jar cistern-app/target/cistern-app-*.jar --server.port=3737
 ```
 
@@ -342,7 +342,7 @@ owner does, via `acl:default` from the root). **Today** it is one command (T5.7,
 
 ```bash
 export CISTERN_TOKEN="$CISTERN_OWNER_TOKEN"                     # or --token; the caller's own credential
-bin/cistern grant https://valuedocs.co.in/apps/legal#id --read /matters/2026-114/ --base http://localhost:3737
+bin/cistern grant https://valuedocs.co.in/apps/legal#id --read /matters/2026-114/ --base http://127.0.0.1:3737
 # Granted: https://valuedocs.co.in/apps/legal#id may now read /matters/2026-114/ and everything inside it.
 # /matters/2026-114/.acl now holds:
 #   - https://valuedocs.co.in/apps/legal#id: read — this container and everything inside it

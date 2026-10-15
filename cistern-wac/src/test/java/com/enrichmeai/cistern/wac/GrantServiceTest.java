@@ -117,6 +117,25 @@ class GrantServiceTest {
             assertEquals(EnumSet.of(AccessMode.READ), decide(outcome, NOTES, Agent.ANONYMOUS).modes());
         }
 
+        /**
+         * An inherited ACL whose rules name the pod under another IRI (a client that resolved the
+         * target against a different base URL than the server's) has no Control-holder for this
+         * source. Writing a fresh ACL from it would leave nobody able to administer the target.
+         */
+        @Test
+        @DisplayName("an inherited ACL with no Control-holder for its source is refused, not written empty of Control")
+        void noControlHolderToRestateIsRefused() {
+            Model elsewhere = turtle("<#owner> a acl:Authorization ;\n"
+                    + "  acl:agent <" + OWNER + "> ;\n"
+                    + "  acl:accessTo <https://other.example/> ; acl:default <https://other.example/> ;\n"
+                    + "  acl:mode acl:Read, acl:Write, acl:Append, acl:Control .", AclResource.of(ROOT));
+            EffectiveAcl inherited = new EffectiveAcl(elsewhere, AclScope.INHERITED, ROOT);
+
+            CisternException.Conflict refused = assertThrows(CisternException.Conflict.class,
+                    () -> service.grant(inherited, grant(NOTES, webId(ALICE), AccessMode.READ)));
+            assertEquals(WacMessage.NO_CONTROL_TO_RESTATE.format(NOTES.uri(), ROOT.uri()), refused.getMessage());
+        }
+
         @Test
         @DisplayName("the re-stated owner is inheritable too: children of the container stay administrable")
         void restatementIsInheritable() {

@@ -125,6 +125,8 @@ public final class GrantService {
      * @param request what to grant
      * @return the graph to write at {@code <target>.acl}, or (unchanged) the ACL as it stands if
      *     the grantee already held every requested mode there under the same constraint
+     * @throws CisternException.Conflict if the target inherits an ACL with no Control-holder to
+     *     re-state (see {@link #baseline})
      * @throws IllegalArgumentException if {@code current} cannot govern the target
      */
     public GrantOutcome grant(EffectiveAcl current, GrantRequest request) {
@@ -175,7 +177,8 @@ public final class GrantService {
      *
      * @return the graph to write at {@code <target>.acl}, or (unchanged) the ACL as it stands if
      *     the grantee held nothing on the target
-     * @throws CisternException.Conflict if any authorization being revoked grants Control
+     * @throws CisternException.Conflict if any authorization being revoked grants Control, or if
+     *     the target inherits an ACL with no Control-holder to re-state
      * @throws IllegalArgumentException  if {@code current} cannot govern the target
      */
     public GrantOutcome revoke(EffectiveAcl current, RevokeRequest request) {
@@ -218,6 +221,12 @@ public final class GrantService {
     /**
      * A copy of the target's own ACL if it has one; otherwise a fresh ACL for the target that
      * re-states every inherited Control-holder (see the class note).
+     *
+     * @throws CisternException.Conflict if the inherited ACL has no Control-holder to re-state:
+     *     the ACL written from it would leave nobody able to administer the target. A caller
+     *     that could edit the ACL at all held Control through some rule, so none matching means
+     *     the rules name the source under another IRI — a client that resolved the target
+     *     against a different base URL than the one the server writes its ACLs under.
      */
     private static Model baseline(EffectiveAcl current, ResourceIdentifier target, ResourceIdentifier aclResource) {
         Model acl = ModelFactory.createDefaultModel();
@@ -230,6 +239,7 @@ public final class GrantService {
         }
         Resource sourceNode = ResourceFactory.createResource(current.source().uri().toString());
         Resource targetNode = acl.createResource(target.uri().toString());
+        boolean restatedAny = false;
         for (Resource inherited : authorizations(current.graph())) {
             if (!inherited.hasProperty(Acl.DEFAULT, sourceNode)
                     || !inherited.hasProperty(Acl.MODE, AccessMode.CONTROL.term())) {
@@ -246,6 +256,11 @@ public final class GrantService {
             if (target.isContainer()) {
                 restated.addProperty(Acl.DEFAULT, targetNode);
             }
+            restatedAny = true;
+        }
+        if (!restatedAny) {
+            throw new CisternException.Conflict(
+                    WacMessage.NO_CONTROL_TO_RESTATE.format(target.uri(), current.source().uri()));
         }
         return acl;
     }
