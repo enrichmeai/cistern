@@ -30,7 +30,7 @@ bridge) on disk:
 **Download the published release** (default; no build required):
 
 ```bash
-VERSION=0.2.0                                                     # the only place this version appears
+VERSION=0.3.0                                                     # the only place this version appears
 DIR="$HOME/cistern"; mkdir -p "$DIR"
 REL="https://github.com/enrichmeai/cistern/releases/download/v$VERSION"
 curl -fsSL -o "$DIR/cistern-app-$VERSION.jar" "$REL/cistern-app-$VERSION.jar"
@@ -95,7 +95,7 @@ granting read on `/notes/` — and nothing else.
 
 `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/`), the
 **bridge** shape — Claude Desktop launches the bridge; the pod keeps running on its own.
-Point it at the jar from step 1 — `$HOME/cistern/cistern-mcp-0.2.0-bridge.jar` if you
+Point it at the jar from step 1 — `$HOME/cistern/cistern-mcp-0.3.0-bridge.jar` if you
 downloaded it there, or `cistern-mcp/target/cistern-mcp-<snapshot-version>-bridge.jar` if
 you built from source:
 
@@ -106,7 +106,7 @@ you built from source:
       "command": "java",
       "args": [
         "-jar",
-        "/ABSOLUTE/PATH/TO/cistern-mcp-0.2.0-bridge.jar"
+        "/ABSOLUTE/PATH/TO/cistern-mcp-0.3.0-bridge.jar"
       ],
       "env": {
         "CISTERN_MCP_BASE_URL": "http://127.0.0.1:3737",
@@ -135,7 +135,7 @@ with the Claude Desktop session — the bridge shape is the honest default.
     "cistern": {
       "command": "java",
       "args": [
-        "-jar", "/ABSOLUTE/PATH/TO/cistern-app-0.2.0.jar",
+        "-jar", "/ABSOLUTE/PATH/TO/cistern-app-0.3.0.jar",
         "--server.port=3737", "--spring.profiles.active=mcp-stdio"
       ],
       "env": {

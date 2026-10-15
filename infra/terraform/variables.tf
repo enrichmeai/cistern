@@ -61,12 +61,12 @@ variable "image" {
     (`terraform output upgrade_command`): the startup script re-pulls on boot.
   EOT
   type        = string
-  default     = "ghcr.io/enrichmeai/cistern:0.1.0"
+  default     = "ghcr.io/enrichmeai/cistern:0.3.0"
 
   validation {
     # A moving tag makes a redeploy irreproducible and a rollback a guess.
     condition     = can(regex(":[^:/]+$", var.image)) && !endswith(var.image, ":latest")
-    error_message = "image must carry a pinned tag (ghcr.io/enrichmeai/cistern:0.1.0), never :latest and never untagged."
+    error_message = "image must carry a pinned tag (ghcr.io/enrichmeai/cistern:0.3.0), never :latest and never untagged."
   }
 }
 

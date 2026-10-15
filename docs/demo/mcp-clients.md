@@ -27,7 +27,7 @@ Every host below accepts this shape; it is the same bridge jar INTEGRATION §4a 
       "command": "java",
       "args": [
         "-jar",
-        "/ABSOLUTE/PATH/TO/cistern-mcp-0.2.0-bridge.jar"
+        "/ABSOLUTE/PATH/TO/cistern-mcp-0.3.0-bridge.jar"
       ],
       "env": {
         "CISTERN_MCP_BASE_URL": "http://127.0.0.1:3737",
@@ -39,15 +39,16 @@ Every host below accepts this shape; it is the same bridge jar INTEGRATION §4a 
 ```
 
 Built from source instead, the jar is `cistern-mcp/target/cistern-mcp-<snapshot-version>-bridge.jar`
-(wildcard: `cistern-mcp-*-bridge.jar`) — `main` stays at `<next>-SNAPSHOT` permanently, so
-that path never carries a dotted release version.
+(wildcard: `cistern-mcp-*-bridge.jar`) — `main` stays at a `-SNAPSHOT` version permanently (the
+release workflow sets the version from the tag), so that path never carries a dotted release version.
 
 ## The remote entry
 
-> **From v0.3.0.** The Streamable HTTP transport (`WebFluxStreamableTransport`, T6.7, #151)
-> merged after the released v0.2.0 and is not in that jar. Run a server built from source
-> (or a later tag, once one ships) with `cistern.mcp.http.enabled=true` to try this shape
-> today.
+> **Not working yet (#220).** The Streamable HTTP transport (`WebFluxStreamableTransport`, T6.7,
+> #151) ships in v0.3.0 behind `cistern.mcp.http.enabled=true`, but in the assembled app `POST /mcp`
+> is answered by the Solid resource handler (404 for the owner, 403 for an agent), so a remote client
+> cannot reach the door. Use the stdio bridge above until #220 is fixed; this section describes the
+> shape it will take.
 
 ```json
 {
@@ -100,7 +101,7 @@ JSON:
 ```toml
 [mcp_servers.cistern]
 command = "java"
-args = ["-jar", "/ABSOLUTE/PATH/TO/cistern-mcp-0.2.0-bridge.jar"]
+args = ["-jar", "/ABSOLUTE/PATH/TO/cistern-mcp-0.3.0-bridge.jar"]
 
 [mcp_servers.cistern.env]
 CISTERN_MCP_BASE_URL = "http://127.0.0.1:3737"

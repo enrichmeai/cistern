@@ -37,7 +37,7 @@ worst outcome, so the server will not come up in that state.
 
 ## Local: `k8s/overlays/local`
 
-The manifests pin the published release image, `ghcr.io/enrichmeai/cistern:0.1.0`
+The manifests pin the published release image, `ghcr.io/enrichmeai/cistern:0.3.0`
 (linux/amd64 and linux/arm64), so there is nothing to build:
 
 ```bash
@@ -88,7 +88,7 @@ kubectl apply -k k8s/overlays/local
 should be `Never` — the tag exists in no registry, and `Never` makes a missing local image
 fail immediately rather than after a pull attempt — which is a one-line patch if you need
 it. On minikube also `minikube image load cistern:local`. To move to a newer release, the
-same knob: `kustomize edit set image ghcr.io/enrichmeai/cistern:0.2.0`.
+same knob: `kustomize edit set image ghcr.io/enrichmeai/cistern:0.3.0`.
 
 ### The demo
 

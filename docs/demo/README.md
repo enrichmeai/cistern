@@ -153,7 +153,7 @@ scan ships with its release, so those numbers are yours to read rather than ours
 summarise.
 
 **The WebIDs here are local and made up.** A real deployment uses WebIDs that resolve, with
-their own identity provider — Cistern validates Solid-OIDC tokens for that case, and this
+their own identity provider — Cistern validates Solid-OIDC tokens for that case when started with `cistern.auth.solid.enabled=true`, and this
 demo uses the simpler service-credential path so it runs without standing up an IdP.
 
 **Conformance against the Solid test suite is not yet a number this demo can quote.** The
