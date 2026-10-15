@@ -22,7 +22,7 @@ commonLabels:
 # The image is pinned in deployment.yaml (the published release, by version). This
 # transformer is the knob for changing it without editing that file — run it inside the
 # overlay you deploy, and don't commit the result. A newer release:
-#   kustomize edit set image ghcr.io/enrichmeai/cistern:0.3.0
+#   kustomize edit set image ghcr.io/enrichmeai/cistern:0.3.1
 # or a local build (`docker build -t cistern:local .`; on minikube also
 # `minikube image load cistern:local`):
 #   kustomize edit set image ghcr.io/enrichmeai/cistern=cistern:local

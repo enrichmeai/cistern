@@ -27,13 +27,23 @@ import reactor.util.retry.Retry;
  * preceded the write. If the ACL write finds one has appeared since the read (412), the whole
  * sequence is retried once from a fresh read, which then reports
  * {@link PodProvisioned.AlreadyExists}; a 412 that survives that is a {@link CliFailure.Conflict}.
+ *
+ * <p>Before the first write it walks the ancestor ACLs ({@link RemoteAclDiscovery}) for one
+ * reason only: an ACL that names the pod's resources under another origin than {@code --base}
+ * means the server mints its IRIs under another base URL, and an owner ACL written for these
+ * IRIs would name nothing it reads — the owner locked out of the pod just created (#227's
+ * class). That is a {@link CliFailure.BaseMismatch}, and nothing is written. A walk the server
+ * refuses, or one that finds no ACL at all, decides nothing here: the writes go ahead and the
+ * server rules on them exactly as before.
  */
 final class RemotePodProvisioner {
 
     private final PodTransport client;
+    private final RemoteAclDiscovery discovery;
 
     RemotePodProvisioner(PodTransport client) {
         this.client = Objects.requireNonNull(client, "client");
+        this.discovery = new RemoteAclDiscovery(client);
     }
 
     /**
@@ -49,7 +59,8 @@ final class RemotePodProvisioner {
                         .flatMap(fetched -> switch (fetched) {
                             case AclFetch.Found _ -> Mono.<PodProvisioned>just(
                                     new PodProvisioned.AlreadyExists(spec.root()));
-                            case AclFetch.Absent _ -> client.createContainer(spec.root())
+                            case AclFetch.Absent _ -> sameOrigin(spec)
+                                    .then(client.createContainer(spec.root()))
                                     .then(client.put(spec.acl(), PodProvisioner.ownerAclGraph(spec),
                                             new WritePrecondition.IfNoneMatchAny()))
                                     .thenReturn(new PodProvisioned.Created(spec.root(), spec.acl()));
@@ -58,5 +69,17 @@ final class RemotePodProvisioner {
                 .retryWhen(Retry.max(AclEditor.RETRIES_ON_CONFLICT)
                         .filter(CliFailure.Conflict.class::isInstance)
                         .onRetryExhaustedThrow((retrySpec, signal) -> signal.failure()));
+    }
+
+    /**
+     * Completes empty unless the ACLs above the root name another origin than {@code --base}, in
+     * which case it fails with {@link CliFailure.BaseMismatch}. Refused or missing ACLs are left
+     * to the writes that follow.
+     */
+    private Mono<Void> sameOrigin(PodSpec spec) {
+        return discovery.findFor(spec.root())
+                .onErrorResume(failure -> failure instanceof CliFailure.Refused
+                        || failure instanceof CliFailure.NoAcl, failure -> Mono.empty())
+                .then();
     }
 }

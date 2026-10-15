@@ -131,22 +131,22 @@ public enum CliMessage {
     /** method, uri, status, target — an ACL could not be read or written */
     REFUSED(
             "Refused: %s %s answered HTTP %d. Reading or writing the ACL of %s requires acl:Control"
-                    + " there, and the server enforces that — this tool cannot"),
+                    + " there, and the server enforces that, not this tool."),
 
     /** method, uri, status — a resource (not an ACL) could not be written */
     REFUSED_RESOURCE(
             "Refused: %s %s answered HTTP %d. Writing it requires acl:Write there, and the server"
-                    + " enforces that — this tool cannot"),
+                    + " enforces that, not this tool."),
 
     /** method, uri, status — a resource (not an ACL) could not be read */
     REFUSED_RESOURCE_READ(
             "Refused: %s %s answered HTTP %d. Reading it requires acl:Read there, and the server"
-                    + " enforces that — this tool cannot"),
+                    + " enforces that, not this tool."),
 
     /** method, uri, status — a resource (not an ACL) could not be deleted */
     REFUSED_RESOURCE_DELETE(
             "Refused: %s %s answered HTTP %d. Deleting it requires acl:Write on it and on its"
-                    + " container, and the server enforces that — this tool cannot"),
+                    + " container, and the server enforces that, not this tool."),
 
     /** uri */
     CONFLICT(
@@ -176,7 +176,7 @@ public enum CliMessage {
             "The ACL that governs %s names the pod's resources under %s, not under %s. The server"
                     + " identifies its resources by its own base URL (cistern.base-url), so what this"
                     + " command would write names nothing the server reads. Nothing was written;"
-                    + " run the command again with --base %s (keeping any path prefix the server's base URL has)"),
+                    + " run the command again with --base %s (keeping any path prefix the server's base URL has)."),
 
     /** target */
     NO_ACL_TO_THE_ROOT(

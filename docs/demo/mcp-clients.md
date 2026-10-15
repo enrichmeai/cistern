@@ -27,7 +27,7 @@ Every host below accepts this shape; it is the same bridge jar INTEGRATION §4a 
       "command": "java",
       "args": [
         "-jar",
-        "/ABSOLUTE/PATH/TO/cistern-mcp-0.3.0-bridge.jar"
+        "/ABSOLUTE/PATH/TO/cistern-mcp-0.3.1-bridge.jar"
       ],
       "env": {
         "CISTERN_MCP_BASE_URL": "http://127.0.0.1:3737",
@@ -101,7 +101,7 @@ JSON:
 ```toml
 [mcp_servers.cistern]
 command = "java"
-args = ["-jar", "/ABSOLUTE/PATH/TO/cistern-mcp-0.3.0-bridge.jar"]
+args = ["-jar", "/ABSOLUTE/PATH/TO/cistern-mcp-0.3.1-bridge.jar"]
 
 [mcp_servers.cistern.env]
 CISTERN_MCP_BASE_URL = "http://127.0.0.1:3737"

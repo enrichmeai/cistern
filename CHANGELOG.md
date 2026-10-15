@@ -14,6 +14,30 @@ The procedure around the tag — gate, rehearsal, stranger test — is [RELEASE.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-15
+
+A patch release from the stranger test of 0.3.0: the README's own CLI example now runs as written,
+and `cistern pod create` gets the same guard `cistern grant` got in 0.3.0 (#227).
+
+### Fixed
+
+- **`cistern pod create` could lock the owner out of the pod it had just created (#229).** If
+  `--base` and the server's `cistern.base-url` named the same server differently (`127.0.0.1` and
+  `localhost`), the command printed "Created pod" and exited 0. The owner ACL it wrote named IRIs
+  the server never matches, so the owner was refused there. It now walks the ancestor ACLs before
+  its first write, as `grant` does. If they name the pod under another origin, it refuses (exit 1),
+  says which `--base` to use, and writes nothing.
+- **The README's CLI example could not run in the order it was written.** `pod create --owner <a
+  firm>` hands that folder to the firm, so the `grant` and `revoke` after it were refused with
+  the server owner's token. The example now grants and revokes on a folder the owner keeps, and
+  explains `pod create` on its own: the new pod is its owner's alone. The `sync` example moves
+  with it, and its comment now matches what the command prints (`created`, `replaced`).
+- `docs/INTEGRATION.md` Step 2 and `RELEASE.md` addressed the server as `localhost:3737` while the
+  quickstart serves it as `127.0.0.1:3737`.
+- The CLI's four refusal messages ended mid-sentence ("…the server enforces that — this tool
+  cannot"). They now end "…the server enforces that, not this tool." The `--base` mismatch
+  message gains its closing full stop.
+
 ## [0.3.0] - 2026-10-15
 
 Solid-OIDC. A pod now accepts a person or an agent signed in at **any** Solid identity provider, not only
@@ -439,7 +463,8 @@ never `CISTERN_AUTH_SERVICE_PRINCIPALS_0_WEB_ID` (which silently does not bind).
   environment variables. `cistern-cli-0.1.0.jar` is the CLI — `java -jar` directly, or via
   the `cistern` wrapper script from the same Release. Java 25 required for both.
 
-[Unreleased]: https://github.com/enrichmeai/cistern/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/enrichmeai/cistern/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/enrichmeai/cistern/releases/tag/v0.3.1
 [0.3.0]: https://github.com/enrichmeai/cistern/releases/tag/v0.3.0
 [0.2.0]: https://github.com/enrichmeai/cistern/releases/tag/v0.2.0
 [0.1.0]: https://github.com/enrichmeai/cistern/releases/tag/v0.1.0

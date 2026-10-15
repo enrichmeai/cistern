@@ -43,7 +43,7 @@ spec:
           #   imagePullPolicy: Never      # the tag exists in no registry; never try to pull it
           # or, without editing this file:  kustomize edit set image ghcr.io/enrichmeai/cistern=cistern:local
           # (see kustomization.yaml). On minikube also `minikube image load cistern:local`.
-          image: ghcr.io/enrichmeai/cistern:0.3.0
+          image: ghcr.io/enrichmeai/cistern:0.3.1
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

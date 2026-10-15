@@ -580,6 +580,29 @@ class CliEndToEndTest {
                     .verifyComplete();
             assertEquals(1, aclPuts.get(), "our one write hit 412; the re-read found the ACL and wrote nothing");
         }
+
+        /**
+         * #227's class, in {@code pod create}: the server names its resources under its own base
+         * URL (127.0.0.1 here); reached as localhost, an owner ACL written for the --base IRIs
+         * would name nothing the server reads and lock the owner out of the pod just created.
+         * Refused before the container or its ACL is written.
+         */
+        @Test
+        @DisplayName("a --base that is not the server's own base URL is refused before anything is written")
+        void foreignBaseIsRefusedBeforeAnyWrite() throws Exception {
+            String elsewhere = base.replace("127.0.0.1", "localhost");
+
+            assertEquals(ExitCode.FAILURE.code(), cisternAt(elsewhere,
+                    "pod", "create", Usage.ROOT_OPTION, "/firms/elsewhere/", Usage.OWNER_OPTION, OWNER), stdout.toString());
+            assertTrue(stderr.toString().contains(CliMessage.BASE_MISMATCH.format(
+                    elsewhere + "/firms/elsewhere/", base, elsewhere, base)), stderr.toString());
+            assertFalse(store().exists(id("/firms/elsewhere/")).block(), "no container written");
+            assertFalse(store().exists(id("/firms/elsewhere/.acl")).block(), "no ACL written");
+
+            assertEquals(ExitCode.OK.code(), cistern(
+                    "pod", "create", Usage.ROOT_OPTION, "/firms/elsewhere/", Usage.OWNER_OPTION, OWNER), stderr.toString());
+            assertEquals(200, owner("GET", "/firms/elsewhere/", null, null).statusCode(), "the right base still works");
+        }
     }
 
     // ---- grant --client: the (person, client) principal (T6.5, #119) ------------------------

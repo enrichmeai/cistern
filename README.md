@@ -23,12 +23,12 @@ provider.
 
 ## Status
 
-**v0.3.0**, built in the open — what changed is in [CHANGELOG.md](CHANGELOG.md).
+**v0.3.1**, built in the open — what changed is in [CHANGELOG.md](CHANGELOG.md).
 Conformance against the official
 [Solid test harness](https://github.com/solid-contrib/conformance-test-harness) is the
 project's public health metric — numbers only move forward (see `cth/BASELINE.md`), and we
 publish it whether or not it flatters us. As of the 28 August 2026 run recorded in
-`cth/BASELINE.md` (against `main` as of #159, with Solid-OIDC enabled; 0.3.0 still refuses a proof without `ath`, so the run stops at the same step), it reads 0 of 41 cases executed. What has changed
+`cth/BASELINE.md` (against `main` as of #159, with Solid-OIDC enabled; 0.3.1 still refuses a proof without `ath`, so the run stops at the same step), it reads 0 of 41 cases executed. What has changed
 is where the run stops: with an external identity provider configured, the harness now
 registers its authenticated test clients against Cistern and gets one step further, halting
 in PREPARE SERVER. Its client sends DPoP proofs with no `ath` claim, which RFC 9449 §4.3
@@ -70,7 +70,7 @@ docker run -d --rm -p 127.0.0.1:3737:3000 \
   -e CISTERN_OWNER_WEBID='https://you.example/profile/card#me' \
   -e CISTERN_OWNER_TOKEN="$TOKEN" \
   -v cistern-data:/data \
-  ghcr.io/enrichmeai/cistern:0.3.0   # -d: runs in the background so $TOKEN stays live below
+  ghcr.io/enrichmeai/cistern:0.3.1   # -d: runs in the background so $TOKEN stays live below
 ```
 
 Three things in that command are load-bearing. The port is published on **`127.0.0.1`**,
@@ -91,7 +91,7 @@ written into the ACL as-is — so any absolute URI you control, including the pl
 above, works for this quickstart. Data lives in the `cistern-data` volume and survives
 restarts.
 
-The same works from the jar — `java -jar cistern-app-0.3.0.jar --server.port=3737` with the
+The same works from the jar — `java -jar cistern-app-0.3.1.jar --server.port=3737` with the
 same environment variables (Java 25; the jar listens on 3000 unless told otherwise) — and on a local Kubernetes cluster via [`k8s/`](k8s/README.md).
 
 ### Store something, and read it back
@@ -132,23 +132,36 @@ host wants it.
 ### Get the CLI
 
 The same Release carries the `cistern` command — pods, grants and revocations without
-hand-editing Turtle — as `cistern-cli-0.3.0.jar` (a self-contained executable jar, Java 25)
+hand-editing Turtle — as `cistern-cli-0.3.1.jar` (a self-contained executable jar, Java 25)
 plus the `cistern` wrapper script, both listed in `SHA256SUMS`. It also carries the MCP
-bridge jar (`cistern-mcp-0.3.0-bridge.jar`) an assistant like Claude Desktop launches —
+bridge jar (`cistern-mcp-0.3.1-bridge.jar`) an assistant like Claude Desktop launches —
 see [`docs/demo/claude-desktop.md`](docs/demo/claude-desktop.md):
 
 ```bash
-REL=https://github.com/enrichmeai/cistern/releases/download/v0.3.0
-curl -fsSLO "$REL/cistern-cli-0.3.0.jar" && curl -fsSLO "$REL/cistern" && chmod +x cistern
-export CISTERN_CLI_JAR="$PWD/cistern-cli-0.3.0.jar"   # tells the wrapper where the jar is
+REL=https://github.com/enrichmeai/cistern/releases/download/v0.3.1
+curl -fsSLO "$REL/cistern-cli-0.3.1.jar" && curl -fsSLO "$REL/cistern" && chmod +x cistern
+export CISTERN_CLI_JAR="$PWD/cistern-cli-0.3.1.jar"   # tells the wrapper where the jar is
 export CISTERN_TOKEN='<the owner token from the run above>'
 
-./cistern pod create --root /firms/acme/ --owner 'https://acme-law.example/profile#firm'
-./cistern grant 'https://valuedocs.example/apps/legal#id' --read /firms/acme/
-./cistern revoke 'https://valuedocs.example/apps/legal#id' /firms/acme/
+./cistern grant 'https://agent.example/profile#id' --read /matters/2026-114/
+./cistern revoke 'https://agent.example/profile#id' /matters/2026-114/
 ```
 
-`--base` defaults to `http://127.0.0.1:3737` — where the quickstart above put the server.
+A grant works on any folder you hold `acl:Control` on, whether or not it exists yet. To make a
+pod for someone **else**, `pod create` hands its root to them:
+
+```bash
+./cistern pod create --root /firms/acme/ --owner 'https://acme-law.example/profile#firm'
+```
+
+From then on `/firms/acme/` is theirs alone: its ACL replaces inheritance, so your token is
+refused there (`2`), and grants inside it are made with **their** credential (a service
+principal, [docs/INTEGRATION.md §3](docs/INTEGRATION.md)). That is the point: the server's
+owner does not keep a key to a tenant's pod.
+
+`--base` defaults to `http://127.0.0.1:3737` — where the quickstart above put the server. It
+must be the server's `CISTERN_BASE_URL` exactly; the CLI refuses one that is not (`1`), before
+writing anything.
 Exit codes: `0` ok, `1` failure, `2` refused (the server enforces `acl:Control`; the CLI
 only writes the files), `3` conflict (the ACL changed underneath; nothing written). The
 full command reference is in [docs/INTEGRATION.md §6.6](docs/INTEGRATION.md#66-cli-90-built-91-built).
@@ -159,8 +172,8 @@ New in 0.3.0, the same CLI also has **`cistern sync`** (T7.17,
 nothing changed sends nothing.
 
 ```bash
-./cistern sync ./documents /firms/acme/docs/ --dry-run   # the plan, nothing sent
-./cistern sync ./documents /firms/acme/docs/             # 201s, then 204s only for what changed
+./cistern sync ./documents /matters/2026-114/docs/ --dry-run   # the plan, nothing sent
+./cistern sync ./documents /matters/2026-114/docs/             # "created", then "replaced" only for what changed
 ```
 
 `--delete` (off by default) also removes what the folder no longer holds; a copy that changed on
