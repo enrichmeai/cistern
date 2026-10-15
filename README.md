@@ -66,7 +66,7 @@ and linux/arm64, plus the jar and checksums on the
 TOKEN=$(openssl rand -hex 32); echo "Owner token: $TOKEN"   # keep this shell open — it's the only copy
 
 docker run -d --rm -p 127.0.0.1:3737:3000 \
-  -e CISTERN_BASE_URL=http://localhost:3737 \
+  -e CISTERN_BASE_URL=http://127.0.0.1:3737 \
   -e CISTERN_OWNER_WEBID='https://you.example/profile/card#me' \
   -e CISTERN_OWNER_TOKEN="$TOKEN" \
   -v cistern-data:/data \
@@ -80,8 +80,9 @@ it on your own machine — going beyond loopback needs the posture in
 [ADR 0002](docs/adr/0002-production-posture.md), which superseded the loopback-only
 [ADR 0001](docs/adr/0001-local-only-until-phase-5.md) once the authority plane it waited
 for was built). `CISTERN_BASE_URL` must be the URL clients
-actually call — it mints every resource identifier, and the container listens on 3000
-whatever the host port is. And setting the **owner** (`CISTERN_OWNER_WEBID` + `_TOKEN`) is
+actually call — it mints every resource identifier, so `localhost` and `127.0.0.1` are two
+different pods to it, and the CLI's `--base` must be the same URL (the CLI refuses one that
+is not). The container listens on 3000 whatever the host port is. And setting the **owner** (`CISTERN_OWNER_WEBID` + `_TOKEN`) is
 what turns Web Access Control on: the root ACL is seeded granting that WebID everything,
 anyone else gets `401`, and the owner authenticates with `Authorization: Bearer <token>`.
 The WebID is an identifier, not a login: Cistern bundles no Solid-OIDC provider to mint one
@@ -90,23 +91,23 @@ written into the ACL as-is — so any absolute URI you control, including the pl
 above, works for this quickstart. Data lives in the `cistern-data` volume and survives
 restarts.
 
-The same works from the jar — `java -jar cistern-app-0.3.0.jar` with the same environment
-variables (Java 25) — and on a local Kubernetes cluster via [`k8s/`](k8s/README.md).
+The same works from the jar — `java -jar cistern-app-0.3.0.jar --server.port=3737` with the
+same environment variables (Java 25; the jar listens on 3000 unless told otherwise) — and on a local Kubernetes cluster via [`k8s/`](k8s/README.md).
 
 ### Store something, and read it back
 
 Same shell, so `$TOKEN` is still set:
 
 ```bash
-curl -i -X PUT http://localhost:3737/hello \
+curl -i -X PUT http://127.0.0.1:3737/hello \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: text/turtle' \
   --data-raw '<#it> <http://purl.org/dc/terms/title> "Hello, Cistern." .'
 # HTTP/1.1 201 Created
 
-curl http://localhost:3737/hello \
+curl http://127.0.0.1:3737/hello \
   -H "Authorization: Bearer $TOKEN"
-# <http://localhost:3737/hello#it>
+# <http://127.0.0.1:3737/hello#it>
 #         <http://purl.org/dc/terms/title>
 #                 "Hello, Cistern." .
 ```

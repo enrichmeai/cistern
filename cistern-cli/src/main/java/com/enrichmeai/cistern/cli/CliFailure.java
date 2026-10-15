@@ -10,7 +10,7 @@ import java.util.Objects;
  * {@link CliMessage} template.
  */
 sealed class CliFailure extends RuntimeException
-        permits CliFailure.Refused, CliFailure.Conflict, CliFailure.NoAcl,
+        permits CliFailure.Refused, CliFailure.Conflict, CliFailure.NoAcl, CliFailure.BaseMismatch,
                 CliFailure.UnexpectedStatus, CliFailure.MissingValidator, CliFailure.Transport,
                 CliFailure.ContainerNotEmpty, CliFailure.LocalFolder {
 
@@ -71,6 +71,18 @@ sealed class CliFailure extends RuntimeException
     static final class NoAcl extends CliFailure {
         NoAcl(ResourceIdentifier target) {
             super(CliMessage.NO_ACL_TO_THE_ROOT.format(target.uri()));
+        }
+    }
+
+    /**
+     * The ACL that governs the target names the pod's resources under another origin than
+     * {@code --base}: the server mints its IRIs from its own {@code cistern.base-url}, so rules
+     * written against the {@code --base} IRIs would match nothing it reads — and, for a target
+     * that inherits, would re-state nobody's Control. Found before anything is written.
+     */
+    static final class BaseMismatch extends CliFailure {
+        BaseMismatch(ResourceIdentifier target, PodOrigin named, PodOrigin base) {
+            super(CliMessage.BASE_MISMATCH.format(target.uri(), named, base, named));
         }
     }
 

@@ -56,14 +56,16 @@ public final class CisternCli {
     /**
      * The one place a failure becomes an exit status.
      *
-     * <p>{@code CisternException.Conflict} is how {@code GrantService} refuses a revoke that would
-     * drop Control: refused, like a 403, because retrying will not help and the reason is policy.
+     * <p>{@code CisternException.Conflict} is how {@code GrantService} refuses an edit — a revoke
+     * that would drop Control, or a grant or revoke that would leave an inheriting target with no
+     * Control-holder: refused, like a 403, because retrying will not help and the reason is policy.
      */
     static ExitCode exitCodeFor(Throwable failure) {
         return switch (failure) {
             case CliFailure.Refused _ -> ExitCode.REFUSED;
             case CliFailure.Conflict _ -> ExitCode.CONFLICT;
             case CliFailure.NoAcl _ -> ExitCode.FAILURE;
+            case CliFailure.BaseMismatch _ -> ExitCode.FAILURE;
             case CliFailure.UnexpectedStatus _ -> ExitCode.FAILURE;
             case CliFailure.MissingValidator _ -> ExitCode.FAILURE;
             case CliFailure.Transport _ -> ExitCode.FAILURE;

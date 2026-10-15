@@ -136,6 +136,17 @@ class CliEndToEndTest {
         return cisternAs(TOKEN, args);
     }
 
+    /** As {@link #cistern}, but against {@code atBase}: the same server reached under another name. */
+    private int cisternAt(String atBase, String... args) {
+        String[] full = new String[args.length + 4];
+        System.arraycopy(args, 0, full, 0, args.length);
+        full[args.length] = Usage.BASE_OPTION;
+        full[args.length + 1] = atBase;
+        full[args.length + 2] = Usage.TOKEN_OPTION;
+        full[args.length + 3] = TOKEN;
+        return CisternCli.execute(full, new PrintWriter(stdout, true), new PrintWriter(stderr, true));
+    }
+
     private int cisternAs(String token, String... args) {
         String[] full = new String[args.length + 4];
         System.arraycopy(args, 0, full, 0, args.length);
@@ -275,6 +286,28 @@ class CliEndToEndTest {
 
             assertEquals(before, owner("GET", "/.acl", null, null).body(), "root ACL untouched");
             assertEquals(404, owner("GET", "/trips/.acl", null, null).statusCode(), "no resource-level ACL created");
+        }
+
+        /**
+         * The server names its resources under {@code cistern.base-url} (here 127.0.0.1); the
+         * same server reached as localhost answers, but every IRI in its ACLs is under the other
+         * name. A grant built against the --base IRIs re-states nobody's Control and grants
+         * nothing the server reads, so it must be refused before anything is written.
+         */
+        @Test
+        @DisplayName("a --base that is not the server's own base URL is refused before anything is written")
+        void foreignBaseIsRefusedBeforeAnyWrite() throws Exception {
+            String elsewhere = base.replace("127.0.0.1", "localhost");
+
+            assertEquals(ExitCode.FAILURE.code(), cisternAt(elsewhere, "grant", ALICE, "--read", "/trips/"),
+                    stdout.toString());
+            assertTrue(stderr.toString().contains(CliMessage.BASE_MISMATCH.format(
+                    elsewhere + "/trips/", base, elsewhere, base)), stderr.toString());
+            assertEquals(ExitCode.FAILURE.code(), cisternAt(elsewhere, "revoke", ALICE, "/trips/"));
+
+            assertEquals(404, owner("GET", "/trips/.acl", null, null).statusCode(), "nothing was written");
+            assertEquals(200, owner("GET", "/trips/lisbon", null, null).statusCode(), "the owner is not locked out");
+            assertEquals(ExitCode.OK.code(), cistern("grant", ALICE, "--read", "/trips/"), "the right base still works");
         }
 
         @Test
