@@ -19,7 +19,7 @@
 #                        (e.g. a disk restored from a snapshot on a GCE instance, or a PVC's
 #                        hostPath).                              default: cistern-drill-source
 #   CISTERN_IMAGE        the image to boot the restored pod with — the SAME tag production
-#                        runs, that is the point.                default: ghcr.io/enrichmeai/cistern:0.3.0
+#                        runs, that is the point.                default: ghcr.io/enrichmeai/cistern:0.3.1
 #   CISTERN_BASE_URL     production's cistern.base-url. It must be the ORIGINAL: every ACL
 #                        and every receipt names absolute IRIs under it, so a restore under a
 #                        different base URL would have ACLs that match nothing. The drill
@@ -60,7 +60,7 @@ for arg in "$@"; do
 done
 
 SOURCE="${CISTERN_SOURCE:-cistern-drill-source}"
-IMAGE="${CISTERN_IMAGE:-ghcr.io/enrichmeai/cistern:0.3.0}"
+IMAGE="${CISTERN_IMAGE:-ghcr.io/enrichmeai/cistern:0.3.1}"
 BASE_URL="${CISTERN_BASE_URL:-http://localhost:3737}"
 OWNER="${CISTERN_OWNER_WEBID:-https://you.example/profile/card#me}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"

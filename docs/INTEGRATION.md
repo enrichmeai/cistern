@@ -292,7 +292,7 @@ put machine-readable metadata in a small RDF document rather than in file names.
 Matters and documents are plain `PUT`s (intermediate containers are created for you):
 
 ```bash
-AUTH="Authorization: Bearer $CISTERN_OWNER_TOKEN"; B=http://localhost:3737
+AUTH="Authorization: Bearer $CISTERN_OWNER_TOKEN"; B=http://127.0.0.1:3737
 curl -X PUT -H "$AUTH" -H 'Content-Type: text/turtle' \
   --data-raw '<#m> <http://purl.org/dc/terms/title> "Dispute 2026-114" .' $B/matters/2026-114/index      # 201
 curl -X PUT -H "$AUTH" -H 'Content-Type: application/pdf' --data-binary @contract.pdf \
@@ -428,14 +428,14 @@ The bridge jar is a published Release asset — no build required — alongside 
 CLI jars (README § "Get the CLI"):
 
 ```bash
-VERSION=0.3.0
+VERSION=0.3.1
 curl -fsSLO "https://github.com/enrichmeai/cistern/releases/download/v$VERSION/cistern-mcp-$VERSION-bridge.jar"
 ```
 
 ```json
 "cistern": {
   "command": "java",
-  "args": ["-jar", "/path/to/cistern-mcp-0.3.0-bridge.jar"],
+  "args": ["-jar", "/path/to/cistern-mcp-0.3.1-bridge.jar"],
   "env": {
     "CISTERN_MCP_BASE_URL": "http://127.0.0.1:3737",
     "CISTERN_MCP_CREDENTIAL": "<the assistant's service-principal secret>"

@@ -136,7 +136,7 @@ README/Release say. Substitute the real version for `0.1.0`.
 docker pull ghcr.io/enrichmeai/cistern:0.1.0
 export TOKEN="$(openssl rand -hex 32)" WEBID='https://you.example/profile/card#me'
 docker run -d --name cistern-stranger -p 127.0.0.1:3737:3000 \
-  -e CISTERN_BASE_URL=http://localhost:3737 \
+  -e CISTERN_BASE_URL=http://127.0.0.1:3737 \
   -e CISTERN_OWNER_WEBID="$WEBID" \
   -e CISTERN_OWNER_TOKEN="$TOKEN" \
   -v cistern-stranger-data:/data \
@@ -150,7 +150,7 @@ chmod +x cistern
 export CISTERN_CLI_JAR="$PWD/cistern-cli-0.1.0.jar" CISTERN_TOKEN="$TOKEN"
 ./cistern --version
 
-AUTH="Authorization: Bearer $TOKEN"; BASE=http://localhost:3737
+AUTH="Authorization: Bearer $TOKEN"; BASE=http://127.0.0.1:3737
 http() { curl -s -o /dev/null -w '%{http_code}\n' "$@"; }
 
 # Beat 1 — it works: the owner provisions a pod and stores a note

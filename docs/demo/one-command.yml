@@ -24,7 +24,7 @@
 
 services:
   cistern:
-    image: ghcr.io/enrichmeai/cistern:0.3.0
+    image: ghcr.io/enrichmeai/cistern:0.3.1
     ports:
       - "127.0.0.1:${CISTERN_PORT:-3737}:3000"
     environment:
