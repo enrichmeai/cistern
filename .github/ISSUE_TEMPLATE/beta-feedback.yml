@@ -1,0 +1,51 @@
+name: Beta feedback (pods.enrichmeai.com)
+description: You tried Cistern on the invite-only beta. Tell us what you tried, what happened, and what was missing.
+title: "beta: "
+labels: ["beta-feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for trying the beta. This issue is **public**: never paste a password, a token, a credential, a WebID you want kept private, or anything from your pod you would not publish.
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you tried
+      description: The app or assistant you used, and the step you took (signed in, created a file, granted access, revoked it, read your receipts…).
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What you saw. A status code or a short error message helps; a screenshot of a refusal is fine if it shows nothing private.
+    validations:
+      required: true
+  - type: textarea
+    id: missing
+    attributes:
+      label: What was missing
+      description: What you expected to be able to do and could not.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Closest area
+      options:
+        - Signing in (Solid identity)
+        - Reading or writing files
+        - Granting or revoking access
+        - Receipts
+        - Connecting an AI assistant (MCP)
+        - Finding something in my pod
+        - Slow, or an app keeps polling
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: App or assistant, and its version
+      description: The Solid app or AI assistant you used. It tells us which clients work against the beta.
+      placeholder: "e.g. Claude Desktop with cistern-mcp-0.3.1-bridge.jar"
+    validations:
+      required: true
